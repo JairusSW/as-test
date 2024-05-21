@@ -41,6 +41,25 @@ export class Expectation {
 
     report<T>(): string {
         if (this.verdict === Verdict.Ok) return rainbow.green(" - Test completed successfully");
-        return rainbow.red(" - Test failed") + "\n" + rainbow.italicMk(`  - (expected) ${visualize<T>(this.left.getUnchecked<T>())}\n    Does not equal\n  - (recieved) ${visualize<T>(this.right.getUnchecked<T>())}`);
+
+        const left = visualize<T>(this.left.getUnchecked<T>())
+        const right = visualize<T>(this.right.getUnchecked<T>());
+
+        let leftDiff = "";
+        let rightDiff = "";
+
+        for (let i = 0; i < min(left.length, right.length); i++) {
+            const lChar = left.charAt(i);
+            const rChar = right.charAt(i);
+            if (lChar != rChar) {
+                leftDiff += rainbow.green(lChar);
+                rightDiff += rainbow.red(rChar);
+            } else {
+                leftDiff += lChar;
+                rightDiff += rChar;
+            }
+        }
+
+        return rainbow.red(" - Test failed") + "\n" + rainbow.italicMk(`  (expected) ${leftDiff}\n  (recieved) ${rightDiff}`);
     }
 }

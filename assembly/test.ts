@@ -1,5 +1,5 @@
 import { describe, expect } from ".";
 
 describe("Should create suite successfully", () => {
-    expect("foo").toBe("bar");
+    expect("foo").toBe("boo");
 });
