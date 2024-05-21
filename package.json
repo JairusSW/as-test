@@ -1,0 +1,43 @@
+{
+  "name": "as-test",
+  "version": "0.0.0",
+  "description": "Testing framework for AssemblyScript. Compatible with WASI or Bindings ",
+  "types": "assembly/index.ts",
+  "author": "Jairus Tanaka",
+  "contributors": [],
+  "license": "MIT",
+  "scripts": {
+    "build:test": "asc assembly/test.ts -o build/test.wasm --bindings esm --config ./node_modules/@assemblyscript/wasi-shim/asconfig.json",
+    "build:bench": "asc assembly/bench/bench.ts -o build/bench.wasm --config ./node_modules/@assemblyscript/wasi-shim/asconfig.json --optimizeLevel 3 --converge --exportRuntime --runtime stub",
+    "bench:wasmtime": "wasmtime ./build/bench.wasm",
+    "build:transform": "tsc -p ./transform",
+    "test:wasmtime": "wasmtime ./build/test.wasm",
+    "prettier": "as-prettier -w ."
+  },
+  "devDependencies": {
+    "@assemblyscript/wasi-shim": "^0.1.0",
+    "assemblyscript": "^0.27.22",
+    "assemblyscript-prettier": "^3.0.1",
+    "typescript": "^5.3.3",
+    "visitor-as": "^0.11.4"
+  },
+  "dependencies": { "as-rainbow": "^0.1.0", "as-variant": "^0.4.1" },
+  "overrides": {
+    "assemblyscript": "$assemblyscript"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JairusSW/as-test.git"
+  },
+  "keywords": [
+    "assemblyscript"
+  ],
+  "bugs": {
+    "url": "https://github.com/JairusSW/as-test/issues"
+  },
+  "homepage": "https://github.com/JairusSW/as-test#readme",
+  "type": "module",
+  "publishConfig": {
+    "@JairusSW:registry": "https://npm.pkg.github.com"
+  }
+}
