@@ -21,7 +21,7 @@
     "typescript": "^5.3.3",
     "visitor-as": "^0.11.4"
   },
-  "dependencies": { "as-rainbow": "^0.1.0", "as-variant": "^0.4.1" },
+  "dependencies": { "as-rainbow": "^0.1.0", "as-string-sink": "^0.5.3", "as-variant": "^0.4.1" },
   "overrides": {
     "assemblyscript": "$assemblyscript"
   },

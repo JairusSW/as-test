@@ -1,6 +1,5 @@
 import { rainbow } from "as-rainbow";
 import { TestGroup } from "./src/group";
-import { TestResult } from "./src/result";
 import { Variant } from "as-variant/assembly";
 import { Expectation } from "./src/expectation";
 
