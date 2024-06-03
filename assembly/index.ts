@@ -2,6 +2,7 @@ import { rainbow } from "as-rainbow";
 import { TestGroup } from "./src/group";
 import { Variant } from "as-variant/assembly";
 import { Expectation } from "./src/expectation";
+import { It } from "./src/it";
 
 // Globals
 let current_group: TestGroup | null = null;

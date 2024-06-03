@@ -4,7 +4,7 @@ import { rainbow } from "as-rainbow";
 import { visualize } from "../util";
 import { StringSink } from "as-string-sink/assembly";
 
-export class Expectation {
+export class It {
     public verdict: Verdict = Verdict.Unreachable;
     public left: Variant;
     public right!: Variant;
@@ -12,7 +12,7 @@ export class Expectation {
     constructor(left: Variant) {
         this.left = left;
     }
-    not(): Expectation {
+    not(): It {
         this._not = true;
         return this;
     }
@@ -21,7 +21,7 @@ export class Expectation {
      * @param any equals - The value to test
      * @returns - Expectation
      */
-    toBe<T>(equals: T): Expectation {
+    toBe<T>(equals: T): It {
         this.right = Variant.from(equals);
         if (this.left.id !== this.right.id) throw "cannot compare different types";
 
@@ -62,7 +62,6 @@ export class Expectation {
             return rainbow.red(" - Test failed") + "\n" + rainbow.italicMk(`  ${rainbow.dimMk("(expected) ->")} ${rainbow.bgGreen(left.toString())}\n  ${rainbow.dimMk("(recieved) ->")} ${rainbow.bgRed(right.toString())}`);
         }
 
-        if (left == right) return rainbow.green(" - Test passed") + "\n" + rainbow.italicMk(`  ${rainbow.dimMk("(expected) ->")} ${rainbow.dimMk(left.toString())}\n  ${rainbow.dimMk("(recieved) ->")} ${rainbow.dimMk(right.toString())}`);
         let leftDiff = StringSink.withCapacity(left.length);
         let rightDiff = StringSink.withCapacity(right.length);
 
