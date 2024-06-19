@@ -5,9 +5,9 @@ import { Verdict } from "..";
 
 export class Expectation<T> extends Node {
     public verdict: Verdict = Verdict.Unreachable;
-    public left: T;
+    private left: T;
     private _left: string | null = null;
-    public right: u64 = 0;
+    private right: u64 = 0;
     private _right: string | null = null;
     private _not: boolean = false;
     private op: string = "=";
@@ -44,7 +44,7 @@ export class Expectation<T> extends Node {
      * @returns - void
      */
     toBeGreaterThan(value: T): void {
-        if (!isInteger<T>() && !isFloat<T>()) throw new Error("toBeGreaterThan() can only be used on number types. Received " + nameof<T>() + " instead!");
+        if (!isInteger<T>() && !isFloat<T>()) ERROR("toBeGreaterThan() can only be used on number types!");
 
         this.verdict = this.left > value ? Verdict.Ok : Verdict.Fail;
         store<T>(changetype<usize>(this), value, offsetof<Expectation<T>>("right"));
@@ -63,7 +63,7 @@ export class Expectation<T> extends Node {
      * @returns - void
      */
     toBeGreaterOrEqualTo(value: T): void {
-        if (!isInteger<T>() && !isFloat<T>()) throw new Error("toBeGreaterOrEqualTo() can only be used on number types. Received " + nameof<T>() + " instead!");
+        if (!isInteger<T>() && !isFloat<T>()) ERROR("toBeGreaterOrEqualTo() can only be used on number types!");
 
         this.verdict = this.left >= value ? Verdict.Ok : Verdict.Fail;
         store<T>(changetype<usize>(this), value, offsetof<Expectation<T>>("right"));
@@ -82,7 +82,7 @@ export class Expectation<T> extends Node {
      * @returns - void
      */
     toBeLessThan(value: T): void {
-        if (!isInteger<T>() && !isFloat<T>()) throw new Error("toBeLessThan() can only be used on number types. Received " + nameof<T>() + " instead!");
+        if (!isInteger<T>() && !isFloat<T>()) ERROR("toBeLessThan() can only be used on number types!");
 
         this.verdict = this.left < value ? Verdict.Ok : Verdict.Fail;
         store<T>(changetype<usize>(this), value, offsetof<Expectation<T>>("right"));
@@ -101,7 +101,7 @@ export class Expectation<T> extends Node {
      * @returns - void
      */
     toBeLessThanOrEqualTo(value: T): void {
-        if (!isInteger<T>() && !isFloat<T>()) throw new Error("toBeLessThanOrEqualTo() can only be used on number types. Received " + nameof<T>() + " instead!");
+        if (!isInteger<T>() && !isFloat<T>()) ERROR("toBeLessThanOrEqualTo() can only be used on number types!");
 
         this.verdict = this.left <= value ? Verdict.Ok : Verdict.Fail;
         store<T>(changetype<usize>(this), value, offsetof<Expectation<T>>("right"));

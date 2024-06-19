@@ -1,7 +1,7 @@
 import { rainbow } from "as-rainbow";
 import { TestGroup } from "./src/group";
 import { Expectation } from "./src/expectation";
-import { colorText, formatTime } from "./util";
+import { formatTime } from "./util";
 import { stringify } from "as-console/assembly";
 
 /**

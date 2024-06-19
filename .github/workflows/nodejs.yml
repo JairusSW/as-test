@@ -1,0 +1,28 @@
+name: Node.js CI
+
+on: [push, pull_request]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@v4
+      
+      - name: Install Wasmtime
+        uses: jcbhmr/setup-wasmtime@v2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v2
+
+      - name: Install dependencies
+        if: steps.node-cache.outputs.cache-hit != 'true'
+        run: yarn
+      
+      - name: Build tests
+        run: yarn run build:test
+
+      - name: Perform tests
+        run: yarn run test:wasmtime

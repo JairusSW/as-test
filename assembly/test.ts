@@ -10,7 +10,6 @@ import {
     run
 } from ".";
 
-
 // Shared setup for all tests (executed once before all tests)
 beforeAll(() => {
     log("Setting up test environment...");
