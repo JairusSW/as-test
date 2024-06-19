@@ -20,7 +20,7 @@ npm install as-test
 import {
   describe,
   expect,
-  test, // Alias for `it`
+  test,
   beforeAll,
   afterAll,
   beforeEach,
@@ -82,7 +82,39 @@ describe("Array manipulation", () => {
   });
 });
 
-run();
+run({
+  log: false
+});
+```
+
+```
+ _____  _____      _____  _____  _____  _____ 
+|  _  ||   __| ___|_   _||   __||   __||_   _|
+|     ||__   ||___| | |  |   __||__   |  | |  
+|__|__||_____|      |_|  |_____||_____|  |_|  
+
+-----------------------------------------
+
+ [PASS]  Math operations
+
+ [PASS]  Array manipulation
+
+ [PASS]  Addition
+
+ [PASS]  Comparison
+
+ [PASS]  Type checking
+
+ [PASS]  Array length
+
+ [PASS]  Array inclusion
+
+-----------------------------------------
+
+Test Suites: 0 failed, 2 total
+Tests:       0 failed, 8 total
+Snapshots:   0 total
+Time:        101.812μs
 ```
 
 If you use this project in your codebase, consider dropping a [⭐ HERE](https://github.com/JairusSW/as-test). I would really appreciate it!

@@ -210,10 +210,10 @@ class RunOptions {
  */
 export function run(options: RunOptions = new RunOptions()): void {
     __test_options = options;
-    console.log(rainbow.boldMk(rainbow.green(` _____ _____     _____ _____ _____ _____ `)));
-    console.log(rainbow.boldMk(rainbow.green(`|  _  |   __|___|_   _|   __|   __|_   _|`)));
-    console.log(rainbow.boldMk(rainbow.green(`|     |__   |___| | | |   __|__   | | |  `)));
-    console.log(rainbow.boldMk(rainbow.green(`|__|__|_____|     |_| |_____|_____| |_|  `)));
+    console.log(rainbow.boldMk(rainbow.green(` _____  _____      _____  _____  _____  _____ `)));
+    console.log(rainbow.boldMk(rainbow.green(`|  _  ||   __| ___|_   _||   __||   __||_   _|`)));
+    console.log(rainbow.boldMk(rainbow.green(`|     ||__   ||___| | |  |   __||__   |  | |  `)));
+    console.log(rainbow.boldMk(rainbow.green(`|__|__||_____|      |_|  |_____||_____|  |_|  `)));
     console.log(rainbow.dimMk("\n-----------------------------------------\n"));
     const suites = groups.length;
     let failed = 0;
