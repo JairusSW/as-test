@@ -1,41 +1,112 @@
-import { Variant } from "as-variant/assembly";
 import { Verdict } from "./result";
 import { rainbow } from "as-rainbow";
-import { visualize } from "../util";
-import { StringSink } from "as-string-sink/assembly";
+import { diff, visualize } from "../util";
 
-export class Expectation {
+export class Expectation<T> {
     public verdict: Verdict = Verdict.Unreachable;
-    public left: Variant;
-    public right!: Variant;
+    public left: T;
+    public right!: T;
     private _not: boolean = false;
-    constructor(left: Variant) {
+    constructor(left: T) {
         this.left = left;
     }
-    not(): Expectation {
+    get not(): Expectation<T> {
         this._not = true;
         return this;
     }
+    toBeNull(): Expectation<T> {
+        this.verdict = (isNullable<T>() && changetype<usize>(this.left)) ? Verdict.Ok : Verdict.Fail;
+
+        // @ts-ignore
+        this.right = null;
+        
+        const report = this.report();
+        if (report) console.log(report);
+
+        return this;
+    }
     /**
-     * Tests for strict equality
+     * Tests if a > b
+     * @param number equals - The value to test
+     * @returns - Expectation
+     */
+    toBeGreaterThan(value: T): Expectation<T> {
+        if (!isInteger<T>() && !isFloat<T>()) throw new Error("toBeGreaterThan() can only be used on number types. Received " + nameof<T>() + " instead!");
+        
+        this.verdict = this.left > value ? Verdict.Ok : Verdict.Fail;
+        this.right = value;
+
+        const report = this.report(">");
+        if (report) console.log(report);
+
+        return this;
+    }
+    /**
+     * Tests if a >= b
+     * @param number equals - The value to test
+     * @returns - Expectation
+     */
+    toBeGreaterOrEqualTo(value: T): Expectation<T> {
+        if (!isInteger<T>() && !isFloat<T>()) throw new Error("toBeGreaterOrEqualTo() can only be used on number types. Received " + nameof<T>() + " instead!");
+        
+        this.verdict = this.left >= value ? Verdict.Ok : Verdict.Fail;
+        this.right = value;
+
+        const report = this.report(">=");
+        if (report) console.log(report);
+
+        return this;
+    }
+    /**
+     * Tests if a < b
+     * @param number equals - The value to test
+     * @returns - Expectation
+     */
+    toBeLessThan(value: T): Expectation<T> {
+        if (!isInteger<T>() && !isFloat<T>()) throw new Error("toBeLessThan() can only be used on number types. Received " + nameof<T>() + " instead!");
+        
+        this.verdict = this.left < value ? Verdict.Ok : Verdict.Fail;
+        this.right = value;
+
+        const report = this.report("<");
+        if (report) console.log(report);
+
+        return this;
+    }
+    /**
+     * Tests if a <= b
+     * @param number equals - The value to test
+     * @returns - Expectation
+     */
+    toBeLessThanOrEqualTo(value: T): Expectation<T> {
+        if (!isInteger<T>() && !isFloat<T>()) throw new Error("toBeLessThanOrEqualTo() can only be used on number types. Received " + nameof<T>() + " instead!");
+        
+        this.verdict = this.left <= value ? Verdict.Ok : Verdict.Fail;
+        this.right = value;
+
+        const report = this.report("<=");
+        if (report) console.log(report);
+
+        return this;
+    }
+    /**
+     * Tests for equality
      * @param any equals - The value to test
      * @returns - Expectation
      */
-    toBe<T>(equals: T): Expectation {
-        this.right = Variant.from(equals);
-        if (this.left.id !== this.right.id) throw "cannot compare different types";
-
+    toBe(equals: T): Expectation<T> {
+        this.right = equals;
         if (isBoolean<T>()) {
-            this.verdict = this.left.getUnchecked<T>() === this.right.getUnchecked<T>()
+            this.verdict = this.left === this.right
                 ? Verdict.Ok
                 : Verdict.Fail;
 
         } else if (isString<T>()) {
-            this.verdict = this.left.getUnchecked<T>() === this.right.getUnchecked<T>()
+            this.verdict = this.left === this.right
                 ? Verdict.Ok
                 : Verdict.Fail;
         } else if (isInteger<T>() || isFloat<T>()) {
-            this.verdict = this.left.getUnchecked<T>() === this.right.getUnchecked<T>()
+            this.verdict = this.left === this.right
                 ? Verdict.Ok
                 : Verdict.Fail;
         } else if (isArray<T>()) {
@@ -44,48 +115,28 @@ export class Expectation {
             this.verdict = Verdict.Unreachable;
         }
 
-        console.log(this.report<T>());
+        const report = this.report();
+        if (report) console.log(report);
 
         return this;
     }
 
-    report<T>(): string {
-        if (!this.not && this.verdict === Verdict.Ok) {
-            return rainbow.green(" - Test completed successfully");
-        }
+    report(op: string = "="): string | null {
+        if (!this._not && this.verdict === Verdict.Ok) return null;
 
-        const left = visualize<T>(this.left.getUnchecked<T>());
-        const right = visualize<T>(this.right.getUnchecked<T>());
+        const left = visualize(this.left);
+        const right = visualize(this.right);
 
         if (this._not) {
-            if (this.verdict === Verdict.Fail) return rainbow.green(" - Test completed successfully");
-            return rainbow.red(" - Test failed") + "\n" + rainbow.italicMk(`  ${rainbow.dimMk("(expected) ->")} ${rainbow.bgGreen(left.toString())}\n  ${rainbow.dimMk("(recieved) ->")} ${rainbow.bgRed(right.toString())}`);
+            if (this.verdict === Verdict.Fail) return null;
+            const dif = diff(left, right, true);
+            return rainbow.red(" - Test failed") + "\n" + rainbow.italicMk(`  ${rainbow.dimMk("(expected) ->")} ${dif.left.toString()}\n  ${rainbow.dimMk("[ !" + op + " ]")}\n  ${rainbow.dimMk("(recieved) ->")} ${dif.right.toString()}`);
         }
 
-        if (left == right) return rainbow.green(" - Test passed") + "\n" + rainbow.italicMk(`  ${rainbow.dimMk("(expected) ->")} ${rainbow.dimMk(left.toString())}\n  ${rainbow.dimMk("(recieved) ->")} ${rainbow.dimMk(right.toString())}`);
-        let leftDiff = StringSink.withCapacity(left.length);
-        let rightDiff = StringSink.withCapacity(right.length);
+        if (left == right) return null;
 
-        let i = 0
+        const dif = diff(left, right);
 
-        for (; i < min(left.length, right.length); i++) {
-            const lChar = left.charAt(i);
-            const rChar = right.charAt(i);
-            if (lChar != rChar) {
-                leftDiff.write(rainbow.bgGreen(lChar));
-                rightDiff.write(rainbow.bgRed(rChar));
-            } else {
-                leftDiff.write(lChar);
-                rightDiff.write(rChar);
-            }
-        }
-
-        for (; i < left.length; i++) {
-            leftDiff.write(rainbow.bgGreen(left.charAt(i)));
-            rightDiff.write(rainbow.bgRed(" "));
-        }
-        for (; i < right.length; i++) rightDiff.write(rainbow.bgRed(right.charAt(i)));
-
-        return rainbow.red(" - Test failed") + "\n" + rainbow.italicMk(`  ${rainbow.dimMk("(expected) ->")} ${leftDiff.toString()}\n  ${rainbow.dimMk("(recieved) ->")} ${rightDiff.toString()}`);
+        return rainbow.red(" - Test failed") + "\n" + rainbow.italicMk(`  ${rainbow.dimMk("(expected) ->")} ${dif.left.toString()}\n  ${rainbow.dimMk("[ " + op + " ]")}\n  ${rainbow.dimMk("(recieved) ->")} ${dif.right.toString()}`);
     }
 }
