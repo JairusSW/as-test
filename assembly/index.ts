@@ -81,8 +81,8 @@ export function run(): void {
     }
     const ms = performance.now() - start;
     console.log(rainbow.dimMk("-----------------------------------------\n"));
-    console.log(rainbow.boldMk("Test Suites: ") + rainbow.boldMk(rainbow.red(failed.toString() + " failed")) + ", " + suites.toString() + " total");
-    console.log(rainbow.boldMk("Tests:       ") + rainbow.boldMk(rainbow.red(failed_tests.toString() + " failed")) + ", " + tests.toString() + " total");
+    console.log(rainbow.boldMk("Test Suites: ") + (failed ? rainbow.boldMk(rainbow.red(failed.toString() + " failed")) : rainbow.boldMk(rainbow.green(failed.toString() + " failed"))) + ", " + suites.toString() + " total");
+    console.log(rainbow.boldMk("Tests:       ") + (failed_tests ? rainbow.boldMk(rainbow.red(failed_tests.toString() + " failed")) : rainbow.boldMk(rainbow.green(failed_tests.toString() + " failed"))) + ", " + tests.toString() + " total");
     console.log(rainbow.boldMk("Snapshots:   ") + "0 total");
     console.log(rainbow.boldMk("Time:        ") + formatTime(ms))
 }
