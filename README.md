@@ -86,7 +86,7 @@ run({
 });
 ```
 
-<h5>
+<h6>
 <pre> _____  _____      _____  _____  _____  _____ 
 |  _  ||   __| ___|_   _||   __||   __||_   _|
 |     ||__   ||___| | |  |   __||__   |  | |  
@@ -115,7 +115,7 @@ Tests:       0 failed, 8 total
 Snapshots:   0 total
 Time:        101.812μs
 </pre>
-</h5>
+</h6>
 
 If you use this project in your codebase, consider dropping a [⭐ HERE](https://github.com/JairusSW/as-test). I would really appreciate it!
 
