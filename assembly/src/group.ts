@@ -1,7 +1,8 @@
 import { Expectation } from "./expectation";
+import { Node } from "./node";
 import { Verdict } from "./result";
 export class TestGroup {
-    public results: Expectation<usize>[] = [];
+    public results: Node[] = [];
 
     public description: string;
     public executed: boolean = false;
@@ -17,7 +18,16 @@ export class TestGroup {
     }
 
     addExpectation<T extends Expectation<unknown>>(test: T): void {
-        this.results.push(changetype<Expectation<usize>>(test));
+        this.results.push(test);
+    }
+
+    report(): string | null {
+        let report = "";
+        for (let i = 0; i < this.results.length; i++) {
+            const result = unchecked(this.results[i]).report();
+            if (result) report += result + "\n";
+        }
+        return report.length ? report : null;
     }
 
     run(): void {

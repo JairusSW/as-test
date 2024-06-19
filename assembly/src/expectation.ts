@@ -1,13 +1,16 @@
 import { Verdict } from "./result";
 import { rainbow } from "as-rainbow";
 import { diff, visualize } from "../util";
+import { Node } from "./node";
 
-export class Expectation<T> {
+export class Expectation<T> extends Node {
     public verdict: Verdict = Verdict.Unreachable;
     public left: T;
     public right!: T;
     private _not: boolean = false;
+    private op: string = "=";
     constructor(left: T) {
+        super();
         this.left = left;
     }
     get not(): Expectation<T> {
@@ -20,8 +23,7 @@ export class Expectation<T> {
         // @ts-ignore
         this.right = null;
         
-        const report = this.report();
-        if (report) console.log(report);
+        this.op = "="
 
         return this;
     }
@@ -36,8 +38,7 @@ export class Expectation<T> {
         this.verdict = this.left > value ? Verdict.Ok : Verdict.Fail;
         this.right = value;
 
-        const report = this.report(">");
-        if (report) console.log(report);
+        this.op = ">";
 
         return this;
     }
@@ -52,8 +53,7 @@ export class Expectation<T> {
         this.verdict = this.left >= value ? Verdict.Ok : Verdict.Fail;
         this.right = value;
 
-        const report = this.report(">=");
-        if (report) console.log(report);
+        this.op = ">=";
 
         return this;
     }
@@ -68,8 +68,7 @@ export class Expectation<T> {
         this.verdict = this.left < value ? Verdict.Ok : Verdict.Fail;
         this.right = value;
 
-        const report = this.report("<");
-        if (report) console.log(report);
+        this.op = "<";
 
         return this;
     }
@@ -84,8 +83,7 @@ export class Expectation<T> {
         this.verdict = this.left <= value ? Verdict.Ok : Verdict.Fail;
         this.right = value;
 
-        const report = this.report("<=");
-        if (report) console.log(report);
+        this.op = "<=";
 
         return this;
     }
@@ -115,13 +113,12 @@ export class Expectation<T> {
             this.verdict = Verdict.Unreachable;
         }
 
-        const report = this.report();
-        if (report) console.log(report);
+        this.op = "=";
 
         return this;
     }
 
-    report(op: string = "="): string | null {
+    report(): string | null {
         if (!this._not && this.verdict === Verdict.Ok) return null;
 
         const left = visualize(this.left);
@@ -130,13 +127,13 @@ export class Expectation<T> {
         if (this._not) {
             if (this.verdict === Verdict.Fail) return null;
             const dif = diff(left, right, true);
-            return rainbow.red(" - Test failed") + "\n" + rainbow.italicMk(`  ${rainbow.dimMk("(expected) ->")} ${dif.left.toString()}\n  ${rainbow.dimMk("[ !" + op + " ]")}\n  ${rainbow.dimMk("(recieved) ->")} ${dif.right.toString()}`);
+            return rainbow.red(" - Test failed") + "\n" + rainbow.italicMk(`  ${rainbow.dimMk("(expected) ->")} ${dif.left.toString()}\n  ${rainbow.dimMk("[ !" + this.op + " ]")}\n  ${rainbow.dimMk("(recieved) ->")} ${dif.right.toString()}`);
         }
 
         if (left == right) return null;
 
         const dif = diff(left, right);
 
-        return rainbow.red(" - Test failed") + "\n" + rainbow.italicMk(`  ${rainbow.dimMk("(expected) ->")} ${dif.left.toString()}\n  ${rainbow.dimMk("[ " + op + " ]")}\n  ${rainbow.dimMk("(recieved) ->")} ${dif.right.toString()}`);
+        return rainbow.red(" - Test failed") + "\n" + rainbow.italicMk(`  ${rainbow.dimMk("(expected) ->")} ${dif.left.toString()}\n  ${rainbow.dimMk("[ " + this.op + " ]")}\n  ${rainbow.dimMk("(recieved) ->")} ${dif.right.toString()}`);
     }
 }

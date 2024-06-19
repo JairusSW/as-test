@@ -1,7 +1,6 @@
 import { rainbow } from "as-rainbow";
 import { TestGroup } from "./src/group";
 import { Expectation } from "./src/expectation";
-import { convertSeconds } from "as-convert-seconds/assembly";
 import { Verdict } from "./src/result";
 import { formatTime } from "./util";
 
@@ -44,11 +43,11 @@ export function expect<T>(value: T): Expectation<T> {
 
 export function run(): void {
     console.log(rainbow.boldMk(rainbow.blue(
-` _____ _____     _____ _____ _____ _____ 
+        ` _____ _____     _____ _____ _____ _____ 
 |  _  |   __|___|_   _|   __|   __|_   _|
 |     |__   |___| | | |   __|__   | | |  
 |__|__|_____|     |_| |_____|_____| |_|  `)));
-console.log(rainbow.dimMk("\n-----------------------------------------\n"));
+    console.log(rainbow.dimMk("\n-----------------------------------------\n"));
     const suites = groups.length;
     let failed = 0;
     let tests = 0;
@@ -56,7 +55,6 @@ console.log(rainbow.dimMk("\n-----------------------------------------\n"));
     const start = performance.now();
     for (let i = 0; i < groups.length; i++) {
         const suite = unchecked(groups[i]);
-        console.log(rainbow.boldMk(`Running test suite: ${suite.description}...`));
         suite.run();
         for (let i = 0; i < suite.results.length; i++) {
             const expectation = unchecked(suite.results[i]);
@@ -70,11 +68,19 @@ console.log(rainbow.dimMk("\n-----------------------------------------\n"));
                 failed_tests++;
             }
         }
-        if (suite.verdict == Verdict.Unreachable) suite.verdict = Verdict.Ok;
-        else failed++;
+        if (suite.verdict == Verdict.Unreachable) {
+            suite.verdict = Verdict.Ok;
+            console.log(rainbow.bgGreen(" PASS ") + " " + rainbow.dimMk(suite.description) + "\n");
+        } else {
+            failed++;
+            console.log(rainbow.bgRed(" FAIL ") + " " + rainbow.dimMk(suite.description) + "\n");
+        }
+
+        const report = suite.report();
+        if (report) console.log(report);
     }
     const ms = performance.now() - start;
-    console.log(rainbow.dimMk("\n-----------------------------------------\n"));
+    console.log(rainbow.dimMk("-----------------------------------------\n"));
     console.log(rainbow.boldMk("Test Suites: ") + rainbow.boldMk(rainbow.red(failed.toString() + " failed")) + ", " + suites.toString() + " total");
     console.log(rainbow.boldMk("Tests:       ") + rainbow.boldMk(rainbow.red(failed_tests.toString() + " failed")) + ", " + tests.toString() + " total");
     console.log(rainbow.boldMk("Snapshots:   ") + "0 total");
