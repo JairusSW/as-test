@@ -1,6 +1,6 @@
+import { Verdict } from "..";
 import { Expectation } from "./expectation";
 import { Node } from "./node";
-import { Verdict } from "./result";
 export class TestGroup {
     public results: Node[] = [];
 

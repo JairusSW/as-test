@@ -1,12 +1,14 @@
-import { Verdict } from "./result";
 import { rainbow } from "as-rainbow";
 import { diff, visualize } from "../util";
 import { Node } from "./node";
+import { Verdict } from "..";
 
 export class Expectation<T> extends Node {
     public verdict: Verdict = Verdict.Unreachable;
     public left: T;
-    public right!: T;
+    private _left: string | null = null;
+    public right: u64 = 0;
+    private _right: string | null = null;
     private _not: boolean = false;
     private op: string = "=";
     constructor(left: T) {
@@ -17,94 +19,290 @@ export class Expectation<T> extends Node {
         this._not = true;
         return this;
     }
-    toBeNull(): Expectation<T> {
+
+    /**
+    * Tests if a == null
+    * @returns - void
+    */
+    toBeNull(): void {
         this.verdict = (isNullable<T>() && changetype<usize>(this.left)) ? Verdict.Ok : Verdict.Fail;
 
         // @ts-ignore
-        this.right = null;
-        
+        store<T>(changetype<usize>(this), null, offsetof<Expectation<T>>("right"));
+
         this.op = "="
 
-        return this;
+        // @ts-ignore
+        if (after_each_callback) after_each_callback();
+        // @ts-ignore
+        if (before_each_callback) before_each_callback();
     }
+
     /**
      * Tests if a > b
      * @param number equals - The value to test
-     * @returns - Expectation
+     * @returns - void
      */
-    toBeGreaterThan(value: T): Expectation<T> {
+    toBeGreaterThan(value: T): void {
         if (!isInteger<T>() && !isFloat<T>()) throw new Error("toBeGreaterThan() can only be used on number types. Received " + nameof<T>() + " instead!");
-        
+
         this.verdict = this.left > value ? Verdict.Ok : Verdict.Fail;
-        this.right = value;
+        store<T>(changetype<usize>(this), value, offsetof<Expectation<T>>("right"));
 
         this.op = ">";
 
-        return this;
+        // @ts-ignore
+        if (after_each_callback) after_each_callback();
+        // @ts-ignore
+        if (before_each_callback) before_each_callback();
     }
+
     /**
      * Tests if a >= b
      * @param number equals - The value to test
-     * @returns - Expectation
+     * @returns - void
      */
-    toBeGreaterOrEqualTo(value: T): Expectation<T> {
+    toBeGreaterOrEqualTo(value: T): void {
         if (!isInteger<T>() && !isFloat<T>()) throw new Error("toBeGreaterOrEqualTo() can only be used on number types. Received " + nameof<T>() + " instead!");
-        
+
         this.verdict = this.left >= value ? Verdict.Ok : Verdict.Fail;
-        this.right = value;
+        store<T>(changetype<usize>(this), value, offsetof<Expectation<T>>("right"));
 
         this.op = ">=";
 
-        return this;
+        // @ts-ignore
+        if (after_each_callback) after_each_callback();
+        // @ts-ignore
+        if (before_each_callback) before_each_callback();
     }
+
     /**
      * Tests if a < b
      * @param number equals - The value to test
-     * @returns - Expectation
+     * @returns - void
      */
-    toBeLessThan(value: T): Expectation<T> {
+    toBeLessThan(value: T): void {
         if (!isInteger<T>() && !isFloat<T>()) throw new Error("toBeLessThan() can only be used on number types. Received " + nameof<T>() + " instead!");
-        
+
         this.verdict = this.left < value ? Verdict.Ok : Verdict.Fail;
-        this.right = value;
+        store<T>(changetype<usize>(this), value, offsetof<Expectation<T>>("right"));
 
         this.op = "<";
 
-        return this;
+        // @ts-ignore
+        if (after_each_callback) after_each_callback();
+        // @ts-ignore
+        if (before_each_callback) before_each_callback();
     }
+
     /**
      * Tests if a <= b
      * @param number equals - The value to test
-     * @returns - Expectation
+     * @returns - void
      */
-    toBeLessThanOrEqualTo(value: T): Expectation<T> {
+    toBeLessThanOrEqualTo(value: T): void {
         if (!isInteger<T>() && !isFloat<T>()) throw new Error("toBeLessThanOrEqualTo() can only be used on number types. Received " + nameof<T>() + " instead!");
-        
+
         this.verdict = this.left <= value ? Verdict.Ok : Verdict.Fail;
-        this.right = value;
+        store<T>(changetype<usize>(this), value, offsetof<Expectation<T>>("right"));
 
         this.op = "<=";
 
-        return this;
+        // @ts-ignore
+        if (after_each_callback) after_each_callback();
+        // @ts-ignore
+        if (before_each_callback) before_each_callback();
     }
+
+    /**
+     * Tests if a is string
+     * @returns - void
+     */
+    toBeString(): void {
+        this.verdict = isString<T>() ? Verdict.Ok : Verdict.Fail;
+
+        this._left = nameof<T>();
+        this._right = "string";
+
+        this.op = "type";
+
+        // @ts-ignore
+        if (after_each_callback) after_each_callback();
+        // @ts-ignore
+        if (before_each_callback) before_each_callback();
+    }
+
+    /**
+     * Tests if a is boolean
+     * @returns - void
+     */
+    toBeBoolean(): void {
+        this.verdict = isBoolean<T>() ? Verdict.Ok : Verdict.Fail;
+
+        this._left = nameof<T>();
+        this._right = "boolean";
+
+        this.op = "type";
+
+        // @ts-ignore
+        if (after_each_callback) after_each_callback();
+        // @ts-ignore
+        if (before_each_callback) before_each_callback();
+    }
+
+    /**
+     * Tests if a is array
+     * @returns - void
+     */
+    toBeArray(): void {
+        this.verdict = isArray<T>() ? Verdict.Ok : Verdict.Fail;
+
+        this._left = nameof<T>();
+        this._right = "Array<any>";
+
+        this.op = "type";
+
+        // @ts-ignore
+        if (after_each_callback) after_each_callback();
+        // @ts-ignore
+        if (before_each_callback) before_each_callback();
+    }
+
+    /**
+     * Tests if a is number
+     * @returns - void
+     */
+    toBeNumber(): void {
+        this.verdict = (isFloat<T>() || isInteger<T>()) ? Verdict.Ok : Verdict.Fail;
+
+        this._left = nameof<T>();
+        this._right = "number";
+
+        this.op = "type";
+
+        // @ts-ignore
+        if (after_each_callback) after_each_callback();
+        // @ts-ignore
+        if (before_each_callback) before_each_callback();
+    }
+
+    /**
+     * Tests if a is integer
+     * @returns - void
+     */
+    toBeInteger(): void {
+        this.verdict = isInteger<T>() ? Verdict.Ok : Verdict.Fail;
+
+        this._left = nameof<T>();
+        this._right = "float";
+
+        this.op = "type";
+
+        // @ts-ignore
+        if (after_each_callback) after_each_callback();
+        // @ts-ignore
+        if (before_each_callback) before_each_callback();
+    }
+
+    /**
+     * Tests if a is float
+     * @returns - void
+     */
+    toBeFloat(): void {
+        this.verdict = isFloat<T>() ? Verdict.Ok : Verdict.Fail;
+
+        this._left = nameof<T>();
+        this._right = "integer";
+
+        this.op = "type";
+
+        // @ts-ignore
+        if (after_each_callback) after_each_callback();
+        // @ts-ignore
+        if (before_each_callback) before_each_callback();
+    }
+
+    /**
+     * Tests if a is finite
+     * @returns - void
+     */
+    toBeFinite(): void {
+        // @ts-ignore
+        this.verdict = ((isFloat<T>() || isInteger<T>()) && isFinite(this.left)) ? Verdict.Ok : Verdict.Fail;
+
+        this._left = "Infinity";
+        this._right = "Finite";
+
+        this.op = "=";
+
+        // @ts-ignore
+        if (after_each_callback) after_each_callback();
+        // @ts-ignore
+        if (before_each_callback) before_each_callback();
+    }
+
+    /**
+     * Tests if an array has length x
+     * 
+     * @param {i32} value - The value to check
+     * @returns - void
+     */
+    toHaveLength(value: i32): void {
+        // @ts-ignore
+        this.verdict = (isArray<T>() && this.left.length == value) ? Verdict.Ok : Verdict.Fail;
+
+        // @ts-ignore
+        this._left = this.left.length.toString();
+        this._right = value.toString();
+
+        this.op = "length";
+
+        // @ts-ignore
+        if (after_each_callback) after_each_callback();
+        // @ts-ignore
+        if (before_each_callback) before_each_callback();
+    }
+
+    /**
+     * Tests if an array contains an element
+     * 
+     * @param { valueof<T> } value - The value to check
+     * @returns - void
+     */
+    // @ts-ignore
+    toContain(value: valueof<T>): void {
+        // @ts-ignore
+        this.verdict = (isArray<T>() && this.left.includes(value)) ? Verdict.Ok : Verdict.Fail;
+
+        // @ts-ignore
+        this._left = "includes value";
+        this._right = "does not include value";
+        this.op = "=";
+
+        // @ts-ignore
+        if (after_each_callback) after_each_callback();
+        // @ts-ignore
+        if (before_each_callback) before_each_callback();
+    }
+
     /**
      * Tests for equality
-     * @param any equals - The value to test
-     * @returns - Expectation
+     * @param {T} equals - The value to test
+     * @returns - void
      */
-    toBe(equals: T): Expectation<T> {
-        this.right = equals;
+    toBe(equals: T): void {
+        store<T>(changetype<usize>(this), equals, offsetof<Expectation<T>>("right"));
         if (isBoolean<T>()) {
-            this.verdict = this.left === this.right
+            this.verdict = this.left === equals
                 ? Verdict.Ok
                 : Verdict.Fail;
 
         } else if (isString<T>()) {
-            this.verdict = this.left === this.right
+            this.verdict = this.left === equals
                 ? Verdict.Ok
                 : Verdict.Fail;
         } else if (isInteger<T>() || isFloat<T>()) {
-            this.verdict = this.left === this.right
+            this.verdict = this.left === equals
                 ? Verdict.Ok
                 : Verdict.Fail;
         } else if (isArray<T>()) {
@@ -115,14 +313,17 @@ export class Expectation<T> extends Node {
 
         this.op = "=";
 
-        return this;
+        // @ts-ignore
+        if (after_each_callback) after_each_callback();
+        // @ts-ignore
+        if (before_each_callback) before_each_callback();
     }
 
     report(): string | null {
         if (!this._not && this.verdict === Verdict.Ok) return null;
 
-        const left = visualize(this.left);
-        const right = visualize(this.right);
+        const left = this._left || visualize(this.left);
+        const right = this._right || visualize(load<T>(changetype<usize>(this), offsetof<Expectation<T>>("right")));
 
         if (this._not) {
             if (this.verdict === Verdict.Fail) return null;

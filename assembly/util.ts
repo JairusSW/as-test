@@ -108,3 +108,9 @@ export function formatTime(ms: number): string {
 
     return `${us}us`;
 }
+
+// @ts-ignore
+@inline
+export function colorText(format: i32[], text: string): string {
+    return `\u001b[${format[0].toString()}m${text}\u001b[${format[1].toString()}m`
+}

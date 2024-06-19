@@ -1,4 +1,4 @@
-import { Verdict } from "./result";
+import { Verdict } from "..";
 
 export class Node {
     public verdict: Verdict = Verdict.Unreachable;
