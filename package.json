@@ -1,6 +1,6 @@
 {
   "name": "as-test",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Testing framework for AssemblyScript. Compatible with WASI or Bindings ",
   "types": "assembly/index.ts",
   "author": "Jairus Tanaka",
@@ -31,7 +31,11 @@
     "url": "git+https://github.com/JairusSW/as-test.git"
   },
   "keywords": [
-    "assemblyscript"
+    "assemblyscript",
+    "testing",
+    "test",
+    "as-pect",
+    "aspect"
   ],
   "bugs": {
     "url": "https://github.com/JairusSW/as-test/issues"
