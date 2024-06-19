@@ -1,10 +1,9 @@
 <h5 align="center">
-<pre>                              
- _____  _____      _____  _____  _____  _____ 
+<pre> _____  _____      _____  _____  _____  _____ 
 |  _  ||   __| ___|_   _||   __||   __||_   _|
 |     ||__   ||___| | |  |   __||__   |  | |  
 |__|__||_____|      |_|  |_____||_____|  |_|  
-v0.0.3
+v0.0.4
 </pre>
 </h5>
 
@@ -66,9 +65,9 @@ describe("Math operations", () => {
   });
 });
 
-describe("Array manipulation", () => {
-  let myArray;
+let myArray: i32[] = [];
 
+describe("Array manipulation", () => {
   beforeAll(() => {
     myArray = [1, 2, 3];
   });
@@ -87,8 +86,8 @@ run({
 });
 ```
 
-```
- _____  _____      _____  _____  _____  _____ 
+<h5>
+<pre> _____  _____      _____  _____  _____  _____ 
 |  _  ||   __| ___|_   _||   __||   __||_   _|
 |     ||__   ||___| | |  |   __||__   |  | |  
 |__|__||_____|      |_|  |_____||_____|  |_|  
@@ -115,7 +114,8 @@ Test Suites: 0 failed, 2 total
 Tests:       0 failed, 8 total
 Snapshots:   0 total
 Time:        101.812μs
-```
+</pre>
+</h5>
 
 If you use this project in your codebase, consider dropping a [⭐ HERE](https://github.com/JairusSW/as-test). I would really appreciate it!
 
