@@ -214,11 +214,12 @@ export function run(options: RunOptions = new RunOptions()): void {
     console.log(rainbow.boldMk(rainbow.green(`|  _  ||   __| ___|_   _||   __||   __||_   _|`)));
     console.log(rainbow.boldMk(rainbow.green(`|     ||__   ||___| | |  |   __||__   |  | |  `)));
     console.log(rainbow.boldMk(rainbow.green(`|__|__||_____|      |_|  |_____||_____|  |_|  `)));
-    console.log(rainbow.dimMk("\n-----------------------------------------\n"));
+    console.log(rainbow.dimMk             ("\n------------------- v0.0.6 -------------------\n"));
     const suites = groups.length;
     let failed = 0;
     let tests = 0;
     let failed_tests = 0;
+    let failed_suite_logs = "";
     const start = performance.now();
     for (let i = 0; i < groups.length; i++) {
         if (before_all_callback) before_all_callback();
@@ -241,17 +242,33 @@ export function run(options: RunOptions = new RunOptions()): void {
             console.log(rainbow.bgGreenBright(" PASS ") + " " + rainbow.dimMk(suite.description) + "\n");
         } else {
             failed++;
-            console.log(rainbow.bgRed(" FAIL ") + " " + rainbow.dimMk(suite.description) + "\n");
+            const txt = rainbow.bgRed(" FAIL ") + " " + rainbow.dimMk(suite.description) + "\n";
+            failed_suite_logs += txt
+            console.log(txt);
         }
 
         const report = suite.report();
-        if (report) console.log(report);
+        if (report) {
+            if (report.passed) console.log(report.passed!);
+            if (report.failed) failed_suite_logs += report.failed!;
+
+        }
         if (after_all_callback) after_all_callback();
     }
+
+    if (failed) {
+        console.log(rainbow.red("------------------ [FAILED] ------------------\n"));
+        console.log(failed_suite_logs);
+        console.log(rainbow.red("----------------- [RESULTS] ------------------\n"));
+    } else {
+        console.log(rainbow.dimMk("----------------- [RESULTS] ------------------\n"));
+    }
     const ms = performance.now() - start;
-    console.log(rainbow.dimMk("-----------------------------------------\n"));
     console.log(rainbow.boldMk("Test Suites: ") + (failed ? rainbow.boldMk(rainbow.red(failed.toString() + " failed")) : rainbow.boldMk(rainbow.green(failed.toString() + " failed"))) + ", " + suites.toString() + " total");
     console.log(rainbow.boldMk("Tests:       ") + (failed_tests ? rainbow.boldMk(rainbow.red(failed_tests.toString() + " failed")) : rainbow.boldMk(rainbow.green(failed_tests.toString() + " failed"))) + ", " + tests.toString() + " total");
     console.log(rainbow.boldMk("Snapshots:   ") + "0 total");
-    console.log(rainbow.boldMk("Time:        ") + formatTime(ms))
+    console.log(rainbow.boldMk("Time:        ") + formatTime(ms));
+    if (failed) {
+        process.exit(1)
+    }
 }

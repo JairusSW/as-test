@@ -21,16 +21,30 @@ export class TestGroup {
         this.results.push(test);
     }
 
-    report(): string | null {
-        let report = "";
+    report(): ReportLogs | null {
+        let passed_logs = "";
+        let failed_logs = "";
         for (let i = 0; i < this.results.length; i++) {
-            const result = unchecked(this.results[i]).report();
-            if (result) report += result + "\n";
+            const result = unchecked(this.results[i]);
+            const report = result.report();
+            if (report) {
+                if (result.verdict === Verdict.Fail) failed_logs += report + "\n";
+                else if (result.verdict === Verdict.Ok) passed_logs += report + "\n";
+            }
         }
-        return report.length ? report : null;
+        return {
+            passed: passed_logs.length ? passed_logs : null,
+            failed: failed_logs.length ? failed_logs : null
+        }
     }
 
     run(): void {
         this.callback();
     }
+}
+
+
+class ReportLogs {
+    passed: string | null;
+    failed: string | null;
 }
