@@ -5,3 +5,4 @@ v0.0.3 - Added `afterEach`, `beforeEach`, `afterAll`, `beforeAll`, `test`, `it`,
 v0.0.4 - Fix import issue in README usage section
 v0.0.5 - Switch errors to be thrown at compile time instead of runtime
 v0.0.6 - Failed tests should be pushed to bottom of logs
+v0.0.8 - Fix readme typo in v0.0.7
