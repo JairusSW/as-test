@@ -249,8 +249,8 @@ export function run(options: RunOptions = new RunOptions()): void {
 
         const report = suite.report();
         if (report) {
-            if (report.passed) console.log(report.passed!);
-            if (report.failed) failed_suite_logs += report.failed!;
+            if (report.passed) console.log(report.passed);
+            if (report.failed) failed_suite_logs += report.failed;
 
         }
         if (after_all_callback) after_all_callback();
