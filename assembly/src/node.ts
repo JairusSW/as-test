@@ -2,7 +2,7 @@ import { Verdict } from "..";
 
 export class Node {
     public verdict: Verdict = Verdict.Unreachable;
-    report(): ReportLogs | null {
+    report(): string | null {
         return null;
     }
 }
