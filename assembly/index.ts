@@ -214,7 +214,7 @@ export function run(options: RunOptions = new RunOptions()): void {
     console.log(rainbow.boldMk(rainbow.green(`|  _  ||   __| ___|_   _||   __||   __||_   _|`)));
     console.log(rainbow.boldMk(rainbow.green(`|     ||__   ||___| | |  |   __||__   |  | |  `)));
     console.log(rainbow.boldMk(rainbow.green(`|__|__||_____|      |_|  |_____||_____|  |_|  `)));
-    console.log(rainbow.dimMk             ("\n------------------- v0.0.8 -------------------\n"));
+    console.log(rainbow.dimMk             ("\n------------------- v0.0.9 -------------------\n"));
     const suites = groups.length;
     let failed = 0;
     let tests = 0;

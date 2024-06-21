@@ -1,6 +1,6 @@
 import { Verdict } from "..";
 import { Expectation } from "./expectation";
-import { Node } from "./node";
+import { Node, ReportLogs } from "./node";
 export class TestGroup {
     public results: Node[] = [];
 
@@ -41,10 +41,4 @@ export class TestGroup {
     run(): void {
         this.callback();
     }
-}
-
-
-class ReportLogs {
-    passed: string | null;
-    failed: string | null;
 }

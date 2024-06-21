@@ -1,6 +1,6 @@
 {
   "name": "as-test",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "Testing framework for AssemblyScript. Compatible with WASI or Bindings ",
   "types": "assembly/index.ts",
   "author": "Jairus Tanaka",
