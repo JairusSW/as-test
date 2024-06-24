@@ -2,8 +2,8 @@ import { rainbow } from "as-rainbow";
 import { TestGroup } from "./src/group";
 import { Expectation } from "./src/expectation";
 import { formatTime } from "./util";
-import { stringify } from "as-console/assembly";
-import { CoverPoint, __COVER, __HASHES, __POINTS } from "as-test/assembly/coverage";
+import { stringify } from "as-console/stringify";
+import { __COVER, __HASHES, __POINTS } from "as-test/assembly/coverage";
 import { createTable } from "table-as";
 
 /**
@@ -291,7 +291,6 @@ export function run(options: RunOptions = new RunOptions()): void {
     if (options.coverage) console.log(rainbow.boldMk("Coverage:    ") + (__HASHES().size ? rainbow.boldMk(rainbow.red(__HASHES().size.toString() + " failed")) : rainbow.boldMk(rainbow.green("0 failed"))) + ", " + __POINTS().toString() + " total");
     console.log(rainbow.boldMk("Snapshots:   ") + "0 total");
     console.log(rainbow.boldMk("Time:        ") + formatTime(ms));
-    __COVER("joe mom")
     if (failed) {
         process.exit(1);
     }
