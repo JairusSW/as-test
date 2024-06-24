@@ -212,11 +212,14 @@ class RunOptions {
  */
 export function run(options: RunOptions = new RunOptions()): void {
     __test_options = options;
-    console.log(rainbow.boldMk(rainbow.green(` _____  _____      _____  _____  _____  _____ `)));
-    console.log(rainbow.boldMk(rainbow.green(`|  _  ||   __| ___|_   _||   __||   __||_   _|`)));
-    console.log(rainbow.boldMk(rainbow.green(`|     ||__   ||___| | |  |   __||__   |  | |  `)));
-    console.log(rainbow.boldMk(rainbow.green(`|__|__||_____|      |_|  |_____||_____|  |_|  `)));
-    console.log(rainbow.dimMk("\n------------------- v0.1.0 -------------------\n"));
+    console.log(rainbow.boldMk(rainbow.blueBright(` _____  _____      _____  _____  _____  _____ `)));
+    console.log(rainbow.boldMk(rainbow.blueBright(`|  _  ||   __| ___|_   _||   __||   __||_   _|`)));
+    console.log(rainbow.boldMk(rainbow.blueBright(`|     ||__   ||___| | |  |   __||__   |  | |  `)));
+    console.log(rainbow.boldMk(rainbow.blueBright(`|__|__||_____|      |_|  |_____||_____|  |_|  `)));
+    console.log(rainbow.dimMk("\n------------------- v0.1.1 -------------------\n"));
+    if (options.coverage) {
+        console.log(rainbow.bgBlueBright(" PLUGIN ") + " " + rainbow.dimMk("Using Code Coverage") + "\n");
+    }
     const suites = groups.length;
     let failed = 0;
     let tests = 0;

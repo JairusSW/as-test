@@ -13,6 +13,25 @@ v0.1.1
 npm install as-test
 ```
 
+Add the transform to your `asc` command (e.g. in package.json)
+
+```bash
+--transform json-as/transform
+```
+
+Alternatively, add it to your `asconfig.json`
+
+```
+{
+  // ...
+  "options": {
+    "transform": ["json-as/transform"]
+  }
+}
+```
+
+Note: The transform *is* OPTIONAL, though it is required to enable code coverage.
+
 ## Usage
 
 ```js
@@ -148,6 +167,7 @@ npm run test
 To add `as-test` to your CI/CD workflow, check out [The provided example](https://github.com/JairusSW/as-test/blob/main/.github/workflows/nodejs.yml)
 
 If you use this project in your codebase, consider dropping a [⭐ HERE](https://github.com/JairusSW/as-test). I would really appreciate it!
+
 
 ## Notes
 
