@@ -214,7 +214,7 @@ export function run(options: RunOptions = new RunOptions()): void {
     console.log(rainbow.boldMk(rainbow.blueBright(`|  _  ||   __| ___|_   _||   __||   __||_   _|`)));
     console.log(rainbow.boldMk(rainbow.blueBright(`|     ||__   ||___| | |  |   __||__   |  | |  `)));
     console.log(rainbow.boldMk(rainbow.blueBright(`|__|__||_____|      |_|  |_____||_____|  |_|  `)));
-    console.log(rainbow.dimMk("\n------------------- v0.1.3 -------------------\n"));
+    console.log(rainbow.dimMk("\n------------------- v0.1.4 -------------------\n"));
     if (options.coverage) {
         console.log(rainbow.bgBlueBright(" PLUGIN ") + " " + rainbow.dimMk("Using Code Coverage") + "\n");
     }

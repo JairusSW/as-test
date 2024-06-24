@@ -11,3 +11,4 @@ v0.0.9 - Fix type issue
 v0.1.0 - Fix more type issues
 v0.1.1 - Add code coverage!
 v0.1.2 - Fix bugs with globals and dependencies
+v0.1.3 - Revamp `log<T>(data: T)` with new as-console version
