@@ -3,7 +3,7 @@
 |  _  ||   __| ___|_   _||   __||   __||_   _|
 |     ||__   ||___| | |  |   __||__   |  | |  
 |__|__||_____|      |_|  |_____||_____|  |_|  
-v0.1.1
+v0.1.3
 </pre>
 </h5>
 
@@ -135,7 +135,7 @@ Tests:       0 failed, 8 total
 Coverage:    0 failed, 23 total
 Snapshots:   0 total
 Time:        101.812μs
-</pre>
+</pre>z
 </h6>
 
 ## Running
