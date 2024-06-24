@@ -1,7 +1,7 @@
 import { Transform } from "assemblyscript/dist/transform.js";
-import { Source, Tokenizer, BlockStatement, ExpressionStatement, Node } from "assemblyscript/dist/assemblyscript.js";
+import { Source, BlockStatement, ExpressionStatement, Node, Tokenizer } from "assemblyscript/dist/assemblyscript.js";
 import { BaseVisitor, SimpleParser } from "visitor-as/dist/index.js";
-import { isStdlib, toString } from "visitor-as/dist/utils.js";
+import { isStdlib } from "visitor-as/dist/utils.js";
 import { RangeTransform } from "visitor-as/dist/transformRange.js";
 let ENABLED = false;
 var CoverType;
@@ -51,7 +51,7 @@ class CoverageTransform extends BaseVisitor {
                         hash: "${point.hash}",
                         line: ${point.line},
                         column: ${point.column},
-                        type: __COVERTYPES.Expression,
+                        type: "Expression",
                         executed: false
                     });`);
                 replacer.visit(registerStmt);
@@ -91,7 +91,7 @@ class CoverageTransform extends BaseVisitor {
                     hash: "${point.hash}",
                     line: ${point.line},
                     column: ${point.column},
-                    type: __COVERTYPES.Function,
+                    type: "Function",
                     executed: false
                 })`);
             replacer.visit(registerStmt);
@@ -129,7 +129,7 @@ class CoverageTransform extends BaseVisitor {
                     hash: "${point.hash}",
                     line: ${point.line},
                     column: ${point.column},
-                    type: __COVERTYPES.Expression,
+                    type: "Expression",
                     executed: false
                 })`);
             replacer.visit(registerStmt);
@@ -167,7 +167,7 @@ class CoverageTransform extends BaseVisitor {
                     hash: "${point.hash}",
                     line: ${point.line},
                     column: ${point.column},
-                    type: __COVERTYPES.Function,
+                    type: "Function",
                     executed: false
                 })`);
             replacer.visit(registerStmt);
@@ -227,7 +227,7 @@ class CoverageTransform extends BaseVisitor {
                     hash: "${point.hash}",
                     line: ${point.line},
                     column: ${point.column},
-                    type: __COVERTYPES.Expression,
+                    type: "Expression",
                     executed: false
                 })`);
             replacer.visit(registerStmt);
@@ -253,7 +253,7 @@ class CoverageTransform extends BaseVisitor {
                     hash: "${point.hash}",
                     line: ${point.line},
                     column: ${point.column},
-                    type: __COVERTYPES.Expression,
+                    type: "Expression",
                     executed: false
                 })`);
             replacer.visit(registerStmt);
@@ -311,7 +311,7 @@ class CoverageTransform extends BaseVisitor {
                     hash: "${point.hash}",
                     line: ${point.line},
                     column: ${point.column},
-                    type: __COVERTYPES.Expression,
+                    type: "Expression",
                     executed: false
                 })`);
             replacer.visit(registerStmt);
@@ -335,7 +335,7 @@ class CoverageTransform extends BaseVisitor {
                     hash: "${point.hash}",
                     line: ${point.line},
                     column: ${point.column},
-                    type: __COVERTYPES.Expression,
+                    type: "Expression",
                     executed: false
                 })`);
             replacer.visit(registerStmt);
@@ -366,7 +366,7 @@ class CoverageTransform extends BaseVisitor {
                 hash: "${point.hash}",
                 line: ${point.line},
                 column: ${point.column},
-                type: __COVERTYPES.Block,
+                type: "Block",
                 executed: false
             })`);
         replacer.visit(registerStmt);
@@ -396,7 +396,7 @@ class CoverageTransform extends BaseVisitor {
                 hash: "${point.hash}",
                 line: ${point.line},
                 column: ${point.column},
-                type: __COVERTYPES.Block,
+                type: "Block",
                 executed: false
             })`);
         replacer.visit(registerStmt);
@@ -463,14 +463,10 @@ export default class Transformer extends Transform {
                 transformer.visit(source);
                 if (transformer.globalStatements.length) {
                     source.statements.unshift(...transformer.globalStatements);
-                    const tokenizer = new Tokenizer(new Source(0 /* SourceKind.User */, source.normalizedPath, "import { __REGISTER, __COVER, __COVERTYPES, __COVERAGE_STATS } from \"as-test/coverage\";"));
+                    const tokenizer = new Tokenizer(new Source(0 /* SourceKind.User */, source.normalizedPath, "import { __REGISTER, __COVER } from \"as-test/assembly/coverage\";"));
                     parser.currentSource = tokenizer.source;
                     source.statements.unshift(parser.parseTopLevelStatement(tokenizer));
                     parser.currentSource = source;
-                    // @ts-ignore
-                    if (process && process.env["TEST_DEBUG"]?.toString().toLowerCase() == "all") {
-                        console.log(toString(source));
-                    }
                 }
             }
             transformer.globalStatements = [];

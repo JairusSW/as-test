@@ -21,7 +21,7 @@ export class TestGroup {
         this.results.push(test);
     }
 
-    report(): ReportLogs | null {
+    getLogs(): ReportLogs {
         let passed_logs = "";
         let failed_logs = "";
         for (let i = 0; i < this.results.length; i++) {

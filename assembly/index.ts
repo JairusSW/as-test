@@ -3,7 +3,7 @@ import { TestGroup } from "./src/group";
 import { Expectation } from "./src/expectation";
 import { formatTime } from "./util";
 import { stringify } from "as-console/assembly";
-import { __COVERAGE } from "./src/coverage";
+import { __COVER, __HASHES, __POINTS } from "as-test/assembly/coverage";
 
 /**
  * Enumeration representing the verdict of a test case.
@@ -21,12 +21,9 @@ let groups: TestGroup[] = [];
 let before_all_callback: (() => void) | null = null;
 let after_all_callback: (() => void) | null = null;
 
-// @ts-ignore
-@global let before_each_callback: (() => void) | null = null;
-// @ts-ignore
-@global let after_each_callback: (() => void) | null = null;
-// @ts-ignore
-@global let __test_options!: RunOptions;
+export let before_each_callback: (() => void) | null = null;
+export let after_each_callback: (() => void) | null = null;
+let __test_options!: RunOptions;
 
 /**
  * Creates a test group containing multiple test cases.
@@ -252,7 +249,7 @@ export function run(options: RunOptions = new RunOptions()): void {
             console.log(txt);
         }
 
-        const report = suite.report();
+        const report = suite.getLogs();
         if (report) {
             if (report.passed) console.log(report.passed!);
             if (report.failed) failed_suite_logs += report.failed!;
@@ -266,14 +263,10 @@ export function run(options: RunOptions = new RunOptions()): void {
         console.log(failed_suite_logs);
     }
 
-    // @ts-ignore
-    const cv = __COVERAGE_STATS();
-    const COVER_POINTS = cv.hashs;
-    const COVER_TOTAL_POINTS = cv.points;
 
-    if (options.coverage && COVER_POINTS.size) {
+    if (options.coverage && __HASHES().size) {
         console.log(rainbow.dimMk("----------------- [COVERAGE] -----------------\n"));
-        const points = COVER_POINTS.values();
+        const points = __HASHES().values();
 
         for (let i = 0; i < points.length; i++) {
             const point = unchecked(points[i]);
@@ -285,10 +278,11 @@ export function run(options: RunOptions = new RunOptions()): void {
     console.log(rainbow.dimMk("----------------- [RESULTS] ------------------\n"));
     const ms = performance.now() - start;
     console.log(rainbow.boldMk("Test Suites: ") + (failed ? rainbow.boldMk(rainbow.red(failed.toString() + " failed")) : rainbow.boldMk(rainbow.green("0 failed"))) + ", " + suites.toString() + " total");
-    console.log(rainbow.boldMk("Tests:       ") + (failed_tests ? rainbow.boldMk(rainbow.red(failed_tests.toString() + " failed")) : rainbow.boldMk(rainbow.green("0 failed"))) + ", " + COVER_TOTAL_POINTS.toString() + " total");
-    if (options.coverage) console.log(rainbow.boldMk("Coverage:    ") + (COVER_POINTS.size ? rainbow.boldMk(rainbow.red(COVER_POINTS.size.toString() + " failed")) : rainbow.boldMk(rainbow.green("0 failed"))) + ", " + COVER_TOTAL_POINTS.toString() + " total");
+    console.log(rainbow.boldMk("Tests:       ") + (failed_tests ? rainbow.boldMk(rainbow.red(failed_tests.toString() + " failed")) : rainbow.boldMk(rainbow.green("0 failed"))) + ", " + tests.toString() + " total");
+    if (options.coverage) console.log(rainbow.boldMk("Coverage:    ") + (__HASHES().size ? rainbow.boldMk(rainbow.red(__HASHES().size.toString() + " failed")) : rainbow.boldMk(rainbow.green("0 failed"))) + ", " + __POINTS().toString() + " total");
     console.log(rainbow.boldMk("Snapshots:   ") + "0 total");
     console.log(rainbow.boldMk("Time:        ") + formatTime(ms));
+    __COVER("joe mom")
     if (failed) {
         process.exit(1);
     }

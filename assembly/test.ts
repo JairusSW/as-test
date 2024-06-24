@@ -63,7 +63,7 @@ describe("Array manipulation", () => {
     });
 });
 
-export function foo(): void {
+function foo(): void {
     
 }
 
