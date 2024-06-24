@@ -10,3 +10,4 @@ v0.0.9 - Fix type issue
 
 v0.1.0 - Fix more type issues
 v0.1.1 - Add code coverage!
+v0.1.2 - Fix bugs with globals and dependencies

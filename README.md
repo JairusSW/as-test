@@ -16,7 +16,7 @@ npm install as-test
 Add the transform to your `asc` command (e.g. in package.json)
 
 ```bash
---transform json-as/transform
+--transform as-test/transform
 ```
 
 Alternatively, add it to your `asconfig.json`
@@ -25,7 +25,7 @@ Alternatively, add it to your `asconfig.json`
 {
   // ...
   "options": {
-    "transform": ["json-as/transform"]
+    "transform": ["as-test/transform"]
   }
 }
 ```
