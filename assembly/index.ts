@@ -3,7 +3,8 @@ import { TestGroup } from "./src/group";
 import { Expectation } from "./src/expectation";
 import { formatTime } from "./util";
 import { stringify } from "as-console/assembly";
-import { __COVER, __HASHES, __POINTS } from "as-test/assembly/coverage";
+import { CoverPoint, __COVER, __HASHES, __POINTS } from "as-test/assembly/coverage";
+import { createTable } from "table-as";
 
 /**
  * Enumeration representing the verdict of a test case.
@@ -213,7 +214,7 @@ export function run(options: RunOptions = new RunOptions()): void {
     console.log(rainbow.boldMk(rainbow.blueBright(`|  _  ||   __| ___|_   _||   __||   __||_   _|`)));
     console.log(rainbow.boldMk(rainbow.blueBright(`|     ||__   ||___| | |  |   __||__   |  | |  `)));
     console.log(rainbow.boldMk(rainbow.blueBright(`|__|__||_____|      |_|  |_____||_____|  |_|  `)));
-    console.log(rainbow.dimMk("\n------------------- v0.1.1 -------------------\n"));
+    console.log(rainbow.dimMk("\n------------------- v0.1.3 -------------------\n"));
     if (options.coverage) {
         console.log(rainbow.bgBlueBright(" PLUGIN ") + " " + rainbow.dimMk("Using Code Coverage") + "\n");
     }
@@ -268,11 +269,19 @@ export function run(options: RunOptions = new RunOptions()): void {
         console.log(rainbow.dimMk("----------------- [COVERAGE] -----------------\n"));
         const points = __HASHES().values();
 
+        const table: string[][] = [
+            ["Location", "Type", "Hash"]
+        ];
+
         for (let i = 0; i < points.length; i++) {
             const point = unchecked(points[i]);
-            console.log(rainbow.bgRed(" UNCOVERED ") + " " + point.type + " at " + point.file + ":" + point.line.toString() + ":" + point.column.toString());
+            const file = point.file;
+            const reference = point.file + ":" + point.line.toString() + ":" + point.column.toString();
+            const type = point.type;
+            const hash = point.hash;
+            table.push([rainbow.underlineMk(reference), type, "#" + hash]);
         }
-        console.log("");
+        console.log(rainbow.dimMk(createTable(table)) + "\n");
     }
 
     console.log(rainbow.dimMk("----------------- [RESULTS] ------------------\n"));
