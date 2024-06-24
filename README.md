@@ -3,7 +3,7 @@
 |  _  ||   __| ___|_   _||   __||   __||_   _|
 |     ||__   ||___| | |  |   __||__   |  | |  
 |__|__||_____|      |_|  |_____||_____|  |_|  
-v0.1.0
+v0.1.1
 </pre>
 </h5>
 
@@ -82,7 +82,8 @@ describe("Array manipulation", () => {
 });
 
 run({
-  log: false
+  log: false,
+  coverage: true
 });
 ```
 
@@ -112,6 +113,7 @@ run({
 
 Test Suites: 0 failed, 2 total
 Tests:       0 failed, 8 total
+Coverage:    0 failed, 23 total
 Snapshots:   0 total
 Time:        101.812μs
 </pre>
