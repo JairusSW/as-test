@@ -29,7 +29,8 @@
     "as-rainbow": "^0.1.0",
     "as-variant": "^0.4.1",
     "chalk": "^5.3.0",
-    "glob": "^10.4.2"
+    "glob": "^10.4.2",
+    "jest": "^29.7.0"
   },
   "overrides": {
     "assemblyscript": "$assemblyscript",
