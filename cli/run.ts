@@ -6,6 +6,7 @@ import { glob } from "glob";
 
 const installScripts = new Map<string, string>([
   ["wasmtime", "curl https://wasmtime.dev/install.sh -sSf | bash"],
+  ["wasmer", "curl https://get.wasmer.io -sSfL | sh"]
 ]);
 export async function run() {
   const config = Object.assign(

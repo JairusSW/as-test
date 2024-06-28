@@ -21,4 +21,4 @@ jobs:
         run: yarn
 
       - name: Perform tests
-        run: yarn run test
+        run: yarn run test:tap

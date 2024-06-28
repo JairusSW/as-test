@@ -7,8 +7,9 @@
   "contributors": [],
   "license": "MIT",
   "scripts": {
-    "test": "ast run",
-    "pretest": "ast build",
+    "test": "node ./bin/index.js run",
+    "test:tap": "node ./bin/index.js --tap",
+    "pretest": "node ./bin/index.js build",
     "build:transform": "tsc -p ./transform",
     "build:cli": "tsc -p cli",
     "prettier": "prettier -w ."
