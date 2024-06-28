@@ -68,6 +68,7 @@ export async function build(args: string[]) {
   ) {
     packageManagerCommand = "bunx";
   }
+  console.log("")
 
   const inputFiles = await glob(config.input);
   for (const file of inputFiles) {

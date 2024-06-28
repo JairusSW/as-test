@@ -7,7 +7,8 @@
   "contributors": [],
   "license": "MIT",
   "scripts": {
-    "test": "ast test",
+    "test": "ast run",
+    "pretest": "ast build",
     "build:transform": "tsc -p ./transform",
     "build:cli": "tsc -p cli",
     "prettier": "prettier -w ."
