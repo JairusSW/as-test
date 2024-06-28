@@ -15,33 +15,20 @@ for (const arg of _args) {
 }
 if (!args.length) {
     if (flags.includes("--tap")) {
-        console.log(`TAP version 14
-ok 1 - this passes
-not ok 2 - this fails
+        console.log(`TAP version 13
+# timing test
+ok 1 should be strictly equal
+not ok 2 should be strictly equal
   ---
-  diff: |
-    --- expected
-    +++ actual
-    @@ -1,2 +1,3 @@
-     Object {
-    +  "a": 1,
-     }
-  at:
-    fileName: t.mts
-    lineNumber: 5
-    columnNumber: 3
-    isToplevel: true
-  stack: t.mts:5:3
-  source: |
-    const myObject = { a: 1, b: 2 }
-    t.match(myObject, { a: Number }, 'this passes')
-    t.matchOnly(myObject, { b: 2 }, 'this fails')
-    --^
+    operator: equal
+    expected: 100
+    actual:   107
   ...
 
 1..2
-# { total: 2, pass: 1, fail: 1 }
-# time=13.576ms`);
+# tests 2
+# pass  1
+# fail  1`);
     }
     else if (flags.includes("--version") || flags.includes("-v")) {
         console.log("as-test" + " " + version.toString());

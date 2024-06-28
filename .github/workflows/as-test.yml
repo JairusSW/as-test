@@ -1,4 +1,4 @@
-name: Node.js CI
+name: AST CI
 
 on: [push, pull_request]
 
