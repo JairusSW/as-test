@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import chalk from "chalk";
 import { build } from "./build.js";
 import { run } from "./run.js";
