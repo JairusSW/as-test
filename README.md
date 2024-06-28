@@ -13,27 +13,20 @@ v0.1.4
 npm install as-test
 ```
 
-Add the transform to your `asc` command (e.g. in package.json)
-
-```bash
---transform as-test/transform
-```
-
-Alternatively, add it to your `asconfig.json`
-
-```
-{
-  // ...
-  "options": {
-    "transform": ["as-test/transform"]
-  }
-}
-```
-
 Note: The transform *is* OPTIONAL, though it is required to enable code coverage.
 
 ## Usage
 
+You can setup the configuration files using
+```bash
+ast init
+```
+
+Note: You can use either `ast` or `as-test` in the terminal.
+
+Next, create a test file
+
+`assembly/test.spec.ts`
 ```js
 import {
   describe,
@@ -106,37 +99,13 @@ run({
 });
 ```
 
+Build and run it using as-test
+
+```bash
+ast test
+```
+
 <h6>
-<pre> _____  _____      _____  _____  _____  _____ 
-|  _  ||   __| ___|_   _||   __||   __||_   _|
-|     ||__   ||___| | |  |   __||__   |  | |  
-|__|__||_____|      |_|  |_____||_____|  |_|  
-
------------------------------------------
-
- [PASS]  Math operations
-
- [PASS]  Array manipulation
-
- [PASS]  Addition
-
- [PASS]  Comparison
-
- [PASS]  Type checking
-
- [PASS]  Array length
-
- [PASS]  Array inclusion
-
------------------------------------------
-
-Test Suites: 0 failed, 2 total
-Tests:       0 failed, 8 total
-Coverage:    0 failed, 23 total
-Snapshots:   0 total
-Time:        101.812μs
-</pre>z
-</h6>
 
 ## Running
 
