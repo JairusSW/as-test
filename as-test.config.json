@@ -1,11 +1,14 @@
 {
-  "input": [
-    "./assembly/*.spec.ts"
-  ],
+  "input": ["./assembly/*.spec.ts"],
   "outDir": "./build",
   "suites": [],
+  "coverage": {
+    "enabled": true,
+    "show": false
+  },
+  "reporter": "log",
   "buildOptions": {
-    "args": ["--transform ./transform"],
+    "args": [],
     "wasi": true,
     "parallel": true,
     "verbose": true

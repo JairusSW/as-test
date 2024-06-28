@@ -13,11 +13,12 @@ v0.1.4
 npm install as-test
 ```
 
-Note: The transform *is* OPTIONAL, though it is required to enable code coverage.
+Note: The transform _is_ OPTIONAL, though it is required to enable code coverage.
 
 ## Usage
 
 You can setup the configuration files using
+
 ```bash
 ast init
 ```
@@ -27,6 +28,7 @@ Note: You can use either `ast` or `as-test` in the terminal.
 Next, create a test file
 
 `assembly/test.spec.ts`
+
 ```js
 import {
   describe,
@@ -109,7 +111,7 @@ ast test
 
 ## Running
 
-You can run as-test *anywhere* that WASI is supported! I've yet to add support for bindings, but all it needs is access to the terminal.
+You can run as-test _anywhere_ that WASI is supported! I've yet to add support for bindings, but all it needs is access to the terminal.
 
 To add WASI support, install it with
 
@@ -136,7 +138,6 @@ npm run test
 To add `as-test` to your CI/CD workflow, check out [The provided example](https://github.com/JairusSW/as-test/blob/main/.github/workflows/nodejs.yml)
 
 If you use this project in your codebase, consider dropping a [⭐ HERE](https://github.com/JairusSW/as-test). I would really appreciate it!
-
 
 ## Notes
 

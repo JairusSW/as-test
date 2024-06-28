@@ -1,36 +1,33 @@
 {
-    "targets": {
-      "test": {
-        "outFile": "build/test.spec.wasm",
-        "sourceMap": false,
-        "optimizeLevel": 0,
-        "shrinkLevel": 0,
-        "converge": false,
-        "noAssert": false
-      },
-      "debug": {
-        "outFile": "build/test.wasm",
-        "sourceMap": false,
-        "optimizeLevel": 0,
-        "shrinkLevel": 0,
-        "converge": false,
-        "noAssert": false
-      },
-      "bench": {
-        "outFile": "build/bench.wasm",
-        "sourceMap": false,
-        "optimizeLevel": 3,
-        "shrinkLevel": 0,
-        "converge": true,
-        "noAssert": false
-      }
+  "targets": {
+    "test": {
+      "outFile": "build/test.spec.wasm",
+      "sourceMap": false,
+      "optimizeLevel": 0,
+      "shrinkLevel": 0,
+      "converge": false,
+      "noAssert": false
     },
-    "options": {
-      "transform": ["./transform"],
-      "disableWarning": [
-        226
-      ]
+    "debug": {
+      "outFile": "build/test.wasm",
+      "sourceMap": false,
+      "optimizeLevel": 0,
+      "shrinkLevel": 0,
+      "converge": false,
+      "noAssert": false
     },
-    "extends": "./node_modules/@assemblyscript/wasi-shim/asconfig.json"
-  }
-  
+    "bench": {
+      "outFile": "build/bench.wasm",
+      "sourceMap": false,
+      "optimizeLevel": 3,
+      "shrinkLevel": 0,
+      "converge": true,
+      "noAssert": false
+    }
+  },
+  "options": {
+    "transform": ["./transform"],
+    "disableWarning": [226]
+  },
+  "extends": "./node_modules/@assemblyscript/wasi-shim/asconfig.json"
+}
