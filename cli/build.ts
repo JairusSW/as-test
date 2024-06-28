@@ -1,9 +1,9 @@
 import { existsSync, readFileSync, readdirSync } from "fs";
-import { Config } from "./types";
+import { Config } from "./types.js";
 import { glob } from "glob";
 import chalk from "chalk";
 import { exec } from "child_process";
-import { formatTime } from "./util";
+import { formatTime } from "./util.js";
 
 export async function build(args: string[], flags: string[]) {
     const config = Object.assign(new Config(), JSON.parse(readFileSync("./as-test.config.json").toString())) as Config;

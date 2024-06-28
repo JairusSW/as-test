@@ -1,7 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.Runtime = exports.RunOptions = exports.BuildOptions = exports.Suite = exports.Config = void 0;
-class Config {
+export class Config {
     constructor() {
         this.input = [];
         this.outDir = "./build";
@@ -10,14 +7,12 @@ class Config {
         this.runOptions = new RunOptions();
     }
 }
-exports.Config = Config;
-class Suite {
+export class Suite {
     constructor() {
         this.name = "";
     }
 }
-exports.Suite = Suite;
-class BuildOptions {
+export class BuildOptions {
     constructor() {
         this.args = [];
         this.wasi = true;
@@ -25,17 +20,14 @@ class BuildOptions {
         this.verbose = true;
     }
 }
-exports.BuildOptions = BuildOptions;
-class RunOptions {
+export class RunOptions {
     constructor() {
         this.runtime = new Runtime();
     }
 }
-exports.RunOptions = RunOptions;
-class Runtime {
+export class Runtime {
     constructor() {
         this.name = "wasmtime";
         this.run = "wasmtime <file>";
     }
 }
-exports.Runtime = Runtime;

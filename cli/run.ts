@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from "fs";
-import { Config } from "./types";
+import { Config } from "./types.js";
 import chalk from "chalk";
 import { exec } from "child_process";
 import { glob } from "glob";

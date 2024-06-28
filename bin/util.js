@@ -1,7 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.formatTime = formatTime;
-function formatTime(ms) {
+export function formatTime(ms) {
     if (ms < 0) {
         throw new Error("Time should be a non-negative number.");
     }

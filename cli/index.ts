@@ -1,7 +1,6 @@
 import chalk from "chalk";
-import { version } from "../package.json";
-import { build } from "./build";
-import { run } from "./run";
+import { build } from "./build.js";
+import { run } from "./run.js";
 
 const _args = process.argv.slice(2);
 const flags: string[] = [];
@@ -12,6 +11,8 @@ const COMMANDS: string[] = [
     "build",
     "test"
 ];
+
+const version = "0.1.4"
 
 for (const arg of _args) {
     if (arg.startsWith("-")) flags.push(arg);
