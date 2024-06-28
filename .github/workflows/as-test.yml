@@ -14,7 +14,7 @@ jobs:
         uses: jcbhmr/setup-wasmtime@v2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v4
 
       - name: Install dependencies
         if: steps.node-cache.outputs.cache-hit != 'true'
@@ -26,5 +26,5 @@ jobs:
       - uses: pcolby/tap-summary@v1
         with:
           path: >-
-            tests/*.tap
+            ./tests/test.tap
           summary-file: tests.md
