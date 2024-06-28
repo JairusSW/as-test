@@ -21,4 +21,4 @@ jobs:
         run: yarn
 
       - name: Perform tests
-        run: yarn run test:tap
+        run: node ./bin/index.js --tap
