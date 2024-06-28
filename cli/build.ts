@@ -1,11 +1,11 @@
-import { existsSync, readFileSync, readdirSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { Config } from "./types.js";
 import { glob } from "glob";
 import chalk from "chalk";
 import { exec } from "child_process";
 import { formatTime } from "./util.js";
 
-export async function build(args: string[], flags: string[]) {
+export async function build(args: string[]) {
     const config = Object.assign(new Config(), JSON.parse(readFileSync("./as-test.config.json").toString())) as Config;
     const pkg = JSON.parse(readFileSync("./package.json").toString()) as { dependencies: string[] | null, devDependencies: string[] | null, peerDependencies: string[] | null };
     let buildCommands: string[] = [];

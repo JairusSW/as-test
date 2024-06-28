@@ -11,7 +11,7 @@
     "pretest": "TEST_DEBUG=all asc assembly/test.ts -o build/test.wasm --transform ./transform --bindings esm  --config ./node_modules/@assemblyscript/wasi-shim/asconfig.json",
     "bench:wasmtime": "wasmtime ./build/bench.wasm",
     "build:transform": "tsc -p ./transform",
-    "build:cli": "tsc -p ./cli",
+    "build:cli": "ncc build ./cli/index.ts -o ./bin",
     "prettier": "as-prettier -w ."
   },
   "devDependencies": {
@@ -21,6 +21,7 @@
     "assemblyscript-prettier": "^3.0.1",
     "jest": "^29.7.0",
     "json-as": "^0.9.8",
+    "ncc": "^0.3.6",
     "typescript": "^5.5.2",
     "visitor-as": "^0.11.4"
   },

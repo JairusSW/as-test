@@ -53,11 +53,11 @@ if (!args.length) {
 } else if (COMMANDS.includes(args[0]!)) {
     const command = args.shift();
     if (command === "build") {
-        build(args, flags);
+        build(args);
     } else if (command === "run") {
         run();
     } else if (command === "test") {
-        build(args, flags).then(() => {
+        build(args).then(() => {
             run();
         });
     }
