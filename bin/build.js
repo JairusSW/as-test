@@ -63,6 +63,9 @@ export async function build(args) {
             if (config.coverage.show)
                 command += " --use COVERAGE_SHOW=1";
         }
+        if (config.buildOptions.args) {
+            command += args.join(" ");
+        }
         buildCommands.push(command);
     }
     const build = (command) => {
