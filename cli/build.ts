@@ -4,12 +4,21 @@ import { glob } from "glob";
 import chalk from "chalk";
 import { exec } from "child_process";
 import { formatTime } from "./util.js";
+import * as path from "path";
 
 export async function build(args: string[]) {
-  const config = Object.assign(
-    new Config(),
-    JSON.parse(readFileSync("./as-test.config.json").toString()),
-  ) as Config;
+  const CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
+  let config: Config;
+  if (!existsSync(CONFIG_PATH)) {
+    console.log(chalk.bgMagentaBright(" WARN ") + chalk.dim(":") + " Could not locate config file in the current directory! Continuing with default config." + "\n");
+    config = new Config();
+  } else {
+    config = Object.assign(
+      new Config(),
+      JSON.parse(readFileSync(CONFIG_PATH).toString()),
+    ) as Config;
+    console.log(chalk.dim("Loading config from: " + CONFIG_PATH) + "\n");
+  }
   const pkg = JSON.parse(readFileSync("./package.json").toString()) as {
     dependencies: string[] | null;
     devDependencies: string[] | null;
@@ -21,9 +30,9 @@ export async function build(args: string[]) {
     if (!existsSync("./node_modules/@assemblyscript/wasi-shim/asconfig.json")) {
       console.log(
         chalk.bgRed(" ERROR ") +
-          chalk.dim(":") +
-          " " +
-          "could not find @assemblyscript/wasi-shim! Add it to your dependencies to run with WASI!",
+        chalk.dim(":") +
+        " " +
+        "could not find @assemblyscript/wasi-shim! Add it to your dependencies to run with WASI!",
       );
       process.exit(1);
     }
@@ -44,8 +53,8 @@ export async function build(args: string[]) {
       ) {
         console.log(
           chalk.bold.bgMagentaBright(" WARN ") +
-            chalk.dim(": @assemblyscript/wasi-shim") +
-            " is not included in project dependencies!",
+          chalk.dim(": @assemblyscript/wasi-shim") +
+          " is not included in project dependencies!",
         );
       }
     }

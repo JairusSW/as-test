@@ -4,8 +4,18 @@ import { glob } from "glob";
 import chalk from "chalk";
 import { exec } from "child_process";
 import { formatTime } from "./util.js";
+import * as path from "path";
 export async function build(args) {
-    const config = Object.assign(new Config(), JSON.parse(readFileSync("./as-test.config.json").toString()));
+    const CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
+    let config;
+    if (!existsSync(CONFIG_PATH)) {
+        console.log(chalk.bgMagentaBright(" WARN ") + chalk.dim(":") + " Could not locate config file in the current directory! Continuing with default config." + "\n");
+        config = new Config();
+    }
+    else {
+        config = Object.assign(new Config(), JSON.parse(readFileSync(CONFIG_PATH).toString()));
+        console.log(chalk.dim("Loading config from: " + CONFIG_PATH) + "\n");
+    }
     const pkg = JSON.parse(readFileSync("./package.json").toString());
     let buildCommands = [];
     if (config.buildOptions.wasi) {
