@@ -8,8 +8,8 @@
   "license": "MIT",
   "scripts": {},
   "devDependencies": {
-    "assemblyscript": "^0.27.27",
-    "typescript": "^5.3.3",
+    "assemblyscript": "^0.27.28",
+    "typescript": "^5.5.3",
     "visitor-as": "^0.11.4"
   },
   "dependencies": {},

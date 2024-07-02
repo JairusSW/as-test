@@ -18,15 +18,15 @@
   "devDependencies": {
     "@assemblyscript/wasi-shim": "^0.1.0",
     "@types/node": "^20.14.9",
-    "as-test": "link:as-test",
+    "as-test": "./",
     "assemblyscript": "^0.27.28",
     "assemblyscript-prettier": "^3.0.1",
-    "json-as": "^0.9.8",
-    "typescript": "^5.5.2",
+    "json-as": "^0.9.9-a",
+    "typescript": "^5.5.3",
     "visitor-as": "^0.11.4"
   },
   "dependencies": {
-    "as-console": "^1.0.2",
+    "as-console": "^7.0.0",
     "as-rainbow": "^0.1.0",
     "as-variant": "^0.4.1",
     "chalk": "^5.3.0",
