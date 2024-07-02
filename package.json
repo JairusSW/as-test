@@ -21,7 +21,6 @@
     "as-test": "./",
     "assemblyscript": "^0.27.28",
     "assemblyscript-prettier": "^3.0.1",
-    "json-as": "^0.9.9-a",
     "typescript": "^5.5.3",
     "visitor-as": "^0.11.4"
   },
