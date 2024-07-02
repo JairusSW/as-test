@@ -8,7 +8,7 @@ import {
   afterEach,
   log,
   run,
-} from ".";
+} from "..";
 
 // Shared setup for all tests (executed once before all tests)
 beforeAll(() => {

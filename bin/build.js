@@ -9,12 +9,22 @@ export async function build(args) {
     const CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
     let config;
     if (!existsSync(CONFIG_PATH)) {
-        console.log(chalk.bgMagentaBright(" WARN ") + chalk.dim(":") + " Could not locate config file in the current directory! Continuing with default config." + "\n");
+        console.log(chalk.bgMagentaBright(" WARN ") +
+            chalk.dim(":") +
+            " Could not locate config file in the current directory! Continuing with default config." +
+            "\n");
         config = new Config();
     }
     else {
         config = Object.assign(new Config(), JSON.parse(readFileSync(CONFIG_PATH).toString()));
         console.log(chalk.dim("Loading config from: " + CONFIG_PATH) + "\n");
+    }
+    const ASCONFIG_PATH = path.join(process.cwd(), config.config);
+    if (!existsSync(ASCONFIG_PATH)) {
+        console.log(chalk.bgMagentaBright(" WARN ") +
+            chalk.dim(":") +
+            ' Could not locate asconfig.json file! If you do not want to provide a config, set "config": "none". Continuing with default config.' +
+            "\n");
     }
     const pkg = JSON.parse(readFileSync("./package.json").toString());
     let buildCommands = [];
@@ -60,6 +70,9 @@ export async function build(args) {
         if (config.buildOptions.wasi) {
             command +=
                 " --config ./node_modules/@assemblyscript/wasi-shim/asconfig.json";
+        }
+        if (config.config !== "none") {
+            command += " --config " + config.config;
         }
         const outFile = config.outDir +
             "/" +

@@ -1,6 +1,7 @@
 export class Config {
-  input: string[] = [];
+  input: string[] = ["./assembly/__tests__/*.spec.ts"];
   outDir: string = "./build";
+  config: string = "./asconfig.json";
   suites: Suite[] = [];
   coverage: Coverage = new Coverage();
   buildOptions: BuildOptions = new BuildOptions();
@@ -13,7 +14,7 @@ export class Suite {
 
 export class Coverage {
   enabled: boolean = false;
-  show: boolean = true;
+  show: boolean = false;
 }
 
 export class BuildOptions {

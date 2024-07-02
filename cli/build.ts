@@ -10,7 +10,12 @@ export async function build(args: string[]) {
   const CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
   let config: Config;
   if (!existsSync(CONFIG_PATH)) {
-    console.log(chalk.bgMagentaBright(" WARN ") + chalk.dim(":") + " Could not locate config file in the current directory! Continuing with default config." + "\n");
+    console.log(
+      chalk.bgMagentaBright(" WARN ") +
+        chalk.dim(":") +
+        " Could not locate config file in the current directory! Continuing with default config." +
+        "\n",
+    );
     config = new Config();
   } else {
     config = Object.assign(
@@ -18,6 +23,15 @@ export async function build(args: string[]) {
       JSON.parse(readFileSync(CONFIG_PATH).toString()),
     ) as Config;
     console.log(chalk.dim("Loading config from: " + CONFIG_PATH) + "\n");
+  }
+  const ASCONFIG_PATH = path.join(process.cwd(), config.config);
+  if (!existsSync(ASCONFIG_PATH)) {
+    console.log(
+      chalk.bgMagentaBright(" WARN ") +
+        chalk.dim(":") +
+        ' Could not locate asconfig.json file! If you do not want to provide a config, set "config": "none". Continuing with default config.' +
+        "\n",
+    );
   }
   const pkg = JSON.parse(readFileSync("./package.json").toString()) as {
     dependencies: string[] | null;
@@ -30,9 +44,9 @@ export async function build(args: string[]) {
     if (!existsSync("./node_modules/@assemblyscript/wasi-shim/asconfig.json")) {
       console.log(
         chalk.bgRed(" ERROR ") +
-        chalk.dim(":") +
-        " " +
-        "could not find @assemblyscript/wasi-shim! Add it to your dependencies to run with WASI!",
+          chalk.dim(":") +
+          " " +
+          "could not find @assemblyscript/wasi-shim! Add it to your dependencies to run with WASI!",
       );
       process.exit(1);
     }
@@ -53,8 +67,8 @@ export async function build(args: string[]) {
       ) {
         console.log(
           chalk.bold.bgMagentaBright(" WARN ") +
-          chalk.dim(": @assemblyscript/wasi-shim") +
-          " is not included in project dependencies!",
+            chalk.dim(": @assemblyscript/wasi-shim") +
+            " is not included in project dependencies!",
         );
       }
     }
@@ -77,7 +91,7 @@ export async function build(args: string[]) {
   ) {
     packageManagerCommand = "bunx";
   }
-  console.log("")
+  console.log("");
 
   const inputFiles = await glob(config.input);
   for (const file of inputFiles) {
@@ -86,6 +100,9 @@ export async function build(args: string[]) {
     if (config.buildOptions.wasi) {
       command +=
         " --config ./node_modules/@assemblyscript/wasi-shim/asconfig.json";
+    }
+    if (config.config !== "none") {
+      command += " --config " + config.config;
     }
     const outFile =
       config.outDir +

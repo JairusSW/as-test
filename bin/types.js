@@ -1,7 +1,8 @@
 export class Config {
     constructor() {
-        this.input = [];
+        this.input = ["./assembly/__tests__/*.spec.ts"];
         this.outDir = "./build";
+        this.config = "./asconfig.json";
         this.suites = [];
         this.coverage = new Coverage();
         this.buildOptions = new BuildOptions();
@@ -16,7 +17,7 @@ export class Suite {
 export class Coverage {
     constructor() {
         this.enabled = false;
-        this.show = true;
+        this.show = false;
     }
 }
 export class BuildOptions {

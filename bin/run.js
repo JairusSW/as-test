@@ -5,7 +5,7 @@ import { exec } from "child_process";
 import { glob } from "glob";
 const installScripts = new Map([
     ["wasmtime", "curl https://wasmtime.dev/install.sh -sSf | bash"],
-    ["wasmer", "curl https://get.wasmer.io -sSfL | sh"]
+    ["wasmer", "curl https://get.wasmer.io -sSfL | sh"],
 ]);
 export async function run() {
     const config = Object.assign(new Config(), JSON.parse(readFileSync("./as-test.config.json").toString()));

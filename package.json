@@ -13,7 +13,6 @@
     "build:transform": "tsc -p ./transform",
     "build:cli": "tsc -p cli",
     "prettier": "prettier -w .",
-
     "prepublish": "npm run build:cli && npm run build:transform && npm run test"
   },
   "devDependencies": {

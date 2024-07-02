@@ -3,7 +3,7 @@
 |  _  ||   __| ___|_   _||   __||   __||_   _|
 |     ||__   ||___| | |  |   __||__   |  | |  
 |__|__||_____|      |_|  |_____||_____|  |_|  
-v0.1.4
+v0.1.5
 </pre>
 </h5>
 
@@ -20,14 +20,14 @@ Note: The transform _is_ OPTIONAL, though it is required to enable code coverage
 You can setup the configuration files using
 
 ```bash
-ast init
+as-test init
 ```
 
 Note: You can use either `ast` or `as-test` in the terminal.
 
 Next, create a test file
 
-`assembly/test.spec.ts`
+`assembly/__tests__/test.spec.ts`
 
 ```js
 import {
@@ -96,15 +96,14 @@ describe("Array manipulation", () => {
 });
 
 run({
-  log: false,
-  coverage: true
+  log: true
 });
 ```
 
 Build and run it using as-test
 
 ```bash
-ast test
+as-test test
 ```
 
 <h6>
@@ -112,22 +111,6 @@ ast test
 ## Running
 
 You can run as-test _anywhere_ that WASI is supported! I've yet to add support for bindings, but all it needs is access to the terminal.
-
-To add WASI support, install it with
-
-```
-npm install @assemblyscript/wasi-shim
-```
-
-Add the following scripts to your `package.json` where NAME-HERE is your test file.
-You can swap out `wasmtime` with [Node.js](https://nodejs.org/), [Wasmer](https://wasmer.io/), [Wasm3](https://github.com/wasm3/wasm3), or any WASI-supporting runtime
-
-```json
-"scripts": {
-  "test": "wasmtime ./build/NAME.spec.wasm",
-  "pretest": "asc asc NAME.spec.ts -o build/NAME.spec.wasm --bindings esm --config ./node_modules/@assemblyscript/wasi-shim/asconfig.json"
-}
-```
 
 And finally, run it with:
 

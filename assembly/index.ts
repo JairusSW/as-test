@@ -230,7 +230,7 @@ export function run(options: RunOptions = new RunOptions()): void {
     ),
   );
   console.log(
-    rainbow.dimMk("\n------------------- v0.1.4 -------------------\n"),
+    rainbow.dimMk("\n------------------- v0.1.5 -------------------\n"),
   );
   // @ts-ignore
   if (isDefined(COVERAGE_USE)) {

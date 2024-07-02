@@ -22,7 +22,7 @@ jobs:
 
       - name: Perform tests
         run: node ./bin/index.js --tap
-      
+
       - uses: pcolby/tap-summary@v1
         with:
           path: >-

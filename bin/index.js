@@ -2,6 +2,7 @@
 import chalk from "chalk";
 import { build } from "./build.js";
 import { run } from "./run.js";
+import { init } from "./init.js";
 const _args = process.argv.slice(2);
 const flags = [];
 const args = [];
@@ -63,7 +64,7 @@ not ok 2 should be strictly equal
             "Build unit tests and compile");
         console.log("  " +
             chalk.bold.blueBright("test") +
-            "     " +
+            "      " +
             chalk.dim("<my-test.spec.ts>") +
             "       " +
             "Build and run unit tests with selected runtime" +
@@ -71,57 +72,57 @@ not ok 2 should be strictly equal
         console.log("  " +
             chalk.bold.magentaBright("init") +
             "       " +
-            chalk.dim("") +
+            chalk.strikethrough.dim("") +
             "                       " +
             "Initialize an empty testing template");
         console.log("  " +
-            chalk.bold.magentaBright("config") +
+            chalk.strikethrough.bold.magentaBright("config") +
             "     " +
-            chalk.dim("as-test.config.json") +
+            chalk.strikethrough.dim("as-test.config.json") +
             "    " +
             "Specify the configuration file");
         console.log("  " +
-            chalk.bold.magentaBright("reporter") +
+            chalk.strikethrough.bold.magentaBright("reporter") +
             "   " +
-            chalk.dim("<tap>") +
+            chalk.strikethrough.dim("<tap>") +
             "                  " +
             "Specify the test reporter to use");
         console.log("  " +
-            chalk.bold.magentaBright("use") +
+            chalk.strikethrough.bold.magentaBright("use") +
             "        " +
-            chalk.dim("wasmtime") +
+            chalk.strikethrough.dim("wasmtime") +
             "               " +
             "Specify the runtime to use" +
             "\n");
         console.log(chalk.bold("Flags:"));
         console.log("  " +
-            chalk.dim("run") +
+            chalk.strikethrough.dim("run") +
             "        " +
-            chalk.bold.blue("--coverage") +
+            chalk.strikethrough.bold.blue("--coverage") +
             "             " +
             "Use code coverage");
         console.log("  " +
-            chalk.dim("run") +
+            chalk.strikethrough.dim("run") +
             "        " +
-            chalk.bold.blue("--snapshot") +
+            chalk.strikethrough.bold.blue("--snapshot") +
             "             " +
             "Take a snapshot of the tests");
         console.log("  " +
-            chalk.dim("use") +
+            chalk.strikethrough.dim("use") +
             "        " +
-            chalk.bold.blue("--list") +
+            chalk.strikethrough.bold.blue("--list") +
             "                 " +
             "List supported runtimes");
         console.log("  " +
-            chalk.dim("reporter") +
+            chalk.strikethrough.dim("reporter") +
             "   " +
-            chalk.bold.blue("--list") +
+            chalk.strikethrough.bold.blue("--list") +
             "                 " +
             "List supported reporters");
         console.log("  " +
-            chalk.dim("<command>") +
+            chalk.strikethrough.dim("<command>") +
             "  " +
-            chalk.bold.blue("--help") +
+            chalk.strikethrough.bold.blue("--help") +
             "                 " +
             "Print info about command" +
             "\n");
@@ -129,7 +130,7 @@ not ok 2 should be strictly equal
         console.log("View the repo:                   " +
             chalk.magenta("https://github.com/JairusSW/as-test"));
         console.log("View the docs:                   " +
-            chalk.blue("https://docs.jairus.dev/as-test"));
+            chalk.strikethrough.blue("https://docs.jairus.dev/as-test"));
     }
 }
 else if (COMMANDS.includes(args[0])) {
@@ -144,6 +145,9 @@ else if (COMMANDS.includes(args[0])) {
         build(args).then(() => {
             run();
         });
+    }
+    else if (command === "init") {
+        init(args);
     }
 }
 else {

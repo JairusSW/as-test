@@ -1,12 +1,12 @@
 {
-  "input": ["./assembly/*.spec.ts"],
+  "input": ["./assembly/__tests__/*.spec.ts"],
   "outDir": "./build",
+  "config": "./asconfig.json",
   "suites": [],
   "coverage": {
     "enabled": true,
     "show": false
   },
-  "reporter": "log",
   "buildOptions": {
     "args": [],
     "wasi": true,
@@ -16,8 +16,7 @@
   "runOptions": {
     "runtime": {
       "name": "wasmtime",
-      "run": "wasmtime <file>",
-      "args": []
+      "run": "wasmtime <file>"
     }
   }
 }
