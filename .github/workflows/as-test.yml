@@ -21,6 +21,6 @@ jobs:
 
       - name: Build tests
         run: bun run pretest
-      
+
       - name: Run tests
         run: bun run test

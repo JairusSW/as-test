@@ -14,3 +14,4 @@ v0.1.2 - Fix bugs with globals and dependencies
 v0.1.3 - Revamp `log<T>(data: T)` with new as-console version
 v0.1.4 - Fix a few bugs with the cli
 v0.1.5 - Add skeleton cli and custom config
+v0.1.6 - Fix: args should be prefixed with a space
