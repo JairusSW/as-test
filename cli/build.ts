@@ -90,6 +90,9 @@ export async function build(args: string[]) {
       command += " --use COVERAGE_USE=1 --transform as-test/transform";
       if (config.coverage.show) command += " --use COVERAGE_SHOW=1";
     }
+    if (config.buildOptions.args) {
+      command += args.join(" ");
+    }
     buildCommands.push(command);
   }
 
