@@ -100,7 +100,7 @@ export async function build(args: string[]) {
       if (config.coverage.show) command += " --use COVERAGE_SHOW=1";
     }
     if (config.buildOptions.args) {
-      command += args.join(" ");
+      command += config.buildOptions.args.join(" ");
     }
     buildCommands.push(command);
   }

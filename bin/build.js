@@ -74,7 +74,7 @@ export async function build(args) {
                 command += " --use COVERAGE_SHOW=1";
         }
         if (config.buildOptions.args) {
-            command += args.join(" ");
+            command += config.buildOptions.args.join(" ");
         }
         buildCommands.push(command);
     }
