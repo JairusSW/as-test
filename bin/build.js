@@ -35,15 +35,6 @@ export async function build(args) {
   const pkg = JSON.parse(readFileSync("./package.json").toString());
   let buildCommands = [];
   if (config.buildOptions.wasi) {
-    if (!existsSync("./node_modules/@assemblyscript/wasi-shim/asconfig.json")) {
-      console.log(
-        chalk.bgRed(" ERROR ") +
-          chalk.dim(":") +
-          " " +
-          "could not find @assemblyscript/wasi-shim! Add it to your dependencies to run with WASI!",
-      );
-      process.exit(1);
-    }
     if (
       (pkg.dependencies &&
         !Object.keys(pkg.dependencies).includes("@assemblyscript/wasi-shim")) ||
@@ -56,15 +47,11 @@ export async function build(args) {
           "@assemblyscript/wasi-shim",
         ))
     ) {
-      if (
-        existsSync("./node_modules/@assemblyscript/wasi-shim/asconfig.json")
-      ) {
         console.log(
           chalk.bold.bgMagentaBright(" WARN ") +
             chalk.dim(": @assemblyscript/wasi-shim") +
             " is not included in project dependencies!",
         );
-      }
     }
   }
   let packageManagerCommand = "npx";
