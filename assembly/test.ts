@@ -1,3 +1,4 @@
+declare function hello(): void;
 import {
   describe,
   expect,

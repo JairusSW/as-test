@@ -16,3 +16,4 @@ v0.1.4 - Fix a few bugs with the cli
 v0.1.5 - Add skeleton cli and custom config
 v0.1.6 - Fix: args should be prefixed with a space
 v0.1.7 - Fix: remove warning about wasi-shim not being included when it is included
+v0.1.8 - Feat: function mocking

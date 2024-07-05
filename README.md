@@ -38,27 +38,29 @@ import {
   afterAll,
   beforeEach,
   afterEach,
+  mock,
   log,
   run
 } from "as-test";
 
-// Shared setup for all tests (executed once before all tests)
 beforeAll(() => {
   log("Setting up test environment...");
 });
 
-// Shared teardown for all tests (executed once after all tests)
 afterAll(() => {
   log("Tearing down test environment...");
 });
 
+// Mock/override the function console.log
+mock("console.log", (data: string): void => {
+  console.log("[MOCKED]: " + data + "\n");
+});
+
 describe("Math operations", () => {
-  // Setup before each test in this group (optional)
   beforeEach(() => {
     log("Initializing test...");
   });
 
-  // Teardown after each test in this group (optional)
   afterEach(() => {
     log("Cleaning up after test...");
   });

@@ -8,7 +8,22 @@ import {
   afterEach,
   log,
   run,
+  mock
 } from "..";
+
+function hello(a: i32, b: i32, c: i32): void {
+  console.log("a: " + a.toString());
+  console.log("b: " + b.toString());
+  console.log("c: " + c.toString());
+}
+
+mock("hello", (a: i32, b: i32, c: i32): void => {
+  hello(a + 10, b + 10, c + 10);
+});
+
+mock("console.log", (data: string): void => {
+  console.log("[MOCKED]: " + data);
+});
 
 // Shared setup for all tests (executed once before all tests)
 beforeAll(() => {
@@ -31,6 +46,11 @@ describe("Math operations", () => {
     log("Cleaning up after test...");
   });
 
+  test("Mock", () => {
+    hello(1,2,3);
+    console.log("hello");
+  });
+  
   test("Addition", () => {
     expect(1 + 2).toBe(3);
   });
@@ -63,7 +83,7 @@ describe("Array manipulation", () => {
   });
 });
 
-function foo(): void {}
+function foo(): void { }
 
 run({
   log: false,

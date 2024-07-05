@@ -175,6 +175,8 @@ export function afterEach(callback: () => void): void {
   after_each_callback = callback;
 }
 
+export function mock<returnType>(fn: string, callback: (...args: any[]) => returnType): void {}
+
 /**
  * Class defining options that can be passed to the `run` function.
  *
