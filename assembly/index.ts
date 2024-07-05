@@ -175,7 +175,10 @@ export function afterEach(callback: () => void): void {
   after_each_callback = callback;
 }
 
-export function mock<returnType>(fn: string, callback: (...args: any[]) => returnType): void {}
+export function mock<returnType>(
+  fn: string,
+  callback: (...args: any[]) => returnType,
+): void {}
 
 /**
  * Class defining options that can be passed to the `run` function.
@@ -232,7 +235,7 @@ export function run(options: RunOptions = new RunOptions()): void {
     ),
   );
   console.log(
-    rainbow.dimMk("\n------------------- v0.1.7 -------------------\n"),
+    rainbow.dimMk("\n------------------- v0.1.8 -------------------\n"),
   );
   // @ts-ignore
   if (isDefined(COVERAGE_USE)) {

@@ -9,7 +9,10 @@ export class MockTransform extends BaseVisitor {
     visitCallExpression(node) {
         super.visitCallExpression(node);
         if (node.expression instanceof PropertyAccessExpression) {
-            const name = toString(node.expression).replaceAll(".", "_").replaceAll("[", "_").replaceAll("]", "_");
+            const name = toString(node.expression)
+                .replaceAll(".", "_")
+                .replaceAll("[", "_")
+                .replaceAll("]", "_");
             if (this.mocked.has(name + "_mock")) {
                 node.expression = Node.createIdentifierExpression(name + "_mock", node.expression.range);
                 return;
@@ -21,7 +24,10 @@ export class MockTransform extends BaseVisitor {
             return;
         const ov = node.args[0];
         const cb = node.args[1];
-        const newName = ov.value.replaceAll(".", "_").replaceAll("[", "_").replaceAll("]", "_");
+        const newName = ov.value
+            .replaceAll(".", "_")
+            .replaceAll("[", "_")
+            .replaceAll("]", "_");
         const newFn = Node.createFunctionDeclaration(Node.createIdentifierExpression(newName + "_mock", cb.range), cb.declaration.decorators, 0, cb.declaration.typeParameters, cb.declaration.signature, cb.declaration.body, cb.declaration.arrowKind, cb.range);
         const stmts = this.currentSource.statements;
         let index = -1;

@@ -16,7 +16,7 @@ import {
   TernaryExpression,
   NodeKind,
   ArrowKind,
-  Node
+  Node,
 } from "assemblyscript/dist/assemblyscript.js";
 
 import { BaseVisitor, SimpleParser } from "visitor-as/dist/index.js";
@@ -536,7 +536,6 @@ export class CoverageTransform extends BaseVisitor {
     super.visitSource(node);
   }
 }
-
 
 /**
  * A simple djb2hash that returns a hash of a given string. See http://www.cse.yorku.ca/~oz/hash.html

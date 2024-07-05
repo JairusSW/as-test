@@ -1,4 +1,4 @@
-import { BlockStatement, ExpressionStatement, Node } from "assemblyscript/dist/assemblyscript.js";
+import { BlockStatement, ExpressionStatement, Node, } from "assemblyscript/dist/assemblyscript.js";
 import { BaseVisitor, SimpleParser } from "visitor-as/dist/index.js";
 import { RangeTransform } from "visitor-as/dist/transformRange.js";
 import { isStdlib } from "visitor-as/dist/utils.js";

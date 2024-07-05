@@ -34,22 +34,22 @@ export default class Transformer extends Transform {
 
     // Loop over every source
     for (const source of sources) {
-        mock.visit(source);
-        coverage.visit(source);
-        if (coverage.globalStatements.length) {
-          source.statements.unshift(...coverage.globalStatements);
-          const tokenizer = new Tokenizer(
-            new Source(
-              SourceKind.User,
-              source.normalizedPath,
-              'import { __REGISTER, __COVER } from "as-test/assembly/coverage";',
-            ),
-          );
-          parser.currentSource = tokenizer.source;
-          source.statements.unshift(parser.parseTopLevelStatement(tokenizer)!);
-          parser.currentSource = source;
-        }
+      mock.visit(source);
+      coverage.visit(source);
+      if (coverage.globalStatements.length) {
+        source.statements.unshift(...coverage.globalStatements);
+        const tokenizer = new Tokenizer(
+          new Source(
+            SourceKind.User,
+            source.normalizedPath,
+            'import { __REGISTER, __COVER } from "as-test/assembly/coverage";',
+          ),
+        );
+        parser.currentSource = tokenizer.source;
+        source.statements.unshift(parser.parseTopLevelStatement(tokenizer)!);
+        parser.currentSource = source;
       }
-      coverage.globalStatements = [];
+    }
+    coverage.globalStatements = [];
   }
 }

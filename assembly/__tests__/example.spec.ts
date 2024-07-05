@@ -8,7 +8,7 @@ import {
   afterEach,
   log,
   run,
-  mock
+  mock,
 } from "..";
 
 function hello(a: i32, b: i32, c: i32): void {
@@ -47,10 +47,10 @@ describe("Math operations", () => {
   });
 
   test("Mock", () => {
-    hello(1,2,3);
+    hello(1, 2, 3);
     console.log("hello");
   });
-  
+
   test("Addition", () => {
     expect(1 + 2).toBe(3);
   });
@@ -83,7 +83,7 @@ describe("Array manipulation", () => {
   });
 });
 
-function foo(): void { }
+function foo(): void {}
 
 run({
   log: false,
