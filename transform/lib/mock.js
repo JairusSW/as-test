@@ -1,4 +1,4 @@
-import { IdentifierExpression, Node, PropertyAccessExpression, } from "assemblyscript/dist/assemblyscript.js";
+import { Node, } from "assemblyscript/dist/assemblyscript.js";
 import { BaseVisitor } from "visitor-as/dist/index.js";
 import { toString } from "visitor-as/dist/utils.js";
 export class MockTransform extends BaseVisitor {
@@ -8,19 +8,15 @@ export class MockTransform extends BaseVisitor {
     mocked = new Set();
     visitCallExpression(node) {
         super.visitCallExpression(node);
-        if (node.expression instanceof PropertyAccessExpression) {
-            const name = toString(node.expression)
-                .replaceAll(".", "_")
-                .replaceAll("[", "_")
-                .replaceAll("]", "_");
-            if (this.mocked.has(name + "_mock")) {
-                node.expression = Node.createIdentifierExpression(name + "_mock", node.expression.range);
-                return;
-            }
-        }
-        if (!(node.expression instanceof IdentifierExpression))
+        const name = toString(node.expression)
+            .replaceAll(".", "_")
+            .replaceAll("[", "_")
+            .replaceAll("]", "_");
+        if (this.mocked.has(name + "_mock")) {
+            node.expression = Node.createIdentifierExpression(name + "_mock", node.expression.range);
             return;
-        if (node.expression.text != "mock")
+        }
+        if (name != "mock")
             return;
         const ov = node.args[0];
         const cb = node.args[1];
@@ -33,7 +29,7 @@ export class MockTransform extends BaseVisitor {
         let index = -1;
         for (let i = 0; i < stmts.length; i++) {
             const stmt = stmts[i];
-            if (toString(stmt) != toString(node))
+            if (stmt.range.start != node.range.start)
                 continue;
             index = i;
             break;

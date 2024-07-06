@@ -21,23 +21,20 @@ export class MockTransform extends BaseVisitor {
   public mocked = new Set<string>();
   visitCallExpression(node: CallExpression): void {
     super.visitCallExpression(node);
-    if (node.expression instanceof PropertyAccessExpression) {
-      const name = toString(node.expression)
-        .replaceAll(".", "_")
-        .replaceAll("[", "_")
-        .replaceAll("]", "_");
-      if (this.mocked.has(name + "_mock")) {
-        //console.log("fn rn " + name + " -> " + name + "_mock");
-        node.expression = Node.createIdentifierExpression(
-          name + "_mock",
-          node.expression.range,
-        );
-        //console.log(toString(node.expression))
-        return;
-      }
+    const name = toString(node.expression)
+      .replaceAll(".", "_")
+      .replaceAll("[", "_")
+      .replaceAll("]", "_");
+
+    if (this.mocked.has(name + "_mock")) {
+      node.expression = Node.createIdentifierExpression(
+        name + "_mock",
+        node.expression.range,
+      );
+      return;
     }
-    if (!(node.expression instanceof IdentifierExpression)) return;
-    if (node.expression.text != "mock") return;
+
+    if (name != "mock") return;
     const ov = node.args[0] as StringLiteralExpression;
     const cb = node.args[1] as FunctionExpression;
 
@@ -45,6 +42,7 @@ export class MockTransform extends BaseVisitor {
       .replaceAll(".", "_")
       .replaceAll("[", "_")
       .replaceAll("]", "_");
+
     const newFn = Node.createFunctionDeclaration(
       Node.createIdentifierExpression(newName + "_mock", cb.range),
       cb.declaration.decorators,
@@ -55,16 +53,16 @@ export class MockTransform extends BaseVisitor {
       cb.declaration.arrowKind,
       cb.range,
     );
+
     const stmts = this.currentSource.statements;
     let index = -1;
     for (let i = 0; i < stmts.length; i++) {
       const stmt = stmts[i];
-      if (toString(stmt) != toString(node)) continue;
+      if (stmt.range.start != node.range.start) continue;
       index = i;
       break;
     }
     if (index === -1) return;
-    //console.log("fn mock " + newName + "_mock" + " at index " + index.toString());
     stmts.splice(index, 1, newFn);
     this.mocked.add(newFn.name.text);
   }

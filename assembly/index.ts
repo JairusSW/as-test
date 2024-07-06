@@ -1,7 +1,7 @@
 import { rainbow } from "as-rainbow";
 import { TestGroup } from "./src/group";
 import { Expectation } from "./src/expectation";
-import { formatTime } from "./util";
+import { formatTime } from "./util/helpers";
 import { stringify } from "as-console/stringify";
 import { __COVER, __HASHES, __POINTS } from "as-test/assembly/coverage";
 import { createTable } from "table-as";
@@ -235,7 +235,7 @@ export function run(options: RunOptions = new RunOptions()): void {
     ),
   );
   console.log(
-    rainbow.dimMk("\n------------------- v0.1.8 -------------------\n"),
+    rainbow.dimMk("\n------------------- v0.1.9 -------------------\n"),
   );
   // @ts-ignore
   if (isDefined(COVERAGE_USE)) {

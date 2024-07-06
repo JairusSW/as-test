@@ -1,5 +1,5 @@
 import { rainbow } from "as-rainbow";
-import { diff, visualize } from "../util";
+import { diff, visualize } from "../util/helpers";
 import { Node } from "./node";
 import { Verdict, after_each_callback, before_each_callback } from "..";
 

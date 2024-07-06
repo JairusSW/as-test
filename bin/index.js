@@ -7,7 +7,7 @@ const _args = process.argv.slice(2);
 const flags = [];
 const args = [];
 const COMMANDS = ["run", "build", "test", "init"];
-const version = "0.1.8";
+const version = "0.1.9";
 for (const arg of _args) {
     if (arg.startsWith("-"))
         flags.push(arg);
