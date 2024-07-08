@@ -13,7 +13,7 @@ import {
 import { FunctionDeclaration } from "types:assemblyscript/src/ast";
 
 import { BaseVisitor } from "visitor-as/dist/index.js";
-import { toString } from "visitor-as/dist/utils.js";
+import { isStdlib, toString } from "visitor-as/dist/utils.js";
 export class MockTransform extends BaseVisitor {
   public currentSource: Source;
   public globalStatements: Statement[] = [];
@@ -76,6 +76,8 @@ export class MockTransform extends BaseVisitor {
     this.fn.set(name, node);
   }
   visitSource(node: Source): void {
+    if (node.isLibrary) return;
+    if (isStdlib(node)) return;
     this.mocked = new Set<string>();
     this.currentSource = node;
     super.visitSource(node);
