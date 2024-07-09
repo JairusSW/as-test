@@ -114,6 +114,9 @@ export async function build(args: string[]) {
     if (config.buildOptions.args) {
       command += " " + config.buildOptions.args.join(" ");
     }
+    if (["node","deno","bun"].includes(config.runOptions.runtime.run.split(" ")[0])) {
+      command += " --exportStart"
+    }
     buildCommands.push(command);
   }
 
