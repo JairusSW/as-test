@@ -10,17 +10,15 @@
     "show": false
   },
   "buildOptions": {
-    "args": [
-      "--exportStart"
-    ],
-    "wasi": false,
+    "args": [],
+    "wasi": true,
     "parallel": true,
     "verbose": true
   },
   "runOptions": {
     "runtime": {
-      "name": "node",
-      "run": "node ./test.js"
+      "name": "wasmtime",
+      "run": "wasmtime <file>"
     }
   }
 }

@@ -8,6 +8,7 @@
   },
   "dependencies": {},
   "devDependencies": {
+    "@assemblyscript/wasi-shim": "^0.1.0",
     "as-test": "JairusSW/as-test",
     "assemblyscript": "^0.27.29",
     "visitor-as": "^0.11.4"
