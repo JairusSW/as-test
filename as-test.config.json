@@ -6,11 +6,13 @@
   "config": "./asconfig.json",
   "suites": [],
   "coverage": {
-    "enabled": false,
+    "enabled": true,
     "show": false
   },
   "buildOptions": {
-    "args": [],
+    "args": [
+      "--exportStart"
+    ],
     "wasi": false,
     "parallel": true,
     "verbose": true
