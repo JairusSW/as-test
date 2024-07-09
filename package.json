@@ -16,9 +16,9 @@
   },
   "devDependencies": {
     "@assemblyscript/wasi-shim": "^0.1.0",
-    "@types/node": "^20.14.9",
+    "@types/node": "^20.14.10",
     "as-test": "./",
-    "assemblyscript": "^0.27.28",
+    "assemblyscript": "^0.27.29",
     "assemblyscript-prettier": "^3.0.1",
     "typescript": "^5.5.3",
     "visitor-as": "^0.11.4"
@@ -28,7 +28,7 @@
     "as-rainbow": "^0.1.0",
     "as-variant": "^0.4.1",
     "chalk": "^5.3.0",
-    "glob": "^10.4.2",
+    "glob": "^11.0.0",
     "jest": "^29.7.0"
   },
   "overrides": {

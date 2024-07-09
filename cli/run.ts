@@ -26,8 +26,8 @@ export async function run() {
     if (!existsSync(bin)) continue;
     for (const file of readdirSync(bin)) {
       if (
-        file == config.runOptions.runtime.name ||
-        file == config.runOptions.runtime.name + ".exe"
+        file == config.runOptions.runtime.run.split(" ")[0] ||
+        file == config.runOptions.runtime.run.split(" ")[0] + ".exe"
       ) {
         execPath = bin + "/" + file;
       }
@@ -37,25 +37,32 @@ export async function run() {
   if (!execPath) {
     console.log(
       chalk.bgRed(" ERROR ") +
-        chalk.dim(":") +
-        " could not locate " +
-        config.runOptions.runtime.name +
-        " in your PATH variable. Either set it, or install it" +
-        (config.runOptions.runtime.name
-          ? "using " +
-            chalk.dim(installScripts.get(config.runOptions.runtime.name))
-          : "."),
+      chalk.dim(":") +
+      " could not locate " +
+      config.runOptions.runtime.run.split(" ")[0] +
+      " in your PATH variable. Either set it, or install it" +
+      (config.runOptions.runtime.run.split(" ")[0]
+        ? "using " +
+        chalk.dim(installScripts.get(config.runOptions.runtime.run.split(" ")[0]))
+        : "."),
     );
   }
+
   for (const file of inputFiles) {
     const outFile =
       config.outDir +
       "/" +
       file.slice(file.lastIndexOf("/") + 1).replace(".ts", ".wasm");
-    exec(
-      config.runOptions.runtime.run
+
+    let cmd = config.runOptions.runtime.run
+      .replace(config.runOptions.runtime.name, execPath)
+      .replace("<file>", outFile);
+    if (config.runOptions.runtime.run.startsWith("bun") || config.runOptions.runtime.run.startsWith("node") || config.runOptions.runtime.run.startsWith("deno")) {
+      cmd = config.runOptions.runtime.run
         .replace(config.runOptions.runtime.name, execPath)
-        .replace("<file>", outFile),
+        .replace("<file>", outFile.replace(".wasm", ".js"))
+    }
+    exec(cmd,
       (err, stdout, stderr) => {
         process.stdout.write(stdout);
         process.stderr.write(stderr);

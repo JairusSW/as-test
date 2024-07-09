@@ -9,14 +9,14 @@
   },
   "buildOptions": {
     "args": [],
-    "wasi": true,
+    "wasi": false,
     "parallel": true,
     "verbose": true
   },
   "runOptions": {
     "runtime": {
-      "name": "wasmtime",
-      "run": "wasmtime <file>"
+      "name": "node",
+      "run": "node ./test.js"
     }
   }
 }
