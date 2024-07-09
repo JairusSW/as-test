@@ -175,7 +175,12 @@ export function afterEach(callback: () => void): void {
   after_each_callback = callback;
 }
 
-export function mock<returnType>(
+/**
+ * Overrides all references to an existing function to instead point to this
+ * @param {string} fn - name of function to override
+ * @param {() => returnType} callback - the function to substitute it with
+ */
+export function mockFn<returnType>(
   fn: string,
   callback: (...args: any[]) => returnType,
 ): void {}
@@ -235,7 +240,7 @@ export function run(options: RunOptions = new RunOptions()): void {
     ),
   );
   console.log(
-    rainbow.dimMk("\n------------------- v0.1.9 -------------------\n"),
+    rainbow.dimMk("\n------------------- v0.1.10 -------------------\n"),
   );
   // @ts-ignore
   if (isDefined(COVERAGE_USE)) {

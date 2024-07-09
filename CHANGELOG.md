@@ -18,5 +18,6 @@ v0.1.6 - Fix: args should be prefixed with a space
 v0.1.7 - Fix: remove warning about wasi-shim not being included when it is included
 v0.1.8 - Feat: function mocking
 v0.1.9 - Fix: mocks were not being applied to declared functions, only property accesses
+v0.1.10 - Feat: support node, deno, and bun
 
-v0.1.10 [UNRELEASED] - Feat: snapshotting
+[UNRELEASED] - Feat: snapshotting

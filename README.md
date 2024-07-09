@@ -3,7 +3,7 @@
 |  _  ||   __| ___|_   _||   __||   __||_   _|
 |     ||__   ||___| | |  |   __||__   |  | |  
 |__|__||_____|      |_|  |_____||_____|  |_|  
-v0.1.9
+v0.1.10
 </pre>
 </h5>
 
@@ -14,6 +14,15 @@ npm install as-test
 ```
 
 Note: The transform _is_ OPTIONAL, though it is required to enable code coverage.
+
+## Templates
+
+I provide two templates for reference
+
+[WASI](https://github.com/JairusSW/as-test/tree/template/wasi)
+[Node/Bun/Deno](https://github.com/JairusSW/as-test/tree/template/node-bun-deno)
+
+View the docs: https://docs.jairus.dev/as-test
 
 ## Usage
 
@@ -38,7 +47,7 @@ import {
   afterAll,
   beforeEach,
   afterEach,
-  mock,
+  mockFn,
   log,
   run
 } from "as-test";
@@ -52,7 +61,7 @@ afterAll(() => {
 });
 
 // Mock/override the function console.log
-mock("console.log", (data: string): void => {
+mockFn<void>("console.log", (data: string): void => {
   console.log("[MOCKED]: " + data + "\n");
 });
 
@@ -128,16 +137,6 @@ If you use this project in your codebase, consider dropping a [⭐ HERE](https:/
 
 This library is in the EARLY STAGES OF DEVELOPMENT!
 If you want a feature, drop an issue (and again, maybe a star). I'll likely add it in less than 7 days.
-
-## Contact
-
-Contact me at:
-
-Email: `me@jairus.dev`
-
-GitHub: `JairusSW`
-
-Discord: `jairussw`
 
 ## Issues
 

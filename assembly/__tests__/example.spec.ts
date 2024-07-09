@@ -8,20 +8,10 @@ import {
   afterEach,
   log,
   run,
-  mock,
+  mockFn,
 } from "..";
 
-function hello(a: i32, b: i32, c: i32): void {
-  console.log("a: " + a.toString());
-  console.log("b: " + b.toString());
-  console.log("c: " + c.toString());
-}
-
-mock("hello", (a: i32, b: i32, c: i32): void => {
-  hello(a + 10, b + 10, c + 10);
-});
-
-mock("console.log", (data: string): void => {
+mockFn<void>("console.log", (data: string): void => {
   console.log("[MOCKED]: " + data);
 });
 
@@ -47,7 +37,6 @@ describe("Math operations", () => {
   });
 
   test("Mock", () => {
-    hello(1, 2, 3);
     console.log("hello");
   });
 

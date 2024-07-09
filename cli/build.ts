@@ -92,12 +92,12 @@ export async function build(args: string[]) {
   for (const file of inputFiles) {
     console.log(chalk.dim("Including " + file));
     let command = `${packageManagerCommand} asc ${file}${args.length ? " " + args.join(" ") : ""}`;
+    if (config.config !== "none") {
+      command += " --config " + config.config;
+    }
     if (config.buildOptions.wasi) {
       command +=
         " --config ./node_modules/@assemblyscript/wasi-shim/asconfig.json";
-    }
-    if (config.config !== "none") {
-      command += " --config " + config.config;
     }
     const outFile =
       config.outDir +
@@ -114,8 +114,12 @@ export async function build(args: string[]) {
     if (config.buildOptions.args) {
       command += " " + config.buildOptions.args.join(" ");
     }
-    if (["node","deno","bun"].includes(config.runOptions.runtime.run.split(" ")[0])) {
-      command += " --exportStart"
+    if (
+      ["node", "deno", "bun"].includes(
+        config.runOptions.runtime.run.split(" ")[0],
+      )
+    ) {
+      command += " --exportStart";
     }
     buildCommands.push(command);
   }

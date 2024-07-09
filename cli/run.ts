@@ -37,14 +37,16 @@ export async function run() {
   if (!execPath) {
     console.log(
       chalk.bgRed(" ERROR ") +
-      chalk.dim(":") +
-      " could not locate " +
-      config.runOptions.runtime.run.split(" ")[0] +
-      " in your PATH variable. Either set it, or install it" +
-      (config.runOptions.runtime.run.split(" ")[0]
-        ? "using " +
-        chalk.dim(installScripts.get(config.runOptions.runtime.run.split(" ")[0]))
-        : "."),
+        chalk.dim(":") +
+        " could not locate " +
+        config.runOptions.runtime.run.split(" ")[0] +
+        " in your PATH variable. Either set it, or install it" +
+        (config.runOptions.runtime.run.split(" ")[0]
+          ? "using " +
+            chalk.dim(
+              installScripts.get(config.runOptions.runtime.run.split(" ")[0]),
+            )
+          : "."),
     );
   }
 
@@ -57,19 +59,21 @@ export async function run() {
     let cmd = config.runOptions.runtime.run
       .replace(config.runOptions.runtime.name, execPath)
       .replace("<file>", outFile);
-    if (config.runOptions.runtime.run.startsWith("bun") || config.runOptions.runtime.run.startsWith("node") || config.runOptions.runtime.run.startsWith("deno")) {
+    if (
+      config.runOptions.runtime.run.startsWith("bun") ||
+      config.runOptions.runtime.run.startsWith("node") ||
+      config.runOptions.runtime.run.startsWith("deno")
+    ) {
       cmd = config.runOptions.runtime.run
         .replace(config.runOptions.runtime.name, execPath)
-        .replace("<file>", outFile.replace(".wasm", ".js"))
+        .replace("<file>", outFile.replace(".wasm", ".js"));
     }
-    exec(cmd,
-      (err, stdout, stderr) => {
-        process.stdout.write(stdout);
-        process.stderr.write(stderr);
-        if (err) {
-          process.exit(err.code);
-        }
-      },
-    );
+    exec(cmd, (err, stdout, stderr) => {
+      process.stdout.write(stdout);
+      process.stderr.write(stderr);
+      if (err) {
+        process.exit(err.code);
+      }
+    });
   }
 }
