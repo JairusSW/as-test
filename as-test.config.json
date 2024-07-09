@@ -1,0 +1,24 @@
+{
+  "input": [
+    "./assembly/__tests__/*.spec.ts"
+  ],
+  "outDir": "./build",
+  "config": "./asconfig.json",
+  "suites": [],
+  "coverage": {
+    "enabled": false,
+    "show": false
+  },
+  "buildOptions": {
+    "args": [],
+    "wasi": false,
+    "parallel": true,
+    "verbose": true
+  },
+  "runOptions": {
+    "runtime": {
+      "name": "node",
+      "run": "node ./test.js"
+    }
+  }
+}
