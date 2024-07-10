@@ -1,4 +1,4 @@
-import { Node, } from "assemblyscript/dist/assemblyscript.js";
+import { Node } from "assemblyscript/dist/assemblyscript.js";
 import { BaseVisitor } from "visitor-as/dist/index.js";
 import { isStdlib, toString } from "visitor-as/dist/utils.js";
 export class MockTransform extends BaseVisitor {
@@ -49,11 +49,9 @@ export class MockTransform extends BaseVisitor {
     visitSource(node) {
         if (node.isLibrary || isStdlib(node)) {
             if (!node.normalizedPath.startsWith("~lib/as-test")) {
-                console.log("Not Visiting: " + node.normalizedPath);
                 return;
             }
         }
-        console.log("Are Visiting: " + node.normalizedPath);
         this.mocked = new Set();
         this.currentSource = node;
         super.visitSource(node);

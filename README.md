@@ -3,7 +3,7 @@
 |  _  ||   __| ___|_   _||   __||   __||_   _|
 |     ||__   ||___| | |  |   __||__   |  | |  
 |__|__||_____|      |_|  |_____||_____|  |_|  
-v0.2.0
+v0.2.1
 </pre>
 </h5>
 
@@ -22,6 +22,7 @@ You'll also need to install `visitor-as`
 I provide two templates for reference
 
 [WASI](https://github.com/JairusSW/as-test/tree/template/wasi)
+
 [Node/Bun/Deno](https://github.com/JairusSW/as-test/tree/template/node-bun-deno)
 
 View the docs: https://docs.jairus.dev/as-test
