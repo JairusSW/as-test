@@ -19,5 +19,5 @@ v0.1.7 - Fix: remove warning about wasi-shim not being included when it is inclu
 v0.1.8 - Feat: function mocking
 v0.1.9 - Fix: mocks were not being applied to declared functions, only property accesses
 v0.1.10 - Feat: support node, deno, and bun
-
+v0.2.0 - Fix mock -> mockFn artifacts
 [UNRELEASED] - Feat: snapshotting

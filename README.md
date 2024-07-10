@@ -3,17 +3,19 @@
 |  _  ||   __| ___|_   _||   __||   __||_   _|
 |     ||__   ||___| | |  |   __||__   |  | |  
 |__|__||_____|      |_|  |_____||_____|  |_|  
-v0.1.10
+v0.2.0
 </pre>
 </h5>
 
 ## Installation
 
-```bash
-npm install as-test
-```
+To get started, install the package from NPM or GitHub
 
-Note: The transform _is_ OPTIONAL, though it is required to enable code coverage.
+`npm i as-test --save-dev`
+
+You'll also need to install `visitor-as`
+
+`npm i visitor-as --save-dev`
 
 ## Templates
 

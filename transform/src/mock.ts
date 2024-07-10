@@ -2,13 +2,10 @@ import {
   Source,
   Statement,
   CallExpression,
-  IdentifierExpression,
   StringLiteralExpression,
-  NodeKind,
   FunctionExpression,
   CommonFlags,
-  Node,
-  PropertyAccessExpression,
+  Node
 } from "assemblyscript/dist/assemblyscript.js";
 import { FunctionDeclaration } from "types:assemblyscript/src/ast";
 
@@ -34,7 +31,7 @@ export class MockTransform extends BaseVisitor {
       return;
     }
 
-    if (name != "mock") return;
+    if (name != "mockFn") return;
     const ov = node.args[0] as StringLiteralExpression;
     const cb = node.args[1] as FunctionExpression;
 
@@ -76,8 +73,11 @@ export class MockTransform extends BaseVisitor {
     this.fn.set(name, node);
   }
   visitSource(node: Source): void {
-    if (node.isLibrary) return;
-    if (isStdlib(node)) return;
+    if (node.isLibrary || isStdlib(node)) {
+      if (!node.normalizedPath.startsWith("~lib/as-test")) {
+        return;
+      }
+    }
     this.mocked = new Set<string>();
     this.currentSource = node;
     super.visitSource(node);
