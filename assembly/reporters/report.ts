@@ -5,6 +5,7 @@ import { Tests } from "../src/tests";
 
 @json
 export class Report {
+  file: string = "unknown";
   verdict: Verdict = Verdict.None;
   groups: SuiteReport[] = [];
 }

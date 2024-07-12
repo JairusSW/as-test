@@ -59,12 +59,14 @@ class LogReporter {
         return out;
     }
     reportLog(log: Report): string {
+        // @ts-ignore
         let out: string = "";
         
         out +=
             rainbow.bgCyanBright(" FILE ") +
             " " +
-            rainbow.dimMk("./assembly/__tests__/example.spec.ts") +
+            // @ts-ignore
+            rainbow.dimMk(log.file) +
             "\n\n";
 
         for (let i = 0; i < log.groups.length; i++) {

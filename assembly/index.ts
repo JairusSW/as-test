@@ -291,6 +291,8 @@ export function run(options: RunOptions = new RunOptions()): void {
   if (report.verdict === Verdict.None) {
     if (report.groups.length) report.verdict = Verdict.Ok;
   }
+  // @ts-ignore
+  report.file = isDefined(ENTRY_FILE) ? ENTRY_FILE : "unknown";
   console.log(
     "--REPORT-START--\n" + JSON.stringify(report) + "\n--REPORT-END--",
   );

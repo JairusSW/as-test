@@ -1,5 +1,5 @@
 import { Transform } from "assemblyscript/dist/transform.js";
-import { Source, Tokenizer, } from "assemblyscript/dist/assemblyscript.js";
+import { Node, Source, Tokenizer, } from "assemblyscript/dist/assemblyscript.js";
 import { isStdlib } from "visitor-as/dist/utils.js";
 import { CoverageTransform } from "./coverage.js";
 import { MockTransform } from "./mock.js";
@@ -22,7 +22,12 @@ export default class Transformer extends Transform {
                 return 0;
             }
         });
+        const entryFile = sources.find(v => v.sourceKind == 1).simplePath;
         for (const source of sources) {
+            const node = Node.createVariableStatement(null, [
+                Node.createVariableDeclaration(Node.createIdentifierExpression("ENTRY_FILE", source.range), null, 8, null, Node.createStringLiteralExpression(entryFile + ".ts", source.range), source.range)
+            ], source.range);
+            source.statements.unshift(node);
             mock.visit(source);
             coverage.visit(source);
             if (coverage.globalStatements.length) {
