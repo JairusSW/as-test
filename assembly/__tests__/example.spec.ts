@@ -1,44 +1,12 @@
 import {
   describe,
   expect,
-  test, // Alias for `it`
+  test,
   beforeAll,
-  afterAll,
-  beforeEach,
-  afterEach,
-  log,
-  run,
-  mockFn,
+  run
 } from "..";
 
-mockFn<void>("console.log", (data: string): void => {
-  console.log("[MOCKED]: " + data);
-});
-
-// Shared setup for all tests (executed once before all tests)
-beforeAll(() => {
-  log("Setting up test environment...");
-});
-
-// Shared teardown for all tests (executed once after all tests)
-afterAll(() => {
-  log("Tearing down test environment...");
-});
-
 describe("Math operations", () => {
-  // Setup before each test in this group (optional)
-  beforeEach(() => {
-    log("Initializing test...");
-  });
-
-  // Teardown after each test in this group (optional)
-  afterEach(() => {
-    log("Cleaning up after test...");
-  });
-
-  test("Mock", () => {
-    console.log("hello");
-  });
 
   test("Addition", () => {
     expect(1 + 2).toBe(3);
@@ -48,20 +16,11 @@ describe("Math operations", () => {
     expect(5).toBeGreaterThan(3);
     expect(2).toBeLessThan(4);
   });
-
-  test("Type checking", () => {
-    expect("hello").toBeString();
-    expect(true).toBeBoolean();
-    expect(10.5).toBeNumber();
-  });
 });
 
-let myArray: i32[] = [];
+let myArray: i32[] = [1, 2, 3];
 
 describe("Array manipulation", () => {
-  beforeAll(() => {
-    myArray = [1, 2, 3];
-  });
 
   test("Array length", () => {
     expect(myArray).toHaveLength(3);

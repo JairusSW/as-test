@@ -1,9 +1,9 @@
 import { Verdict } from "..";
-import { TestGroup } from "../src/group";
+import { Suite } from "../src/suite";
 
 export class TapReporter {
-  public groups: TestGroup[];
-  constructor(groups: TestGroup[]) {
+  public groups: Suite[];
+  constructor(groups: Suite[]) {
     this.groups = groups;
   }
   report(): string {
@@ -20,8 +20,8 @@ export class TapReporter {
         out += "  ---";
         out += `  message: '${group.description}'`;
         out += `  severity: fail`;
-        for (let ii = 0; ii < group.results.length; ii++) {
-          const res = unchecked(group.results[ii]);
+        for (let ii = 0; ii < group.tests.length; ii++) {
+          const res = unchecked(group.tests[ii]);
           if (res.verdict === Verdict.Ok) continue;
         }
       }

@@ -69,7 +69,12 @@ export async function run() {
         .replace("<file>", outFile.replace(".wasm", ".js"));
     }
     exec(cmd, (err, stdout, stderr) => {
-      process.stdout.write(stdout);
+      const report = stdout.slice(
+        stdout.indexOf("--REPORT-START--") + 16,
+        stdout.indexOf("--REPORT-END--")
+      )
+      process.stdout.write(stdout + "\n");
+      console.dir(JSON.parse(report), { depth: 256 })
       process.stderr.write(stderr);
       if (err) {
         process.exit(err.code);

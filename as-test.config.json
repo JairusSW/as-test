@@ -8,7 +8,7 @@
     "show": false
   },
   "buildOptions": {
-    "args": [],
+    "args": ["--transform json-as/transform"],
     "wasi": true,
     "parallel": true,
     "verbose": true

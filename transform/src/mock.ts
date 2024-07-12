@@ -5,7 +5,7 @@ import {
   StringLiteralExpression,
   FunctionExpression,
   CommonFlags,
-  Node
+  Node,
 } from "assemblyscript/dist/assemblyscript.js";
 import { FunctionDeclaration } from "types:assemblyscript/src/ast";
 

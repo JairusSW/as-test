@@ -1,19 +1,18 @@
 import { rainbow } from "as-rainbow";
 import { diff, visualize } from "../util/helpers";
-import { Node } from "./node";
+import { Tests } from "./tests";
 import { Verdict, after_each_callback, before_each_callback } from "..";
 
-export class Expectation<T> extends Node {
-  public verdict: Verdict = Verdict.Unreachable;
-  private left: T;
-  private _left: string | null = null;
-  private right: u64 = 0;
-  private _right: string | null = null;
+export class Expectation<T> extends Tests {
+  public type: string = "Expectation";
+  public verdict: Verdict = Verdict.None;
+  private _left: T;
+  // @ts-ignore
+  private _right: u64 = 0;
   private _not: boolean = false;
-  private op: string = "=";
   constructor(left: T) {
     super();
-    this.left = left;
+    this._left = left;
   }
   get not(): Expectation<T> {
     this._not = true;
@@ -26,14 +25,17 @@ export class Expectation<T> extends Node {
    */
   toBeNull(): void {
     this.verdict =
-      isNullable<T>() && changetype<usize>(this.left)
+      isNullable<T>() && changetype<usize>(this._left)
         ? Verdict.Ok
         : Verdict.Fail;
 
     // @ts-ignore
-    store<T>(changetype<usize>(this), null, offsetof<Expectation<T>>("right"));
+    store<T>(changetype<usize>(this), null, offsetof<Expectation<T>>("_right"));
 
-    this.op = "=";
+    this.instr = "toBeNull";
+
+    this.left = visualize<T>(this._left);
+    this.right = visualize<T>(load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")));
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -50,10 +52,13 @@ export class Expectation<T> extends Node {
     if (!isInteger<T>() && !isFloat<T>())
       ERROR("toBeGreaterThan() can only be used on number types!");
 
-    this.verdict = this.left > value ? Verdict.Ok : Verdict.Fail;
-    store<T>(changetype<usize>(this), value, offsetof<Expectation<T>>("right"));
+    this.verdict = this._left > value ? Verdict.Ok : Verdict.Fail;
+    store<T>(changetype<usize>(this), value, offsetof<Expectation<T>>("_right"));
 
-    this.op = ">";
+    this.instr = "toBeGreaterThan";
+
+    this.left = visualize<T>(this._left);
+    this.right = visualize<T>(load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")));
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -70,10 +75,13 @@ export class Expectation<T> extends Node {
     if (!isInteger<T>() && !isFloat<T>())
       ERROR("toBeGreaterOrEqualTo() can only be used on number types!");
 
-    this.verdict = this.left >= value ? Verdict.Ok : Verdict.Fail;
-    store<T>(changetype<usize>(this), value, offsetof<Expectation<T>>("right"));
+    this.verdict = this._left >= value ? Verdict.Ok : Verdict.Fail;
+    store<T>(changetype<usize>(this), value, offsetof<Expectation<T>>("_right"));
 
-    this.op = ">=";
+    this.instr = "toBeGreaterThanOrEqualTo"
+
+    this.left = visualize<T>(this._left);
+    this.right = visualize<T>(load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")));
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -90,10 +98,13 @@ export class Expectation<T> extends Node {
     if (!isInteger<T>() && !isFloat<T>())
       ERROR("toBeLessThan() can only be used on number types!");
 
-    this.verdict = this.left < value ? Verdict.Ok : Verdict.Fail;
-    store<T>(changetype<usize>(this), value, offsetof<Expectation<T>>("right"));
+    this.verdict = this._left < value ? Verdict.Ok : Verdict.Fail;
+    store<T>(changetype<usize>(this), value, offsetof<Expectation<T>>("_right"));
 
-    this.op = "<";
+    this.instr = "toBeLessThan"
+
+    this.left = visualize<T>(this._left);
+    this.right = visualize<T>(load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")));
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -110,10 +121,13 @@ export class Expectation<T> extends Node {
     if (!isInteger<T>() && !isFloat<T>())
       ERROR("toBeLessThanOrEqualTo() can only be used on number types!");
 
-    this.verdict = this.left <= value ? Verdict.Ok : Verdict.Fail;
-    store<T>(changetype<usize>(this), value, offsetof<Expectation<T>>("right"));
+    this.verdict = this._left <= value ? Verdict.Ok : Verdict.Fail;
+    store<T>(changetype<usize>(this), value, offsetof<Expectation<T>>("_right"));
 
-    this.op = "<=";
+    this.instr = "toBeLessThanOrEqualTo"
+
+    this.left = visualize<T>(this._left);
+    this.right = visualize<T>(load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")));
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -128,10 +142,10 @@ export class Expectation<T> extends Node {
   toBeString(): void {
     this.verdict = isString<T>() ? Verdict.Ok : Verdict.Fail;
 
-    this._left = nameof<T>();
-    this._right = "string";
+    this.left = nameof<T>();
+    this.right = "string";
 
-    this.op = "type";
+    this.instr = "toBeString"
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -146,10 +160,10 @@ export class Expectation<T> extends Node {
   toBeBoolean(): void {
     this.verdict = isBoolean<T>() ? Verdict.Ok : Verdict.Fail;
 
-    this._left = nameof<T>();
-    this._right = "boolean";
+    this.left = nameof<T>();
+    this.right = "boolean";
 
-    this.op = "type";
+    this.instr = "toBeBoolean"
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -164,10 +178,10 @@ export class Expectation<T> extends Node {
   toBeArray(): void {
     this.verdict = isArray<T>() ? Verdict.Ok : Verdict.Fail;
 
-    this._left = nameof<T>();
-    this._right = "Array<any>";
+    this.left = nameof<T>();
+    this.right = "Array<any>";
 
-    this.op = "type";
+    this.instr = "toBeArray"
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -182,10 +196,10 @@ export class Expectation<T> extends Node {
   toBeNumber(): void {
     this.verdict = isFloat<T>() || isInteger<T>() ? Verdict.Ok : Verdict.Fail;
 
-    this._left = nameof<T>();
-    this._right = "number";
+    this.left = nameof<T>();
+    this.right = "number";
 
-    this.op = "type";
+    this.instr = "toBeNumber"
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -200,10 +214,10 @@ export class Expectation<T> extends Node {
   toBeInteger(): void {
     this.verdict = isInteger<T>() ? Verdict.Ok : Verdict.Fail;
 
-    this._left = nameof<T>();
-    this._right = "float";
+    this.left = nameof<T>();
+    this.right = "float";
 
-    this.op = "type";
+    this.instr = "toBeInteger"
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -218,10 +232,10 @@ export class Expectation<T> extends Node {
   toBeFloat(): void {
     this.verdict = isFloat<T>() ? Verdict.Ok : Verdict.Fail;
 
-    this._left = nameof<T>();
-    this._right = "integer";
+    this.left = nameof<T>();
+    this.right = "integer";
 
-    this.op = "type";
+    this.instr = "toBeFloat"
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -234,16 +248,16 @@ export class Expectation<T> extends Node {
    * @returns - void
    */
   toBeFinite(): void {
-    // @ts-ignore
     this.verdict =
-      (isFloat<T>() || isInteger<T>()) && isFinite(this.left)
+      // @ts-ignore
+      (isFloat<T>() || isInteger<T>()) && isFinite(this._left)
         ? Verdict.Ok
         : Verdict.Fail;
 
-    this._left = "Infinity";
-    this._right = "Finite";
+    this.left = "Infinity";
+    this.right = "Finite";
 
-    this.op = "=";
+    this.instr = "toBeFinite"
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -258,15 +272,15 @@ export class Expectation<T> extends Node {
    * @returns - void
    */
   toHaveLength(value: i32): void {
-    // @ts-ignore
     this.verdict =
-      isArray<T>() && this.left.length == value ? Verdict.Ok : Verdict.Fail;
+      // @ts-ignore
+      isArray<T>() && this._left.length == value ? Verdict.Ok : Verdict.Fail;
 
     // @ts-ignore
-    this._left = this.left.length.toString();
-    this._right = value.toString();
+    this.left = this._left.length.toString();
+    this.right = value.toString();
 
-    this.op = "length";
+    this.instr = "toHaveLength"
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -282,14 +296,14 @@ export class Expectation<T> extends Node {
    */
   // @ts-ignore
   toContain(value: valueof<T>): void {
-    // @ts-ignore
     this.verdict =
-      isArray<T>() && this.left.includes(value) ? Verdict.Ok : Verdict.Fail;
+      // @ts-ignore
+      isArray<T>() && this._left.includes(value) ? Verdict.Ok : Verdict.Fail;
 
     // @ts-ignore
-    this._left = "includes value";
-    this._right = "does not include value";
-    this.op = "=";
+    this.left = "includes value";
+    this.right = "does not include value";
+    this.instr = "toContain"
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -306,21 +320,24 @@ export class Expectation<T> extends Node {
     store<T>(
       changetype<usize>(this),
       equals,
-      offsetof<Expectation<T>>("right"),
+      offsetof<Expectation<T>>("_right"),
     );
     if (isBoolean<T>()) {
-      this.verdict = this.left === equals ? Verdict.Ok : Verdict.Fail;
+      this.verdict = this._left === equals ? Verdict.Ok : Verdict.Fail;
     } else if (isString<T>()) {
-      this.verdict = this.left === equals ? Verdict.Ok : Verdict.Fail;
+      this.verdict = this._left === equals ? Verdict.Ok : Verdict.Fail;
     } else if (isInteger<T>() || isFloat<T>()) {
-      this.verdict = this.left === equals ? Verdict.Ok : Verdict.Fail;
+      this.verdict = this._left === equals ? Verdict.Ok : Verdict.Fail;
     } else if (isArray<T>()) {
       // getArrayDepth<T>();
     } else {
-      this.verdict = Verdict.Unreachable;
+      this.verdict = Verdict.None;
     }
 
-    this.op = "=";
+    this.instr = "toBe";
+
+    this.left = visualize<T>(this._left);
+    this.right = visualize<T>(load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")));
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -331,9 +348,9 @@ export class Expectation<T> extends Node {
   report(): string | null {
     if (!this._not && this.verdict === Verdict.Ok) return null;
 
-    const left = this._left || visualize(this.left);
+    const left = this.left || visualize(this._left);
     const right =
-      this._right ||
+      this.right ||
       visualize(
         load<T>(changetype<usize>(this), offsetof<Expectation<T>>("right")),
       );

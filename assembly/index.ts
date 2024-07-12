@@ -1,23 +1,27 @@
 import { rainbow } from "as-rainbow";
-import { TestGroup } from "./src/group";
+import { Suite } from "./src/suite";
 import { Expectation } from "./src/expectation";
-import { formatTime } from "./util/helpers";
 import { stringify } from "as-console/stringify";
 import { __COVER, __HASHES, __POINTS } from "as-test/assembly/coverage";
-import { createTable } from "table-as";
+import { JSON } from "json-as";
+import { Tests } from "./src/tests";
 
 /**
  * Enumeration representing the verdict of a test case.
  */
-export enum Verdict {
-  Unreachable,
-  Ok,
-  Fail,
+export type Verdict = string;
+export namespace Verdict {
+  export const None = "none";
+  export const Ok = "ok";
+  export const Fail = "fail";
 }
 
+let entrySuites: Suite[] = [];
+
 // Globals
-let current_group: TestGroup | null = null;
-let groups: TestGroup[] = [];
+@global let suites: Suite[] = [];
+@global let depth: i32 = -1;
+@global let current_suite: Suite | null = null;
 
 let before_all_callback: (() => void) | null = null;
 let after_all_callback: (() => void) | null = null;
@@ -41,10 +45,20 @@ let __test_options!: RunOptions;
  * ```
  */
 export function describe(description: string, callback: () => void): void {
-  const group = new TestGroup(description, callback);
+  const suite = new Suite(description, callback);
 
-  current_group = group;
-  groups.push(group);
+  if (depth >= 0) {
+    const _suite = suites[depth];
+    if (_suite.depth == depth) {
+      _suite.addSuite(suite);
+    } else {
+      suite.depth = ++depth;
+      suites.push(suite);
+    }
+  } else {
+    entrySuites.push(suite);
+    suites.push(suite);
+  }
 }
 
 /**
@@ -62,10 +76,20 @@ export function describe(description: string, callback: () => void): void {
  * ```
  */
 export function test(description: string, callback: () => void): void {
-  const group = new TestGroup(description, callback);
+  const suite = new Suite(description, callback);
 
-  current_group = group;
-  groups.push(group);
+  if (depth >= 0) {
+    const _suite = suites[depth];
+    if (_suite.depth == depth) {
+      _suite.addSuite(suite);
+    } else {
+      suite.depth = ++depth;
+      suites.push(suite);
+    }
+  } else {
+    entrySuites.push(suite);
+    suites.push(suite);
+  }
 }
 
 /**
@@ -83,10 +107,20 @@ export function test(description: string, callback: () => void): void {
  * ```
  */
 export function it(description: string, callback: () => void): void {
-  const group = new TestGroup(description, callback);
+  const suite = new Suite(description, callback);
 
-  current_group = group;
-  groups.push(group);
+  if (depth >= 0) {
+    const _suite = suites[depth];
+    if (_suite.depth == depth) {
+      _suite.addSuite(suite);
+    } else {
+      suite.depth = ++depth;
+      suites.push(suite);
+    }
+  } else {
+    entrySuites.push(suite);
+    suites.push(suite);
+  }
 }
 
 /**
@@ -108,10 +142,13 @@ export function it(description: string, callback: () => void): void {
  * ```
  */
 export function expect<T>(value: T): Expectation<T> {
-  const result = new Expectation<T>(value);
-  current_group!.addExpectation(result);
+  const test = new Expectation<T>(value);
 
-  return result;
+  if (current_suite) {
+    current_suite!.addExpectation(test);
+  }
+
+  return test;
 }
 
 /**
@@ -183,7 +220,7 @@ export function afterEach(callback: () => void): void {
 export function mockFn<returnType>(
   fn: string,
   callback: (...args: any[]) => returnType,
-): void {}
+): void { }
 
 /**
  * Class defining options that can be passed to the `run` function.
@@ -219,152 +256,88 @@ class RunOptions {
  */
 export function run(options: RunOptions = new RunOptions()): void {
   __test_options = options;
-  console.log(
-    rainbow.boldMk(
-      rainbow.blueBright(` _____  _____      _____  _____  _____  _____ `),
-    ),
-  );
-  console.log(
-    rainbow.boldMk(
-      rainbow.blueBright(`|  _  ||   __| ___|_   _||   __||   __||_   _|`),
-    ),
-  );
-  console.log(
-    rainbow.boldMk(
-      rainbow.blueBright(`|     ||__   ||___| | |  |   __||__   |  | |  `),
-    ),
-  );
-  console.log(
-    rainbow.boldMk(
-      rainbow.blueBright(`|__|__||_____|      |_|  |_____||_____|  |_|  `),
-    ),
-  );
-  console.log(
-    rainbow.dimMk("\n------------------- v0.2.1 -------------------\n"),
-  );
-  // @ts-ignore
-  if (isDefined(COVERAGE_USE)) {
-    console.log(
-      rainbow.bgBlueBright(" PLUGIN ") +
-        " " +
-        rainbow.dimMk("Using Code Coverage") +
-        "\n",
-    );
-  }
-  const suites = groups.length;
-  let failed = 0;
-  let tests = 0;
-  let failed_tests = 0;
-  let failed_suite_logs = "";
-  const start = performance.now();
-  for (let i = 0; i < groups.length; i++) {
-    if (before_all_callback) before_all_callback();
-    const suite = unchecked(groups[i]);
+  const report = new Report();
+  for (let i = 0; i < entrySuites.length; i++) {
+    // @ts-ignore
+    const suite = unchecked(entrySuites[i]);
+    console.log(i.toString())
+    suites = [suite];
+    current_suite = suite;
+    depth = -1;
+    current_suite = null;
     suite.run();
-    for (let i = 0; i < suite.results.length; i++) {
-      const expectation = unchecked(suite.results[i]);
-      const verdict = expectation.verdict;
-      tests++;
-      if (verdict == Verdict.Ok) {
-        suite.passed++;
-      } else if (verdict == Verdict.Fail) {
-        suite.verdict = Verdict.Fail;
-        suite.failed++;
-        failed_tests++;
-      }
+    suites = [];
+    depth = -1;
+    current_suite = null;
+    const suiteReport = new SuiteReport();
+    suiteReport.verdict = suite.verdict;
+    for (let ii = 0; ii < suite.suites.length; ii++) {
+      const _suite = unchecked(suite.suites[ii]);
+      if (_suite.verdict == Verdict.Fail) report.verdict = Verdict.Fail;
+      suiteReport.suites.push(SuiteReport.wrap(_suite));
     }
-    if (suite.verdict == Verdict.Unreachable) {
-      suite.verdict = Verdict.Ok;
-      console.log(
-        rainbow.bgGreenBright(" PASS ") +
-          " " +
-          rainbow.dimMk(suite.description) +
-          "\n",
-      );
-    } else {
-      failed++;
-      const txt =
-        rainbow.bgRed(" FAIL ") + " " + rainbow.dimMk(suite.description) + "\n";
-      failed_suite_logs += txt;
-      console.log(txt);
+    for (let iii = 0; iii < suite.tests.length; iii++) {
+      const test = unchecked(suite.tests[iii]);
+      if (test.verdict == Verdict.Fail) report.verdict = Verdict.Fail;
+      suiteReport.tests.push(TestReport.wrap(test));
     }
-
-    const report = suite.getLogs();
-    if (report) {
-      if (report.passed) console.log(report.passed!);
-      if (report.failed) failed_suite_logs += report.failed!;
-    }
-    if (after_all_callback) after_all_callback();
+    suiteReport.description = suite.description;
+    report.groups.push(suiteReport);
   }
-
-  if (failed) {
-    console.log(
-      rainbow.red("------------------ [FAILED] ------------------\n"),
-    );
-    console.log(failed_suite_logs);
+  if (report.verdict === Verdict.None) {
+    if (report.groups.length) report.verdict = Verdict.Ok;
   }
+  console.log("--REPORT-START--\n" + JSON.stringify(report) + "\n--REPORT-END--");
+}
 
-  // @ts-ignore
-  if (isDefined(COVERAGE_USE) && isDefined(COVERAGE_SHOW) && __HASHES().size) {
-    console.log(
-      rainbow.dimMk("----------------- [COVERAGE] -----------------\n"),
-    );
-    const points = __HASHES().values();
 
-    const table: string[][] = [["Location", "Type", "Hash"]];
+@json
+class Report {
+  verdict: Verdict = Verdict.None;
+  groups: SuiteReport[] = [];
+}
 
-    for (let i = 0; i < points.length; i++) {
-      const point = unchecked(points[i]);
-      const file = point.file;
-      const reference =
-        point.file +
-        ":" +
-        point.line.toString() +
-        ":" +
-        point.column.toString();
-      const type = point.type;
-      const hash = point.hash;
-      table.push([rainbow.underlineMk(reference), type, "#" + hash]);
+
+@json
+class SuiteReport {
+  verdict: Verdict = Verdict.None;
+  description: string = "";
+  tests: TestReport[] = [];
+  suites: SuiteReport[] = [];
+  static wrap(suite: Suite): SuiteReport {
+    const report = new SuiteReport();
+
+    for (let i = 0; i < (<Suite>suite).suites.length; i++) {
+      const _suite = unchecked((<Suite>suite).suites[i]);
+      report.suites.push(SuiteReport.wrap(_suite));
     }
-    console.log(rainbow.dimMk(createTable(table)) + "\n");
-  }
 
-  console.log(
-    rainbow.dimMk("----------------- [RESULTS] ------------------\n"),
-  );
-  const ms = performance.now() - start;
-  console.log(
-    rainbow.boldMk("Test Suites: ") +
-      (failed
-        ? rainbow.boldMk(rainbow.red(failed.toString() + " failed"))
-        : rainbow.boldMk(rainbow.green("0 failed"))) +
-      ", " +
-      suites.toString() +
-      " total",
-  );
-  console.log(
-    rainbow.boldMk("Tests:       ") +
-      (failed_tests
-        ? rainbow.boldMk(rainbow.red(failed_tests.toString() + " failed"))
-        : rainbow.boldMk(rainbow.green("0 failed"))) +
-      ", " +
-      tests.toString() +
-      " total",
-  );
-  // @ts-ignore
-  if (isDefined(COVERAGE_USE))
-    console.log(
-      rainbow.boldMk("Coverage:    ") +
-        (__HASHES().size
-          ? rainbow.boldMk(rainbow.red(__HASHES().size.toString() + " failed"))
-          : rainbow.boldMk(rainbow.green("0 failed"))) +
-        ", " +
-        __POINTS().toString() +
-        " total",
-    );
-  console.log(rainbow.boldMk("Snapshots:   ") + "0 total");
-  console.log(rainbow.boldMk("Time:        ") + formatTime(ms));
-  if (failed) {
-    process.exit(1);
+    for (let i = 0; i < (<Suite>suite).tests.length; i++) {
+      const test = unchecked((<Suite>suite).tests[i]);
+      report.tests.push(TestReport.wrap(test));
+    }
+
+    report.description = suite.description;
+    report.verdict = suite.verdict;
+
+    return report;
+  }
+}
+
+@json
+class TestReport {
+  verdict: Verdict = Verdict.None;
+  left: string = "";
+  instr: string = "";
+  right: string = "";
+  static wrap(test: Tests): TestReport {
+    const report = new TestReport();
+
+    report.verdict = test.verdict;
+    report.left = test.left;
+    report.instr = test.instr;
+    report.right = test.right;
+
+    return report;
   }
 }
