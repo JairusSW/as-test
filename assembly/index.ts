@@ -1,10 +1,10 @@
 import { rainbow } from "as-rainbow";
-import { Suite } from "./src/suite";
+import { Suite, SuiteKind } from "./src/suite";
 import { Expectation } from "./src/expectation";
 import { stringify } from "as-console/stringify";
 import { __COVER, __HASHES, __POINTS } from "as-test/assembly/coverage";
 import { JSON } from "json-as";
-import { Tests } from "./src/tests";
+import { Report, SuiteReport, TestReport } from "./reporters/report";
 
 /**
  * Enumeration representing the verdict of a test case.
@@ -20,7 +20,11 @@ let entrySuites: Suite[] = [];
 
 // Globals
 @global let suites: Suite[] = [];
+
+
 @global let depth: i32 = -1;
+
+
 @global let current_suite: Suite | null = null;
 
 let before_all_callback: (() => void) | null = null;
@@ -45,7 +49,7 @@ let __test_options!: RunOptions;
  * ```
  */
 export function describe(description: string, callback: () => void): void {
-  const suite = new Suite(description, callback);
+  const suite = new Suite(description, callback, SuiteKind.Describe);
 
   if (depth >= 0) {
     const _suite = suites[depth];
@@ -76,7 +80,7 @@ export function describe(description: string, callback: () => void): void {
  * ```
  */
 export function test(description: string, callback: () => void): void {
-  const suite = new Suite(description, callback);
+  const suite = new Suite(description, callback, SuiteKind.Test);
 
   if (depth >= 0) {
     const _suite = suites[depth];
@@ -107,7 +111,7 @@ export function test(description: string, callback: () => void): void {
  * ```
  */
 export function it(description: string, callback: () => void): void {
-  const suite = new Suite(description, callback);
+  const suite = new Suite(description, callback, SuiteKind.It);
 
   if (depth >= 0) {
     const _suite = suites[depth];
@@ -220,7 +224,7 @@ export function afterEach(callback: () => void): void {
 export function mockFn<returnType>(
   fn: string,
   callback: (...args: any[]) => returnType,
-): void { }
+): void {}
 
 /**
  * Class defining options that can be passed to the `run` function.
@@ -260,7 +264,6 @@ export function run(options: RunOptions = new RunOptions()): void {
   for (let i = 0; i < entrySuites.length; i++) {
     // @ts-ignore
     const suite = unchecked(entrySuites[i]);
-    console.log(i.toString())
     suites = [suite];
     current_suite = suite;
     depth = -1;
@@ -270,6 +273,7 @@ export function run(options: RunOptions = new RunOptions()): void {
     depth = -1;
     current_suite = null;
     const suiteReport = new SuiteReport();
+    suiteReport.kind = suite.kind;
     suiteReport.verdict = suite.verdict;
     for (let ii = 0; ii < suite.suites.length; ii++) {
       const _suite = unchecked(suite.suites[ii]);
@@ -287,57 +291,7 @@ export function run(options: RunOptions = new RunOptions()): void {
   if (report.verdict === Verdict.None) {
     if (report.groups.length) report.verdict = Verdict.Ok;
   }
-  console.log("--REPORT-START--\n" + JSON.stringify(report) + "\n--REPORT-END--");
-}
-
-
-@json
-class Report {
-  verdict: Verdict = Verdict.None;
-  groups: SuiteReport[] = [];
-}
-
-
-@json
-class SuiteReport {
-  verdict: Verdict = Verdict.None;
-  description: string = "";
-  tests: TestReport[] = [];
-  suites: SuiteReport[] = [];
-  static wrap(suite: Suite): SuiteReport {
-    const report = new SuiteReport();
-
-    for (let i = 0; i < (<Suite>suite).suites.length; i++) {
-      const _suite = unchecked((<Suite>suite).suites[i]);
-      report.suites.push(SuiteReport.wrap(_suite));
-    }
-
-    for (let i = 0; i < (<Suite>suite).tests.length; i++) {
-      const test = unchecked((<Suite>suite).tests[i]);
-      report.tests.push(TestReport.wrap(test));
-    }
-
-    report.description = suite.description;
-    report.verdict = suite.verdict;
-
-    return report;
-  }
-}
-
-@json
-class TestReport {
-  verdict: Verdict = Verdict.None;
-  left: string = "";
-  instr: string = "";
-  right: string = "";
-  static wrap(test: Tests): TestReport {
-    const report = new TestReport();
-
-    report.verdict = test.verdict;
-    report.left = test.left;
-    report.instr = test.instr;
-    report.right = test.right;
-
-    return report;
-  }
+  console.log(
+    "--REPORT-START--\n" + JSON.stringify(report) + "\n--REPORT-END--",
+  );
 }

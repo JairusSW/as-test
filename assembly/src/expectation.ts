@@ -1,10 +1,8 @@
-import { rainbow } from "as-rainbow";
-import { diff, visualize } from "../util/helpers";
+import { visualize } from "../util/helpers";
 import { Tests } from "./tests";
 import { Verdict, after_each_callback, before_each_callback } from "..";
 
 export class Expectation<T> extends Tests {
-  public type: string = "Expectation";
   public verdict: Verdict = Verdict.None;
   private _left: T;
   // @ts-ignore
@@ -35,7 +33,9 @@ export class Expectation<T> extends Tests {
     this.instr = "toBeNull";
 
     this.left = visualize<T>(this._left);
-    this.right = visualize<T>(load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")));
+    this.right = visualize<T>(
+      load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")),
+    );
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -53,12 +53,18 @@ export class Expectation<T> extends Tests {
       ERROR("toBeGreaterThan() can only be used on number types!");
 
     this.verdict = this._left > value ? Verdict.Ok : Verdict.Fail;
-    store<T>(changetype<usize>(this), value, offsetof<Expectation<T>>("_right"));
+    store<T>(
+      changetype<usize>(this),
+      value,
+      offsetof<Expectation<T>>("_right"),
+    );
 
     this.instr = "toBeGreaterThan";
 
     this.left = visualize<T>(this._left);
-    this.right = visualize<T>(load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")));
+    this.right = visualize<T>(
+      load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")),
+    );
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -76,12 +82,18 @@ export class Expectation<T> extends Tests {
       ERROR("toBeGreaterOrEqualTo() can only be used on number types!");
 
     this.verdict = this._left >= value ? Verdict.Ok : Verdict.Fail;
-    store<T>(changetype<usize>(this), value, offsetof<Expectation<T>>("_right"));
+    store<T>(
+      changetype<usize>(this),
+      value,
+      offsetof<Expectation<T>>("_right"),
+    );
 
-    this.instr = "toBeGreaterThanOrEqualTo"
+    this.instr = "toBeGreaterThanOrEqualTo";
 
     this.left = visualize<T>(this._left);
-    this.right = visualize<T>(load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")));
+    this.right = visualize<T>(
+      load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")),
+    );
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -99,12 +111,18 @@ export class Expectation<T> extends Tests {
       ERROR("toBeLessThan() can only be used on number types!");
 
     this.verdict = this._left < value ? Verdict.Ok : Verdict.Fail;
-    store<T>(changetype<usize>(this), value, offsetof<Expectation<T>>("_right"));
+    store<T>(
+      changetype<usize>(this),
+      value,
+      offsetof<Expectation<T>>("_right"),
+    );
 
-    this.instr = "toBeLessThan"
+    this.instr = "toBeLessThan";
 
     this.left = visualize<T>(this._left);
-    this.right = visualize<T>(load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")));
+    this.right = visualize<T>(
+      load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")),
+    );
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -122,12 +140,18 @@ export class Expectation<T> extends Tests {
       ERROR("toBeLessThanOrEqualTo() can only be used on number types!");
 
     this.verdict = this._left <= value ? Verdict.Ok : Verdict.Fail;
-    store<T>(changetype<usize>(this), value, offsetof<Expectation<T>>("_right"));
+    store<T>(
+      changetype<usize>(this),
+      value,
+      offsetof<Expectation<T>>("_right"),
+    );
 
-    this.instr = "toBeLessThanOrEqualTo"
+    this.instr = "toBeLessThanOrEqualTo";
 
     this.left = visualize<T>(this._left);
-    this.right = visualize<T>(load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")));
+    this.right = visualize<T>(
+      load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")),
+    );
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -145,7 +169,7 @@ export class Expectation<T> extends Tests {
     this.left = nameof<T>();
     this.right = "string";
 
-    this.instr = "toBeString"
+    this.instr = "toBeString";
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -163,7 +187,7 @@ export class Expectation<T> extends Tests {
     this.left = nameof<T>();
     this.right = "boolean";
 
-    this.instr = "toBeBoolean"
+    this.instr = "toBeBoolean";
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -181,7 +205,7 @@ export class Expectation<T> extends Tests {
     this.left = nameof<T>();
     this.right = "Array<any>";
 
-    this.instr = "toBeArray"
+    this.instr = "toBeArray";
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -199,7 +223,7 @@ export class Expectation<T> extends Tests {
     this.left = nameof<T>();
     this.right = "number";
 
-    this.instr = "toBeNumber"
+    this.instr = "toBeNumber";
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -217,7 +241,7 @@ export class Expectation<T> extends Tests {
     this.left = nameof<T>();
     this.right = "float";
 
-    this.instr = "toBeInteger"
+    this.instr = "toBeInteger";
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -235,7 +259,7 @@ export class Expectation<T> extends Tests {
     this.left = nameof<T>();
     this.right = "integer";
 
-    this.instr = "toBeFloat"
+    this.instr = "toBeFloat";
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -257,7 +281,7 @@ export class Expectation<T> extends Tests {
     this.left = "Infinity";
     this.right = "Finite";
 
-    this.instr = "toBeFinite"
+    this.instr = "toBeFinite";
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -280,7 +304,7 @@ export class Expectation<T> extends Tests {
     this.left = this._left.length.toString();
     this.right = value.toString();
 
-    this.instr = "toHaveLength"
+    this.instr = "toHaveLength";
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -303,7 +327,7 @@ export class Expectation<T> extends Tests {
     // @ts-ignore
     this.left = "includes value";
     this.right = "does not include value";
-    this.instr = "toContain"
+    this.instr = "toContain";
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -337,46 +361,13 @@ export class Expectation<T> extends Tests {
     this.instr = "toBe";
 
     this.left = visualize<T>(this._left);
-    this.right = visualize<T>(load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")));
+    this.right = visualize<T>(
+      load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")),
+    );
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
     // @ts-ignore
     if (before_each_callback) before_each_callback();
-  }
-
-  report(): string | null {
-    if (!this._not && this.verdict === Verdict.Ok) return null;
-
-    const left = this.left || visualize(this._left);
-    const right =
-      this.right ||
-      visualize(
-        load<T>(changetype<usize>(this), offsetof<Expectation<T>>("right")),
-      );
-
-    if (this._not) {
-      if (this.verdict === Verdict.Fail) return null;
-      const dif = diff(left, right, true);
-      return (
-        rainbow.red(" - Test failed") +
-        "\n" +
-        rainbow.italicMk(
-          `  ${rainbow.dimMk("(expected) ->")} ${dif.left.toString()}\n  ${rainbow.dimMk("[ !" + this.op + " ]")}\n  ${rainbow.dimMk("(recieved) ->")} ${dif.right.toString()}`,
-        )
-      );
-    }
-
-    if (left == right) return null;
-
-    const dif = diff(left, right);
-
-    return (
-      rainbow.red(" - Test failed") +
-      "\n" +
-      rainbow.italicMk(
-        `  ${rainbow.dimMk("(expected) ->")} ${dif.left.toString()}\n  ${rainbow.dimMk("[ " + this.op + " ]")}\n  ${rainbow.dimMk("(recieved) ->")} ${dif.right.toString()}`,
-      )
-    );
   }
 }
