@@ -1,6 +1,6 @@
-import { Verdict } from "..";
-import { Suite } from "../src/suite";
-import { Tests } from "../src/tests";
+import { Verdict } from "../assembly";
+import { Suite } from "../assembly/src/suite";
+import { Tests } from "../assembly/src/tests";
 
 
 @json

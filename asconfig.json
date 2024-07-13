@@ -25,7 +25,5 @@
       "noAssert": false
     }
   },
-  "options": {
-    "bindings": "esm"
-  }
+  "options": {}
 }

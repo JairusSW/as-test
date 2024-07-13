@@ -2,16 +2,12 @@
   "input": ["./assembly/__tests__/*.spec.ts"],
   "outDir": "./build",
   "config": "./asconfig.json",
-  "suites": [],
-  "coverage": {
-    "enabled": true,
-    "show": false
+  "plugins": {
+    "coverage": true
   },
   "buildOptions": {
     "args": ["--transform json-as/transform"],
-    "wasi": true,
-    "parallel": true,
-    "verbose": true
+    "target": "wasi"
   },
   "runOptions": {
     "runtime": {

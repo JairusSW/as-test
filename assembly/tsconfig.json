@@ -1,6 +1,6 @@
 {
   "extends": "assemblyscript/std/assembly.json",
-  "include": ["./**/*.ts"],
+  "include": ["./**/*.ts", "../reporters/report.ts"],
   "compilerOptions": {
     /* Visit https://aka.ms/tsconfig to read more about this file */
     /* Projects */

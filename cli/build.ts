@@ -6,24 +6,11 @@ import { exec } from "child_process";
 import { formatTime } from "./util.js";
 import * as path from "path";
 
+const CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
+const PKG_PATH = path.join(process.cwd(), "./package.json");
 export async function build(args: string[]) {
-  const CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
-  let config: Config;
-  if (!existsSync(CONFIG_PATH)) {
-    console.log(
-      chalk.bgMagentaBright(" WARN ") +
-        chalk.dim(":") +
-        " Could not locate config file in the current directory! Continuing with default config." +
-        "\n",
-    );
-    config = new Config();
-  } else {
-    config = Object.assign(
-      new Config(),
-      JSON.parse(readFileSync(CONFIG_PATH).toString()),
-    ) as Config;
-    console.log(chalk.dim("Loading config from: " + CONFIG_PATH) + "\n");
-  }
+  let config = loadConfig();
+  
   const ASCONFIG_PATH = path.join(process.cwd(), config.config);
   if (!existsSync(ASCONFIG_PATH)) {
     console.log(
@@ -33,41 +20,8 @@ export async function build(args: string[]) {
         "\n",
     );
   }
-  const pkg = JSON.parse(readFileSync("./package.json").toString()) as {
-    dependencies: string[] | null;
-    devDependencies: string[] | null;
-    peerDependencies: string[] | null;
-  };
-  let buildCommands: string[] = [];
 
-  if (config.buildOptions.wasi) {
-    if (!existsSync("./node_modules/@assemblyscript/wasi-shim/asconfig.json")) {
-      console.log(
-        chalk.bgRed(" ERROR ") +
-          chalk.dim(":") +
-          " " +
-          "could not find @assemblyscript/wasi-shim! Add it to your dependencies to run with WASI!",
-      );
-      process.exit(1);
-    }
-    if (
-      pkg.dependencies &&
-      !Object.keys(pkg.dependencies).includes("@assemblyscript/wasi-shim") &&
-      pkg.devDependencies &&
-      !Object.keys(pkg.devDependencies).includes("@assemblyscript/wasi-shim") &&
-      pkg.peerDependencies &&
-      !Object.keys(pkg.peerDependencies).includes(
-        "@assemblyscript/wasi-shim",
-      ) &&
-      existsSync("./node_modules/@assemblyscript/wasi-shim/asconfig.json")
-    ) {
-      console.log(
-        chalk.bold.bgMagentaBright(" WARN ") +
-          chalk.dim(": @assemblyscript/wasi-shim") +
-          " is not included in project dependencies!",
-      );
-    }
-  }
+  verifyPackagesInstalled(config);
 
   let packageManagerCommand = "npx";
   if (
@@ -152,5 +106,61 @@ export async function build(args: string[]) {
     console.log(
       chalk.dim("Compiled in " + formatTime(performance.now() - start)) + "\n",
     );
+  }
+}
+
+function verifyPackagesInstalled(config: Config): void {
+  const pkg = JSON.parse(readFileSync(PKG_PATH).toString()) as {
+    dependencies: string[] | null;
+    devDependencies: string[] | null;
+    peerDependencies: string[] | null;
+  };
+
+  if (config.buildOptions.wasi) {
+    if (!existsSync("./node_modules/@assemblyscript/wasi-shim/asconfig.json")) {
+      console.log(
+        chalk.bgRed(" ERROR ") +
+          chalk.dim(":") +
+          " " +
+          "could not find @assemblyscript/wasi-shim! Add it to your dependencies to run with WASI!",
+      );
+      process.exit(1);
+    }
+    if (
+      pkg.dependencies &&
+      !Object.keys(pkg.dependencies).includes("@assemblyscript/wasi-shim") &&
+      pkg.devDependencies &&
+      !Object.keys(pkg.devDependencies).includes("@assemblyscript/wasi-shim") &&
+      pkg.peerDependencies &&
+      !Object.keys(pkg.peerDependencies).includes(
+        "@assemblyscript/wasi-shim",
+      ) &&
+      existsSync("./node_modules/@assemblyscript/wasi-shim/asconfig.json")
+    ) {
+      console.log(
+        chalk.bold.bgMagentaBright(" WARN ") +
+          chalk.dim(": @assemblyscript/wasi-shim") +
+          " is not included in project dependencies!",
+      );
+    }
+  }
+}
+
+function loadConfig(): Config {
+  if (!existsSync(CONFIG_PATH)) {
+    console.log(
+      chalk.bgMagentaBright(" WARN ") +
+        chalk.dim(":") +
+        " Could not locate config file in the current directory! Continuing with default config." +
+        "\n",
+    );
+    console.log(chalk.dim("Using default configuration") + "\n");
+    return new Config();
+  } else {
+    console.log(chalk.dim("Loading config from: " + CONFIG_PATH) + "\n");
+    return Object.assign(
+      new Config(),
+      JSON.parse(readFileSync(CONFIG_PATH).toString()),
+    ) as Config;
   }
 }

@@ -4,7 +4,7 @@ import { Expectation } from "./src/expectation";
 import { stringify } from "as-console/stringify";
 import { __COVER, __HASHES, __POINTS } from "as-test/assembly/coverage";
 import { JSON } from "json-as";
-import { Report, SuiteReport, TestReport } from "./reporters/report";
+import { Report, SuiteReport, TestReport } from "../reporters/report";
 
 /**
  * Enumeration representing the verdict of a test case.

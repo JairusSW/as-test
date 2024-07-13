@@ -1,7 +1,7 @@
 import { rainbow } from "as-rainbow";
-import { Report, SuiteReport, TestReport } from "./report";
-import { Verdict } from "..";
-import { diff } from "../util/helpers";
+import { Report, SuiteReport, TestReport } from "../report";
+import { Verdict } from "../../assembly/index";
+import { diff } from "../../assembly/util/helpers";
 import { JSON } from "json-as";
 
 class LogReporter {
