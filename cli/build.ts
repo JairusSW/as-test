@@ -2,93 +2,40 @@ import { existsSync, readFileSync } from "fs";
 import { Config } from "./types.js";
 import { glob } from "glob";
 import chalk from "chalk";
-import { exec } from "child_process";
-import { formatTime } from "./util.js";
+import { execSync } from "child_process";
 import * as path from "path";
+import { loadConfig } from "./util.js";
 
 const CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 const PKG_PATH = path.join(process.cwd(), "./package.json");
-export async function build(args: string[]) {
-  let config = loadConfig();
+export async function build() {
+  let config = loadConfig(CONFIG_PATH, true);
 
   const ASCONFIG_PATH = path.join(process.cwd(), config.config);
-  if (!existsSync(ASCONFIG_PATH)) {
+  if (config.config && config.config !== "none" && !existsSync(ASCONFIG_PATH)) {
     console.log(
-      chalk.bgMagentaBright(" WARN ") +
-      chalk.dim(":") +
-      ' Could not locate asconfig.json file! If you do not want to provide a config, set "config": "none". Continuing with default config.' +
-      "\n",
+      `${chalk.bgMagentaBright(" WARN ")}${chalk.dim(":")} Could not locate asconfig.json file! If you do not want to provide a config, set "config": "none"`,
     );
   }
 
-  verifyPackagesInstalled(config);
+  ensureDeps(config);
 
-  let pkgMan = getPkgManager();
-  console.log("");
-  const buildCommands: string[] = [];
+  let pkgRunner = getPkgRunner();
   const inputFiles = await glob(config.input);
+
+  let buildArgs = getBuildArgs(config);
+
   for (const file of inputFiles) {
-    console.log(chalk.dim("Including " + file));
-    let command = `${pkgMan} asc ${file}${args.length ? " " + args.join(" ") : ""}`;
-    if (config.config !== "none") {
-      command += " --config " + config.config;
-    }
-    if (config.buildOptions.target == "wasi") {
-      command +=
-        " --config ./node_modules/@assemblyscript/wasi-shim/asconfig.json";
-    }
-    const outFile =
-      config.outDir +
-      "/" +
-      file.slice(file.lastIndexOf("/") + 1).replace(".ts", ".wasm");
+    let cmd = `${pkgRunner} asc ${file}${buildArgs}`;
+    const outFile = `${config.outDir}/${file.slice(file.lastIndexOf("/") + 1).replace(".ts", ".wasm")}`;
     if (config.outDir) {
-      command += " -o " + outFile;
+      cmd += " -o " + outFile;
     }
-    if (config.plugins["coverage"]) {
-      command += " --use COVERAGE_USE=1 --transform as-test/transform";
-      command += " --use COVERAGE_SHOW=1";
-    }
-    if (config.buildOptions.args) {
-      command += " " + config.buildOptions.args.join(" ");
-    }
-    if (
-      ["node", "deno", "bun"].includes(
-        config.runOptions.runtime.run.split(" ")[0],
-      )
-    ) {
-      command += " --exportStart";
-    }
-    buildCommands.push(command);
+    buildFile(cmd);
   }
-
-  const build = (command: string) => {
-    return new Promise<void>((resolve, _) => {
-      console.log(chalk.dim("Building: " + command));
-      exec(command, (err, stdout, stderr) => {
-        process.stdout.write(stdout);
-        if (err) {
-          process.stderr.write(stderr + "\n");
-          process.exit(1);
-        }
-        resolve();
-      });
-    });
-  };
-
-  console.log(chalk.dim("Building sources in parallel..."));
-  const start = performance.now();
-  let builders: Promise<void>[] = [];
-  for (const command of buildCommands) {
-    builders.push(build(command));
-  }
-
-  await Promise.all(builders);
-  console.log(
-    chalk.dim("Compiled in " + formatTime(performance.now() - start)) + "\n",
-  );
 }
 
-function verifyPackagesInstalled(config: Config): void {
+function ensureDeps(config: Config): void {
   const pkg = JSON.parse(readFileSync(PKG_PATH).toString()) as {
     dependencies: string[] | null;
     devDependencies: string[] | null;
@@ -98,10 +45,7 @@ function verifyPackagesInstalled(config: Config): void {
   if (config.buildOptions.target == "wasi") {
     if (!existsSync("./node_modules/@assemblyscript/wasi-shim/asconfig.json")) {
       console.log(
-        chalk.bgRed(" ERROR ") +
-        chalk.dim(":") +
-        " " +
-        "could not find @assemblyscript/wasi-shim! Add it to your dependencies to run with WASI!",
+        `${chalk.bgRed(" ERROR ")}${chalk.dim(":")} could not find @assemblyscript/wasi-shim! Add it to your dependencies to run with WASI!`,
       );
       process.exit(1);
     }
@@ -117,34 +61,13 @@ function verifyPackagesInstalled(config: Config): void {
       existsSync("./node_modules/@assemblyscript/wasi-shim/asconfig.json")
     ) {
       console.log(
-        chalk.bold.bgMagentaBright(" WARN ") +
-        chalk.dim(": @assemblyscript/wasi-shim") +
-        " is not included in project dependencies!",
+        `${chalk.bold.bgMagentaBright(" WARN ")}${chalk.dim(":")} @assemblyscript/wasi-shim is not included in project dependencies!"`,
       );
     }
   }
 }
 
-function loadConfig(): Config {
-  if (!existsSync(CONFIG_PATH)) {
-    console.log(
-      chalk.bgMagentaBright(" WARN ") +
-      chalk.dim(":") +
-      " Could not locate config file in the current directory! Continuing with default config." +
-      "\n",
-    );
-    console.log(chalk.dim("Using default configuration") + "\n");
-    return new Config();
-  } else {
-    console.log(chalk.dim("Loading config from: " + CONFIG_PATH) + "\n");
-    return Object.assign(
-      new Config(),
-      JSON.parse(readFileSync(CONFIG_PATH).toString()),
-    ) as Config;
-  }
-}
-
-function getPkgManager(): string {
+function getPkgRunner(): string {
   switch (process.env.npm_config_user_agent) {
     case "pnpm": {
       return "pnpx";
@@ -157,4 +80,38 @@ function getPkgManager(): string {
     }
   }
   return "npx";
+}
+
+function buildFile(command: string): void {
+  execSync(command, { stdio: "inherit" });
+}
+
+function getBuildArgs(config: Config): string {
+  let buildArgs = "";
+
+  buildArgs += " --transform as-test/transform";
+
+  if (config.config && config.config !== "none") {
+    buildArgs += " --config " + config.config;
+  }
+  // Should also strip any bindings-enabling from asconfig
+  if (config.buildOptions.target == "bindings") {
+    buildArgs += " --bindings esm --exportRuntime --exportStart";
+  } else if (config.buildOptions.target == "wasi") {
+    buildArgs +=
+      " --config ./node_modules/@assemblyscript/wasi-shim/asconfig.json";
+  } else {
+    console.log(
+      `${chalk.bgRed(" ERROR ")}${chalk.dim(":")} could determine target in config! Set target to 'bindings' or 'wasi'`,
+    );
+    process.exit(0);
+  }
+
+  if (
+    config.buildOptions.args.length &&
+    config.buildOptions.args.find((v) => v.length > 0)
+  ) {
+    buildArgs += " " + config.buildOptions.args.join(" ");
+  }
+  return buildArgs;
 }

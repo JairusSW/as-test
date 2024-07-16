@@ -25,13 +25,13 @@ if (!args.length) {
 else if (COMMANDS.includes(args[0])) {
     const command = args.shift();
     if (command === "build") {
-        build(args);
+        build();
     }
     else if (command === "run") {
         run();
     }
     else if (command === "test") {
-        build(args).then(() => {
+        build().then(() => {
             run();
         });
     }

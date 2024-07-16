@@ -20,7 +20,9 @@ let entrySuites: Suite[] = [];
 
 // Globals
 @global let suites: Suite[] = [];
+
 @global let depth: i32 = -1;
+
 @global let current_suite: Suite | null = null;
 
 let before_all_callback: (() => void) | null = null;
@@ -226,17 +228,13 @@ export function mockFn<returnType>(
  * Unmock all references to an existing function to instead point to the original function
  * @param {string} fn - name of function to override
  */
-export function unmockFn(
-  fn: string
-): void {}
+export function unmockFn(fn: string): void {}
 
 /**
  * Re-mock all references to an existing function to instead point to the declared function
  * @param {string} fn - name of function to override
  */
-export function remockFn(
-  fn: string
-): void {}
+export function remockFn(fn: string): void {}
 
 /**
  * Class defining options that can be passed to the `run` function.

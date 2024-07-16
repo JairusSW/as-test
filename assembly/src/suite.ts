@@ -16,7 +16,7 @@ export class Suite {
   public depth: i32 = 0;
   public suites: Suite[] = [];
   public tests: Tests[] = [];
-  public kind!: SuiteKind;
+  public kind: SuiteKind;
 
   public verdict: Verdict = Verdict.None;
 

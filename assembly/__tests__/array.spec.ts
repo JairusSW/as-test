@@ -11,7 +11,9 @@ describe("Array manipulation", () => {
     expect(myArray).toContain(2);
   });
 
-  it("should be empty", () => {});
+  it("should be empty", () => {
+    expect("ag").toBe("asd")
+  });
 });
 
 run({

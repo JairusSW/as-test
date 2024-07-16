@@ -2,7 +2,7 @@ export class Config {
   input: string[] = ["./assembly/__tests__/*.spec.ts"];
   outDir: string = "./build";
   config: string = "./asconfig.json";
-  plugins: {}
+  plugins: {};
   buildOptions: BuildOptions = new BuildOptions();
   runOptions: RunOptions = new RunOptions();
 }
@@ -13,7 +13,7 @@ export class Suite {
 
 export class BuildOptions {
   args: string[] = [];
-  target: string = "wasi"
+  target: string = "wasi";
 }
 
 export class RunOptions {

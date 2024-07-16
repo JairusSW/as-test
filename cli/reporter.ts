@@ -1,3 +1,1 @@
-export function report(): void {
-    
-}
+export function report(): void {}

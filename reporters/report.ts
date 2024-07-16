@@ -2,6 +2,7 @@ import { Verdict } from "../assembly";
 import { Suite } from "../assembly/src/suite";
 import { Tests } from "../assembly/src/tests";
 
+
 @json
 export class Time {
   start: f64 = 0;
@@ -10,6 +11,7 @@ export class Time {
     return formatTime(this.end - this.start);
   }
 }
+
 
 @json
 export class Report {
@@ -75,10 +77,8 @@ class Unit {
   divisor: number;
 }
 
-function formatTime(time: number): string {
-  if (time < 0) {
-    throw new Error("Time should be a non-negative number.");
-  }
+function formatTime(time: f64): string {
+  if (time < 0) return "0.00μs";
 
   const us = time * 1000;
 
@@ -94,10 +94,14 @@ function formatTime(time: number): string {
   for (let i = units.length - 1; i >= 0; i--) {
     const unit = units[i];
     if (us >= unit.divisor) {
-      const value = Math.round((us / unit.divisor) * 100) / 100;
-      return `${value}${unit.name}`;
+      const value = (Math.round((us / unit.divisor) * 100) / 100).toString();
+      const precision = value.indexOf(".");
+      return `${value.slice(0, precision) + value.slice(precision, precision + 3)}${unit.name}`;
     }
   }
 
-  return `${us}us`;
+  const _us = us.toString();
+  const precision = _us.indexOf(".");
+
+  return `${_us.slice(0, precision) + _us.slice(precision, precision + 3)}μs`;
 }
