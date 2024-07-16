@@ -76,7 +76,6 @@ export async function run() {
       stdout.indexOf("--REPORT-START--") + 16,
       stdout.indexOf("--REPORT-END--"),
     );
-    console.dir(JSON.parse(report), { depth: 256 });
     reports.push(JSON.parse(report));
   }
 

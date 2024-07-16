@@ -11,7 +11,7 @@ export class Result {
     }
     display(): string {
         let out = "";
-        out += `${rainbow.boldMk(this.name + ":")} `;
+        out += `${rainbow.boldMk(this.name)} `;
         if (this.arg1) {
             out += `${rainbow.boldMk(rainbow.red(this.arg1.toString() + " " + "failed"))}`;
         } else {

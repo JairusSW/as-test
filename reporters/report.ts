@@ -75,13 +75,12 @@ class Unit {
   divisor: number;
 }
 
-function formatTime(ms: number): string {
-  if (ms < 0) {
+function formatTime(time: number): string {
+  if (time < 0) {
     throw new Error("Time should be a non-negative number.");
   }
 
-  // Convert milliseconds to microseconds
-  const us = ms * 1000;
+  const us = time * 1000;
 
   const units: Unit[] = [
     { name: "μs", divisor: 1 },
@@ -95,7 +94,7 @@ function formatTime(ms: number): string {
   for (let i = units.length - 1; i >= 0; i--) {
     const unit = units[i];
     if (us >= unit.divisor) {
-      const value = Math.round((us / unit.divisor) * 1000) / 1000;
+      const value = Math.round((us / unit.divisor) * 100) / 100;
       return `${value}${unit.name}`;
     }
   }

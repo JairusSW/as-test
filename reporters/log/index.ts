@@ -1,5 +1,5 @@
 import { rainbow } from "as-rainbow";
-import { Report, SuiteReport, TestReport } from "../report";
+import { Report, SuiteReport, TestReport, Time } from "../report";
 import { Verdict } from "../../assembly/index";
 import { diff } from "../../assembly/util/helpers";
 import { JSON } from "json-as";
@@ -136,15 +136,23 @@ class LogReporter {
         let out: string = "";
         out += rainbow.dimMk("----------------- [RESULTS] ------------------\n\n");
 
-        const filesResult = new Result("Files", this.failedFiles, this.passedFiles);
+        const filesResult = new Result("Files:   ", this.failedFiles, this.passedFiles);
         out += filesResult.display();
 
-        const suitesResult = new Result("Suites", this.failedSuites, this.passedSuites);
+        const suitesResult = new Result("Suites:  ", this.failedSuites, this.passedSuites);
         out += suitesResult.display();
 
-        const testsResult = new Result("Tests", this.failedTests, this.passedTests);
+        const testsResult = new Result("Tests:   ", this.failedTests, this.passedTests);
         out += testsResult.display();
 
+        // @ts-ignore
+        const time = new Time();
+        for (let i = 0; i < this.logs.length; i++) {
+            const log = unchecked(this.logs[i]);
+            time.end += log.time.end - log.time.start;
+        }
+
+        out += `${rainbow.boldMk("Time:")}     ${time.format()}`;
         return out;
     }
 }

@@ -44,8 +44,7 @@ export async function build(args: string[]) {
     if (config.outDir) {
       command += " -o " + outFile;
     }
-    if (Object.keys(config.plugins).includes("coverage")) {
-      console.log(chalk.dim("Enabling coverage"));
+    if (config.plugins["coverage"]) {
       command += " --use COVERAGE_USE=1 --transform as-test/transform";
       command += " --use COVERAGE_SHOW=1";
     }
