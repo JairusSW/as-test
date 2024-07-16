@@ -1,0 +1,7 @@
+{
+  "name": "coverage",
+  "options": {
+    "reporter": "./reporter.ts",
+    "transform": "./lib/index.js"
+  }
+}

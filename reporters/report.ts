@@ -2,9 +2,19 @@ import { Verdict } from "../assembly";
 import { Suite } from "../assembly/src/suite";
 import { Tests } from "../assembly/src/tests";
 
+@json
+export class Time {
+  start: f64 = 0;
+  end: f64 = 0;
+  format(): string {
+    return formatTime(this.end - this.start);
+  }
+}
 
 @json
 export class Report {
+  time: Time = new Time();
+  plugins: string[] = [];
   file: string = "unknown";
   verdict: Verdict = Verdict.None;
   groups: SuiteReport[] = [];
@@ -13,6 +23,7 @@ export class Report {
 
 @json
 export class SuiteReport {
+  time: Time = new Time();
   kind: string = "";
   verdict: Verdict = Verdict.None;
   description: string = "";
@@ -34,6 +45,7 @@ export class SuiteReport {
     report.description = suite.description;
     report.verdict = suite.verdict;
     report.kind = suite.kind;
+    report.time = suite.time;
 
     return report;
   }
@@ -56,4 +68,37 @@ export class TestReport {
 
     return report;
   }
+}
+
+class Unit {
+  name: string;
+  divisor: number;
+}
+
+function formatTime(ms: number): string {
+  if (ms < 0) {
+    throw new Error("Time should be a non-negative number.");
+  }
+
+  // Convert milliseconds to microseconds
+  const us = ms * 1000;
+
+  const units: Unit[] = [
+    { name: "μs", divisor: 1 },
+    { name: "ms", divisor: 1000 },
+    { name: "s", divisor: 1000 * 1000 },
+    { name: "m", divisor: 60 * 1000 * 1000 },
+    { name: "h", divisor: 60 * 60 * 1000 * 1000 },
+    { name: "d", divisor: 24 * 60 * 60 * 1000 * 1000 },
+  ];
+
+  for (let i = units.length - 1; i >= 0; i--) {
+    const unit = units[i];
+    if (us >= unit.divisor) {
+      const value = Math.round((us / unit.divisor) * 1000) / 1000;
+      return `${value}${unit.name}`;
+    }
+  }
+
+  return `${us}us`;
 }

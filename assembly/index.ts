@@ -4,7 +4,7 @@ import { Expectation } from "./src/expectation";
 import { stringify } from "as-console/stringify";
 import { __COVER, __HASHES, __POINTS } from "as-test/assembly/coverage";
 import { JSON } from "json-as";
-import { Report, SuiteReport, TestReport } from "../reporters/report";
+import { Report, SuiteReport, TestReport, Time } from "../reporters/report";
 
 /**
  * Enumeration representing the verdict of a test case.
@@ -20,11 +20,7 @@ let entrySuites: Suite[] = [];
 
 // Globals
 @global let suites: Suite[] = [];
-
-
 @global let depth: i32 = -1;
-
-
 @global let current_suite: Suite | null = null;
 
 let before_all_callback: (() => void) | null = null;
@@ -217,13 +213,29 @@ export function afterEach(callback: () => void): void {
 }
 
 /**
- * Overrides all references to an existing function to instead point to this
+ * Overrides all references to an existing function in local scope to instead point to new function
  * @param {string} fn - name of function to override
  * @param {() => returnType} callback - the function to substitute it with
  */
 export function mockFn<returnType>(
   fn: string,
   callback: (...args: any[]) => returnType,
+): void {}
+
+/**
+ * Unmock all references to an existing function to instead point to the original function
+ * @param {string} fn - name of function to override
+ */
+export function unmockFn(
+  fn: string
+): void {}
+
+/**
+ * Re-mock all references to an existing function to instead point to the declared function
+ * @param {string} fn - name of function to override
+ */
+export function remockFn(
+  fn: string
 ): void {}
 
 /**
@@ -261,18 +273,25 @@ class RunOptions {
 export function run(options: RunOptions = new RunOptions()): void {
   __test_options = options;
   const report = new Report();
+  report.time.start = performance.now();
   for (let i = 0; i < entrySuites.length; i++) {
+    const suiteReport = new SuiteReport();
     // @ts-ignore
     const suite = unchecked(entrySuites[i]);
     suites = [suite];
+
     current_suite = suite;
     depth = -1;
     current_suite = null;
+
+    suiteReport.time.start = performance.now();
     suite.run();
+    suiteReport.time.end = performance.now();
+
     suites = [];
     depth = -1;
     current_suite = null;
-    const suiteReport = new SuiteReport();
+
     suiteReport.kind = suite.kind;
     suiteReport.verdict = suite.verdict;
     for (let ii = 0; ii < suite.suites.length; ii++) {
@@ -288,6 +307,7 @@ export function run(options: RunOptions = new RunOptions()): void {
     suiteReport.description = suite.description;
     report.groups.push(suiteReport);
   }
+  report.time.end = performance.now();
   if (report.verdict === Verdict.None) {
     if (report.groups.length) report.verdict = Verdict.Ok;
   }

@@ -4,7 +4,7 @@ import chalk from "chalk";
 import { exec, execSync } from "child_process";
 import { glob } from "glob";
 
-import { report } from "../build/log.js";
+import { report } from "../build/log.reporter.js";
 
 const installScripts = new Map<string, string>([
   ["wasmtime", "curl https://wasmtime.dev/install.sh -sSf | bash"],

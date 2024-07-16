@@ -11,12 +11,14 @@
     "pretest": "node ./bin/index.js build",
     "build:transform": "tsc -p ./transform",
     "build:cli": "tsc -p cli",
+    "build:log": "asc ./reporters/log/index.ts -o ./build/log.reporter.wasm --exportRuntime --bindings esm --transform json-as/transform",
     "prettier": "prettier -w .",
     "prepublish": "npm run build:cli && npm run build:transform && npm run test"
   },
   "devDependencies": {
     "@assemblyscript/wasi-shim": "^0.1.0",
     "@types/node": "^20.14.10",
+    "as-sleep": "^0.0.2",
     "as-test": "./",
     "assemblyscript": "^0.27.29",
     "assemblyscript-prettier": "^3.0.1",

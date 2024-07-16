@@ -3,14 +3,22 @@ import { Report, SuiteReport, TestReport } from "../report";
 import { Verdict } from "../../assembly/index";
 import { diff } from "../../assembly/util/helpers";
 import { JSON } from "json-as";
-
+import { Result } from "../../plugins/index";
 class LogReporter {
     public logs: Report[];
     private depth: string = "";
-    private failedSuites: i32 = 0;
+
+    private passedFiles: i32 = 0;
+    private failedFiles: i32 = 0;
+
     private passedSuites: i32 = 0;
-    private failedTests: i32 = 0;
+    private failedSuites: i32 = 0;
+
     private passedTests: i32 = 0;
+    private failedTests: i32 = 0;
+
+    private passedMatches: i32 = 0;
+    private failedMatches: i32 = 0;
 
     private initialized: boolean = false;
     constructor(logs: Report[]) {
@@ -53,6 +61,8 @@ class LogReporter {
         out += this.init();
         for (let i = 0; i < this.logs.length; i++) {
             const log = unchecked(this.logs[i]);
+            if (log.verdict === Verdict.Fail) this.failedFiles++;
+            else this.passedFiles++;
             out += this.reportLog(log);
         }
         out += this.summarize();
@@ -62,15 +72,15 @@ class LogReporter {
         // @ts-ignore
         let out: string = "";
         
-        out +=
-            rainbow.bgCyanBright(" FILE ") +
-            " " +
-            // @ts-ignore
-            rainbow.dimMk(log.file) +
-            "\n\n";
+        out += `${rainbow.bgCyanBright(" FILE ")} ${rainbow.dimMk(log.file)} ${rainbow.italicMk(log.time.format())}\n\n`;
 
         for (let i = 0; i < log.groups.length; i++) {
             const group = unchecked(log.groups[i]);
+            if (group.verdict === Verdict.Fail) {
+                this.failedSuites++;
+            } else {
+                this.passedSuites++;
+            }
             out += this.reportSuite(group);
         }
 
@@ -80,37 +90,19 @@ class LogReporter {
         let out = "";
         this.depthInc();
         if (suite.verdict == Verdict.Ok) {
-            this.passedSuites++;
-            out +=
-                this.depth +
-                rainbow.bgGreenBright(" PASS ") +
-                " " +
-                rainbow.dimMk(suite.description) +
-                "\n\n";
+            this.passedTests++;
+            out += `${this.depth}${rainbow.bgGreenBright(" PASS ")} ${rainbow.dimMk(suite.description)} ${rainbow.italicMk(suite.time.format())}\n\n`;
         } else if (suite.verdict == Verdict.Fail) {
-            this.failedSuites++;
-            out +=
-                this.depth +
-                rainbow.bgRedBright(" FAIL ") +
-                " " +
-                rainbow.dimMk(suite.description) +
-                "\n\n";
+            this.failedTests++;
+            out += `${this.depth}${rainbow.bgRed(" FAIL ")} ${rainbow.dimMk(suite.description)} ${rainbow.italicMk(suite.time.format())}\n\n`;
         } else if (suite.verdict == Verdict.None) {
-            out +=
-                this.depth +
-                rainbow.bgBlackBright(" EMPTY ") +
-                " " +
-                rainbow.dimMk(suite.description) +
-                "\n\n";
+            out += `${this.depth}${rainbow.bgBlackBright(" EMPTY ")} ${rainbow.dimMk(suite.description)} ${rainbow.italicMk("0.00μs")}\n\n`;
         }
 
         for (let i = 0; i < suite.tests.length; i++) {
             const _test = unchecked(suite.tests[i]);
             if (_test.verdict != Verdict.Ok) {
-                this.passedTests++;
                 out += this.reportTest(_test);
-            } else {
-                this.failedTests++;
             }
         }
 
@@ -144,47 +136,15 @@ class LogReporter {
         let out: string = "";
         out += rainbow.dimMk("----------------- [RESULTS] ------------------\n\n");
 
-        if (this.failedSuites) {
-            out +=
-                rainbow.boldMk("Suites:") +
-                " " +
-                rainbow.boldMk(
-                    rainbow.red(this.failedSuites.toString() + " " + "failed"),
-                ) +
-                ", " +
-                (this.passedSuites + this.failedSuites).toString() +
-                " total" +
-                "\n";
-            out +=
-                rainbow.boldMk("Tests:") +
-                " " +
-                rainbow.boldMk(
-                    rainbow.red(this.failedTests.toString() + " " + "failed"),
-                ) +
-                ", " +
-                (this.passedTests + this.failedTests).toString() +
-                " total" +
-                "\n";
-        } else {
-            out +=
-                rainbow.boldMk("Suites:") +
-                " " +
-                rainbow.boldMk(rainbow.green("0 failed")) +
-                ", " +
-                (this.passedSuites + this.failedSuites).toString() +
-                " total" +
-                "\n";
-            out +=
-                rainbow.boldMk("Tests:") +
-                " " +
-                rainbow.boldMk(
-                    rainbow.green("0 failed"),
-                ) +
-                ", " +
-                (this.passedTests + this.failedTests).toString() +
-                " total" +
-                "\n";
-        }
+        const filesResult = new Result("Files", this.failedFiles, this.passedFiles);
+        out += filesResult.display();
+
+        const suitesResult = new Result("Suites", this.failedSuites, this.passedSuites);
+        out += suitesResult.display();
+
+        const testsResult = new Result("Tests", this.failedTests, this.passedTests);
+        out += testsResult.display();
+
         return out;
     }
 }

@@ -19,7 +19,6 @@ export async function build(args) {
     verifyPackagesInstalled(config);
     let pkgMan = getPkgManager();
     console.log("");
-    const buildCommands = [];
     const inputFiles = await glob(config.input);
     for (const file of inputFiles) {
         console.log(chalk.dim("Including " + file));
@@ -27,7 +26,7 @@ export async function build(args) {
         if (config.config !== "none") {
             command += " --config " + config.config;
         }
-        if (config.buildOptions.target == "wasi") {
+        if (config.buildOptions.wasi) {
             command +=
                 " --config ./node_modules/@assemblyscript/wasi-shim/asconfig.json";
         }
@@ -37,10 +36,11 @@ export async function build(args) {
         if (config.outDir) {
             command += " -o " + outFile;
         }
-        if (Object.keys(config.plugins).includes("coverage")) {
+        if (config.coverage.enabled) {
             console.log(chalk.dim("Enabling coverage"));
             command += " --use COVERAGE_USE=1 --transform as-test/transform";
-            command += " --use COVERAGE_SHOW=1";
+            if (config.coverage.show)
+                command += " --use COVERAGE_SHOW=1";
         }
         if (config.buildOptions.args) {
             command += " " + config.buildOptions.args.join(" ");
@@ -54,7 +54,9 @@ export async function build(args) {
         return new Promise((resolve, _) => {
             console.log(chalk.dim("Building: " + command));
             exec(command, (err, stdout, stderr) => {
-                process.stdout.write(stdout);
+                if (config.buildOptions.verbose) {
+                    process.stdout.write(stdout);
+                }
                 if (err) {
                     process.stderr.write(stderr + "\n");
                     process.exit(1);
@@ -63,18 +65,20 @@ export async function build(args) {
             });
         });
     };
-    console.log(chalk.dim("Building sources in parallel..."));
-    const start = performance.now();
-    let builders = [];
-    for (const command of buildCommands) {
-        builders.push(build(command));
+    if (config.buildOptions.parallel) {
+        console.log(chalk.dim("Building sources in parallel..."));
+        const start = performance.now();
+        let builders = [];
+        for (const command of buildCommands) {
+            builders.push(build(command));
+        }
+        await Promise.all(builders);
+        console.log(chalk.dim("Compiled in " + formatTime(performance.now() - start)) + "\n");
     }
-    await Promise.all(builders);
-    console.log(chalk.dim("Compiled in " + formatTime(performance.now() - start)) + "\n");
 }
 function verifyPackagesInstalled(config) {
     const pkg = JSON.parse(readFileSync(PKG_PATH).toString());
-    if (config.buildOptions.target == "wasi") {
+    if (config.buildOptions.wasi) {
         if (!existsSync("./node_modules/@assemblyscript/wasi-shim/asconfig.json")) {
             console.log(chalk.bgRed(" ERROR ") +
                 chalk.dim(":") +

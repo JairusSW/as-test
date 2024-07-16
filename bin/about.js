@@ -1,52 +1,5 @@
-#!/usr/bin/env node
 import chalk from "chalk";
-import { build } from "./build.js";
-import { run } from "./run.js";
-import { init } from "./init.js";
-const _args = process.argv.slice(2);
-const flags = [];
-const args = [];
-const COMMANDS = ["run", "build", "test", "init"];
-const version = "0.2.1";
-for (const arg of _args) {
-    if (arg.startsWith("-"))
-        flags.push(arg);
-    else
-        args.push(arg);
-}
-if (!args.length) {
-    if (flags.includes("--version") || flags.includes("-v")) {
-        console.log("as-test v" + version.toString());
-    }
-    else {
-        info();
-    }
-}
-else if (COMMANDS.includes(args[0])) {
-    const command = args.shift();
-    if (command === "build") {
-        build(args);
-    }
-    else if (command === "run") {
-        run();
-    }
-    else if (command === "test") {
-        build(args).then(() => {
-            run();
-        });
-    }
-    else if (command === "init") {
-        init(args);
-    }
-}
-else {
-    console.log(chalk.bgRed(" ERROR ") +
-        chalk.dim(":") +
-        " " +
-        chalk.bold("Unknown command: ") +
-        args[0]);
-}
-function info() {
+export function about() {
     console.log(chalk.bold.blueBright("as-test") +
         " is a testing framework for AssemblyScript. " +
         chalk.dim("(v" + version + ")") +

@@ -1,7 +1,17 @@
 import { Verdict } from "..";
+import { Time } from "../../reporters/report";
 import { Expectation } from "./expectation";
 import { Tests } from "./tests";
+
+export type SuiteKind = string;
+export namespace SuiteKind {
+  export const It = "it";
+  export const Describe = "describe";
+  export const Test = "test";
+}
+
 export class Suite {
+  public time: Time = new Time();
   public description: string;
   public depth: i32 = 0;
   public suites: Suite[] = [];
@@ -34,7 +44,9 @@ export class Suite {
     depth--;
     for (let i = 0; i < this.suites.length; i++) {
       const suite = unchecked(this.suites[i]);
+      suite.time.start = performance.now();
       suite.run();
+      suite.time.end = performance.now();
       if (suite.verdict === Verdict.Fail) {
         this.verdict = Verdict.Fail;
         break;
@@ -52,11 +64,4 @@ export class Suite {
       if (this.suites.length) this.verdict = Verdict.Ok;
     }
   }
-}
-
-export type SuiteKind = string;
-export namespace SuiteKind {
-  export const It = "it";
-  export const Describe = "describe";
-  export const Test = "test";
 }
