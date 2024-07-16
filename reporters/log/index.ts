@@ -17,8 +17,8 @@ class LogReporter {
     private passedTests: i32 = 0;
     private failedTests: i32 = 0;
 
-    private passedMatches: i32 = 0;
-    private failedMatches: i32 = 0;
+    private failed: SuiteReport[] = [];
+
 
     private initialized: boolean = false;
     constructor(logs: Report[]) {
@@ -71,7 +71,7 @@ class LogReporter {
     reportLog(log: Report): string {
         // @ts-ignore
         let out: string = "";
-        
+
         out += `${rainbow.bgCyanBright(" FILE ")} ${rainbow.dimMk(log.file)} ${rainbow.italicMk(log.time.format())}\n\n`;
 
         for (let i = 0; i < log.groups.length; i++) {
@@ -102,6 +102,7 @@ class LogReporter {
         for (let i = 0; i < suite.tests.length; i++) {
             const _test = unchecked(suite.tests[i]);
             if (_test.verdict != Verdict.Ok) {
+                if (!this.failed.includes(suite)) this.failed.push(suite);
                 out += this.reportTest(_test);
             }
         }
@@ -132,8 +133,25 @@ class LogReporter {
         this.depthDec();
         return out;
     }
+    errors(): string {
+        let out: string = "";
+        if (!this.failed.length) return "";
+        out += rainbow.dimMk("----------------- [FAILED] -------------------\n\n");
+        for (let i = 0; i < this.failed.length; i++) {
+            const suite = unchecked(this.failed[i]);
+            out += `${rainbow.bgRed(" FAIL ")} ${rainbow.dimMk(suite.description)} ${rainbow.italicMk(suite.time.format())}\n\n`;
+            for (let i = 0; i < suite.tests.length; i++) {
+                const _test = unchecked(suite.tests[i]);
+                if (_test.verdict != Verdict.Ok) {
+                    out += this.reportTest(_test);
+                }
+            }
+        }
+        return out;
+    }
     summarize(): string {
         let out: string = "";
+        out += this.errors();
         out += rainbow.dimMk("----------------- [RESULTS] ------------------\n\n");
 
         const filesResult = new Result("Files:   ", this.failedFiles, this.passedFiles);
