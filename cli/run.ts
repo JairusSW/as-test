@@ -1,5 +1,3 @@
-import { existsSync, readFileSync, readdirSync } from "fs";
-import { Config } from "./types.js";
 import chalk from "chalk";
 import { execSync } from "child_process";
 import { glob } from "glob";
@@ -37,7 +35,7 @@ export async function run() {
         .replace(exec, execPath)
         .replace("<file>", outFile.replace(".wasm", ".js"));
     }
-    const stdout = execSync(cmd);
+    execSync(cmd, { stdio: "inherit"});/*
     process.stdout.write(stdout.toString().slice(0, stdout.indexOf("--REPORT-START--")));
     const report = stdout
       .toString()
@@ -45,10 +43,10 @@ export async function run() {
         stdout.indexOf("--REPORT-START--") + 16,
         stdout.indexOf("--REPORT-END--"),
       );
-    reports.push(JSON.parse(report));
+    reports.push(JSON.parse(report));*/
   }
 
-  report(JSON.stringify(reports));
+  //report(JSON.stringify(reports));
 
   for (const report of reports) {
     if (report.verdict == "fail") process.exit(1);

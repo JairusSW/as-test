@@ -89,10 +89,10 @@ class LogReporter {
     let out = "";
     this.depthInc();
     if (suite.verdict == Verdict.Ok) {
-      this.passedTests++;
+      this.passedSuites++;
       out += `${this.depth}${rainbow.bgGreenBright(" PASS ")} ${rainbow.dimMk(suite.description)} ${rainbow.italicMk(suite.time.format())}\n\n`;
     } else if (suite.verdict == Verdict.Fail) {
-      this.failedTests++;
+      this.failedSuites++;
       out += `${this.depth}${rainbow.bgRed(" FAIL ")} ${rainbow.dimMk(suite.description)} ${rainbow.italicMk(suite.time.format())}\n\n`;
     } else if (suite.verdict == Verdict.None) {
       out += `${this.depth}${rainbow.bgBlackBright(" EMPTY ")} ${rainbow.dimMk(suite.description)} ${rainbow.italicMk("0.00μs")}\n\n`;
@@ -101,7 +101,10 @@ class LogReporter {
     for (let i = 0; i < suite.tests.length; i++) {
       const _test = unchecked(suite.tests[i]);
       if (_test.verdict != Verdict.Ok) {
+        this.failedTests++;
         if (!this.failed.includes(suite)) this.failed.push(suite);
+      } else {
+        this.passedTests++;
       }
     }
 

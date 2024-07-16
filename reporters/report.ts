@@ -31,6 +31,8 @@ export class SuiteReport {
   description: string = "";
   tests: TestReport[] = [];
   suites: SuiteReport[] = [];
+  logs: string[] = [];
+  errors: string[] = [];
   static wrap(suite: Suite): SuiteReport {
     const report = new SuiteReport();
 
@@ -48,6 +50,7 @@ export class SuiteReport {
     report.verdict = suite.verdict;
     report.kind = suite.kind;
     report.time = suite.time;
+    report.logs = suite.logs;
 
     return report;
   }
@@ -95,13 +98,11 @@ function formatTime(time: f64): string {
     const unit = units[i];
     if (us >= unit.divisor) {
       const value = (Math.round((us / unit.divisor) * 100) / 100).toString();
-      const precision = value.indexOf(".");
-      return `${value.slice(0, precision) + value.slice(precision, precision + 3)}${unit.name}`;
+      return `${value}${unit.name}`;
     }
   }
 
-  const _us = us.toString();
-  const precision = _us.indexOf(".");
+  const _us = (Math.round(us * 100) / 100).toString();
 
-  return `${_us.slice(0, precision) + _us.slice(precision, precision + 3)}μs`;
+  return `${_us}μs`;
 }

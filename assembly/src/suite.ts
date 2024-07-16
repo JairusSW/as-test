@@ -1,7 +1,9 @@
-import { Verdict } from "..";
+import { rainbow } from "as-rainbow";
+import { getDepth, Verdict } from "..";
 import { Time } from "../../reporters/report";
 import { Expectation } from "./expectation";
 import { Tests } from "./tests";
+import { term } from "../util/term";
 
 export type SuiteKind = string;
 export namespace SuiteKind {
@@ -16,6 +18,7 @@ export class Suite {
   public depth: i32 = 0;
   public suites: Suite[] = [];
   public tests: Tests[] = [];
+  public logs: string[] = [];
   public kind: SuiteKind;
 
   public verdict: Verdict = Verdict.None;
@@ -39,14 +42,17 @@ export class Suite {
     current_suite = this;
     // @ts-ignore
     depth++;
+    this.time.start = performance.now();
+    const suiteDepth = getDepth();
+    const suiteLn = term.write(`${suiteDepth}${rainbow.bgBlackBright(" ... ")} ${rainbow.dimMk(this.description)}\n`);
+    term.write("\n");
     this.callback();
+    this.time.end = performance.now();
     // @ts-ignore
     depth--;
     for (let i = 0; i < this.suites.length; i++) {
       const suite = unchecked(this.suites[i]);
-      suite.time.start = performance.now();
       suite.run();
-      suite.time.end = performance.now();
       if (suite.verdict === Verdict.Fail) {
         this.verdict = Verdict.Fail;
         break;
@@ -63,5 +69,6 @@ export class Suite {
       if (this.tests.length) this.verdict = Verdict.Ok;
       if (this.suites.length) this.verdict = Verdict.Ok;
     }
+    suiteLn.edit(`${suiteDepth}${rainbow.bgGreenBright(" PASS ")} ${rainbow.dimMk(this.description)} ${rainbow.dimMk(this.time.format())}\n`);
   }
 }

@@ -1,7 +1,7 @@
 export class Config {
   input: string[] = ["./assembly/__tests__/*.spec.ts"];
   outDir: string = "./build";
-  config: string = "./asconfig.json";
+  config: string = "none";
   plugins: {};
   buildOptions: BuildOptions = new BuildOptions();
   runOptions: RunOptions = new RunOptions();

@@ -5,6 +5,7 @@ import { stringify } from "as-console/stringify";
 import { __COVER, __HASHES, __POINTS } from "as-test/assembly/coverage";
 import { JSON } from "json-as";
 import { Report, SuiteReport, TestReport, Time } from "../reporters/report";
+import { term } from "./util/term";
 
 /**
  * Enumeration representing the verdict of a test case.
@@ -18,6 +19,8 @@ export namespace Verdict {
 
 let entrySuites: Suite[] = [];
 
+// @ts-ignore
+const FILE = isDefined(ENTRY_FILE) ? ENTRY_FILE : "unknown";
 // Globals
 @global let suites: Suite[] = [];
 
@@ -222,19 +225,19 @@ export function afterEach(callback: () => void): void {
 export function mockFn<returnType>(
   fn: string,
   callback: (...args: any[]) => returnType,
-): void {}
+): void { }
 
 /**
  * Unmock all references to an existing function to instead point to the original function
  * @param {string} fn - name of function to override
  */
-export function unmockFn(fn: string): void {}
+export function unmockFn(fn: string): void { }
 
 /**
  * Re-mock all references to an existing function to instead point to the declared function
  * @param {string} fn - name of function to override
  */
-export function remockFn(fn: string): void {}
+export function remockFn(fn: string): void { }
 
 /**
  * Class defining options that can be passed to the `run` function.
@@ -270,10 +273,12 @@ class RunOptions {
  */
 export function run(options: RunOptions = new RunOptions()): void {
   __test_options = options;
-  const report = new Report();
-  report.time.start = performance.now();
+  term.write("\n");
+  const time = new Time();
+  const fileLn = term.write(`${rainbow.bgCyanBright(" FILE ")} ${rainbow.dimMk(FILE)}\n`);
+  term.write("\n");
+  time.start = performance.now();
   for (let i = 0; i < entrySuites.length; i++) {
-    const suiteReport = new SuiteReport();
     // @ts-ignore
     const suite = unchecked(entrySuites[i]);
     suites = [suite];
@@ -282,36 +287,45 @@ export function run(options: RunOptions = new RunOptions()): void {
     depth = -1;
     current_suite = null;
 
-    suiteReport.time.start = performance.now();
+    const suiteLn = term.write(`  ${rainbow.bgBlackBright(" ... ")} ${rainbow.dimMk(suite.description)}\n`);
+    term.write("\n");
     suite.run();
-    suiteReport.time.end = performance.now();
 
     suites = [];
     depth = -1;
     current_suite = null;
 
-    suiteReport.kind = suite.kind;
-    suiteReport.verdict = suite.verdict;
+    let suiteNone = true;
     for (let ii = 0; ii < suite.suites.length; ii++) {
       const _suite = unchecked(suite.suites[ii]);
-      if (_suite.verdict == Verdict.Fail) report.verdict = Verdict.Fail;
-      suiteReport.suites.push(SuiteReport.wrap(_suite));
+      if (_suite.verdict == Verdict.Fail) {
+        suite.verdict = Verdict.Fail;
+        suiteNone = false;
+      } else if (_suite.verdict == Verdict.Ok) {
+        suiteNone = false;
+      }
     }
+
     for (let iii = 0; iii < suite.tests.length; iii++) {
-      const test = unchecked(suite.tests[iii]);
-      if (test.verdict == Verdict.Fail) report.verdict = Verdict.Fail;
-      suiteReport.tests.push(TestReport.wrap(test));
+      const _test = unchecked(suite.tests[iii]);
+      if (_test.verdict == Verdict.Fail) {
+        suite.verdict = Verdict.Fail;
+      }
     }
-    suiteReport.description = suite.description;
-    report.groups.push(suiteReport);
+
+    if (!suiteNone && suite.tests.length) {
+      suite.verdict = Verdict.Ok;
+    }
+
+    if (suite.verdict == Verdict.Ok) {
+      suiteLn.edit(`  ${rainbow.bgGreenBright(" PASS ")} ${rainbow.dimMk(suite.description)} ${rainbow.dimMk(suite.time.format())}\n`);
+    }
   }
-  report.time.end = performance.now();
-  if (report.verdict === Verdict.None) {
-    if (report.groups.length) report.verdict = Verdict.Ok;
-  }
-  // @ts-ignore
-  report.file = isDefined(ENTRY_FILE) ? ENTRY_FILE : "unknown";
-  console.log(
-    "--REPORT-START--\n" + JSON.stringify(report) + "\n--REPORT-END--",
-  );
+  time.end = performance.now();
+  fileLn.edit(`${rainbow.bgCyanBright(" FILE ")} ${rainbow.dimMk(FILE)} ${rainbow.dimMk(time.format())}`);
+}
+
+export function getDepth(): string {
+  if (depth < 0) return "";
+  return "  ".repeat(depth);
 }

@@ -2,7 +2,7 @@ export class Config {
     constructor() {
         this.input = ["./assembly/__tests__/*.spec.ts"];
         this.outDir = "./build";
-        this.config = "./asconfig.json";
+        this.config = "none";
         this.buildOptions = new BuildOptions();
         this.runOptions = new RunOptions();
     }

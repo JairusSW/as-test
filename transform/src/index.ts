@@ -4,16 +4,20 @@ import {
   Node,
   Parser,
   SourceKind,
+  Source,
+  Tokenizer
 } from "assemblyscript/dist/assemblyscript.js";
 
 import { isStdlib } from "visitor-as/dist/utils.js";
+import { CoverageTransform } from "./coverage.js";
+import { MockTransform } from "./mock.js";
 
 export default class Transformer extends Transform {
   // Trigger the transform after parse.
   afterParse(parser: Parser): void {
     // Create new transform
-    //const mock = new MockTransform();
-    //const coverage = new CoverageTransform();
+    const mock = new MockTransform();
+    const coverage = new CoverageTransform();
 
     // Sort the sources so that user scripts are visited last
     const sources = parser.sources
@@ -49,22 +53,22 @@ export default class Transformer extends Transform {
         source.range,
       );
       source.statements.unshift(node);
-      // mock.visit(source);
-      // coverage.visit(source);
-      // if (coverage.globalStatements.length) {
-      //   source.statements.unshift(...coverage.globalStatements);
-      //   const tokenizer = new Tokenizer(
-      //     new Source(
-      //       SourceKind.User,
-      //       source.normalizedPath,
-      //       'import { __REGISTER, __COVER } from "as-test/assembly/coverage";',
-      //     ),
-      //   );
-      //   parser.currentSource = tokenizer.source;
-      //   source.statements.unshift(parser.parseTopLevelStatement(tokenizer)!);
-      //   parser.currentSource = source;
-      // }
+      mock.visit(source);
+      coverage.visit(source);
+      if (coverage.globalStatements.length) {
+        source.statements.unshift(...coverage.globalStatements);
+        const tokenizer = new Tokenizer(
+          new Source(
+            SourceKind.User,
+            source.normalizedPath,
+            'import { __REGISTER, __COVER } from "as-test/assembly/coverage";',
+          ),
+        );
+        parser.currentSource = tokenizer.source;
+        source.statements.unshift(parser.parseTopLevelStatement(tokenizer)!);
+        parser.currentSource = source;
+      }
     }
-    // coverage.globalStatements = [];
+    coverage.globalStatements = [];
   }
 }
