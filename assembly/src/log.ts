@@ -10,6 +10,6 @@ export class Log {
         this.text = text;
     }
     display(): void {
-        term.write("  ".repeat(this.depth + 1) + `${rainbow.bgBlackBright(" LOG ")}${rainbow.dimMk(":")} ${this.text}\n`);
+        term.write("  ".repeat(this.depth + 1) + `${rainbow.bgBlackBright(" LOG ")}${rainbow.dimMk(": " + this.text)}\n`);
     }
 }

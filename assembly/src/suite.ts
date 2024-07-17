@@ -78,11 +78,11 @@ export class Suite {
       }
     }
 
-    if (!suiteNone || this.tests.length) {
+    if (this.verdict == "fail") {
+      suiteLn.edit(`${suiteDepth}${rainbow.bgRed(" FAIL ")} ${rainbow.dimMk(this.description)}\n`);
+    } else if (!suiteNone || this.tests.length) {
       this.verdict = "ok";
       suiteLn.edit(`${suiteDepth}${rainbow.bgGreenBright(" PASS ")} ${rainbow.dimMk(this.description)}\n`);
-    } else if (this.verdict == "fail") {
-      suiteLn.edit(`${suiteDepth}${rainbow.bgRed(" FAIL ")} ${rainbow.dimMk(this.description)}\n`);
     } else {
       suiteLn.edit(`${suiteDepth}${rainbow.bgBlackBright(" EMPTY ")} ${rainbow.dimMk(this.description)}\n`);
     }

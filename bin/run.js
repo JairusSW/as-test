@@ -4,6 +4,7 @@ import { glob } from "glob";
 import { formatTime, getExec, loadConfig } from "./util.js";
 import * as path from "path";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
+import { diff } from "typer-diff";
 const CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 const ansi = new RegExp("[\\u001B\\u009B][[\\]()#;?]*(?:(?:(?:(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]+)*|[a-zA-Z\\d]+(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]*)*)?\\u0007)|(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PR-TZcf-nq-uy=><~]))", "g");
 export async function run() {
@@ -68,14 +69,45 @@ export async function run() {
         for (const failed of reporter.failed) {
             console.log(`${chalk.bgRed(" FAIL ")} ${chalk.dim(failed.description)}\n`);
             for (const test of failed.tests) {
+                const diffResult = diff(JSON.stringify(test._left), JSON.stringify(test._right));
+                let expected = chalk.dim(JSON.stringify(test._left));
+                let received = "";
+                for (const res of diffResult.diff) {
+                    switch (res.type) {
+                        case "correct": {
+                            received += chalk.dim(res.value);
+                            continue;
+                        }
+                        case "extra": {
+                            received += chalk.red.strikethrough(res.value);
+                            continue;
+                        }
+                        case "missing": {
+                            received += chalk.bgBlack(res.value);
+                            continue;
+                        }
+                        case "wrong": {
+                            received += chalk.bgRed(res.value);
+                            continue;
+                        }
+                        case "untouched": {
+                            //received += chalk.bgBlackBright(res.value);
+                            continue;
+                        }
+                        case "spacer": {
+                            //received += chalk.bgBlackBright(res.value);
+                            continue;
+                        }
+                    }
+                }
                 if (test.verdict == "fail") {
-                    console.log(`${chalk.dim("(expected) ->")} ${chalk.bold(test._left.toString())}`);
-                    console.log(`${chalk.dim("(received) ->")} ${chalk.bold(test._right.toString())}\n`);
+                    console.log(`${chalk.dim("(expected) ->")} ${expected}`);
+                    console.log(`${chalk.dim("(received) ->")} ${received}\n`);
                 }
             }
         }
     }
-    console.log("----------------- [RESULTS] ------------------\n");
+    console.log(chalk.dim("----------------- [RESULTS] ------------------\n"));
     process.stdout.write(chalk.bold("Files:  "));
     if (reporter.failedFiles) {
         process.stdout.write(chalk.bold.red(reporter.failedFiles + " failed"));
