@@ -11,7 +11,6 @@
     "pretest": "node ./bin/index.js build",
     "build:transform": "tsc -p ./transform",
     "build:cli": "tsc -p cli",
-    "build:log": "asc ./reporters/log/index.ts -o ./build/log.reporter.wasm --exportRuntime --bindings esm --transform json-as/transform",
     "prettier": "prettier -w .",
     "prepublish": "npm run build:cli && npm run build:transform && npm run test"
   },
@@ -32,7 +31,7 @@
     "chalk": "^5.3.0",
     "glob": "^11.0.0",
     "jest": "^29.7.0",
-    "json-as": "^0.9.13"
+    "json-as": "^0.9.14"
   },
   "overrides": {
     "assemblyscript": "$assemblyscript",

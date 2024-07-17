@@ -1,12 +1,14 @@
 import { visualize } from "../util/helpers";
 import { Tests } from "./tests";
-import { Verdict, after_each_callback, before_each_callback } from "..";
+import { after_each_callback, before_each_callback } from "..";
 
+@json
 export class Expectation<T> extends Tests {
-  public verdict: Verdict = Verdict.None;
+  public verdict: string = "none";
   private _left: T;
   // @ts-ignore
   private _right: u64 = 0;
+  // @ts-ignore
   private _not: boolean = false;
   constructor(left: T) {
     super();
@@ -24,8 +26,8 @@ export class Expectation<T> extends Tests {
   toBeNull(): void {
     this.verdict =
       isNullable<T>() && changetype<usize>(this._left)
-        ? Verdict.Ok
-        : Verdict.Fail;
+        ? "ok"
+        : "fail";
 
     // @ts-ignore
     store<T>(changetype<usize>(this), null, offsetof<Expectation<T>>("_right"));
@@ -52,7 +54,7 @@ export class Expectation<T> extends Tests {
     if (!isInteger<T>() && !isFloat<T>())
       ERROR("toBeGreaterThan() can only be used on number types!");
 
-    this.verdict = this._left > value ? Verdict.Ok : Verdict.Fail;
+    this.verdict = this._left > value ? "ok" : "fail";
     store<T>(
       changetype<usize>(this),
       value,
@@ -81,7 +83,7 @@ export class Expectation<T> extends Tests {
     if (!isInteger<T>() && !isFloat<T>())
       ERROR("toBeGreaterOrEqualTo() can only be used on number types!");
 
-    this.verdict = this._left >= value ? Verdict.Ok : Verdict.Fail;
+    this.verdict = this._left >= value ? "ok" : "fail";
     store<T>(
       changetype<usize>(this),
       value,
@@ -110,7 +112,7 @@ export class Expectation<T> extends Tests {
     if (!isInteger<T>() && !isFloat<T>())
       ERROR("toBeLessThan() can only be used on number types!");
 
-    this.verdict = this._left < value ? Verdict.Ok : Verdict.Fail;
+    this.verdict = this._left < value ? "ok" : "fail";
     store<T>(
       changetype<usize>(this),
       value,
@@ -139,7 +141,7 @@ export class Expectation<T> extends Tests {
     if (!isInteger<T>() && !isFloat<T>())
       ERROR("toBeLessThanOrEqualTo() can only be used on number types!");
 
-    this.verdict = this._left <= value ? Verdict.Ok : Verdict.Fail;
+    this.verdict = this._left <= value ? "ok" : "fail";
     store<T>(
       changetype<usize>(this),
       value,
@@ -164,7 +166,7 @@ export class Expectation<T> extends Tests {
    * @returns - void
    */
   toBeString(): void {
-    this.verdict = isString<T>() ? Verdict.Ok : Verdict.Fail;
+    this.verdict = isString<T>() ? "ok" : "fail";
 
     this.left = nameof<T>();
     this.right = "string";
@@ -182,7 +184,7 @@ export class Expectation<T> extends Tests {
    * @returns - void
    */
   toBeBoolean(): void {
-    this.verdict = isBoolean<T>() ? Verdict.Ok : Verdict.Fail;
+    this.verdict = isBoolean<T>() ? "ok" : "fail";
 
     this.left = nameof<T>();
     this.right = "boolean";
@@ -200,7 +202,7 @@ export class Expectation<T> extends Tests {
    * @returns - void
    */
   toBeArray(): void {
-    this.verdict = isArray<T>() ? Verdict.Ok : Verdict.Fail;
+    this.verdict = isArray<T>() ? "ok" : "fail";
 
     this.left = nameof<T>();
     this.right = "Array<any>";
@@ -218,7 +220,7 @@ export class Expectation<T> extends Tests {
    * @returns - void
    */
   toBeNumber(): void {
-    this.verdict = isFloat<T>() || isInteger<T>() ? Verdict.Ok : Verdict.Fail;
+    this.verdict = isFloat<T>() || isInteger<T>() ? "ok" : "fail";
 
     this.left = nameof<T>();
     this.right = "number";
@@ -236,7 +238,7 @@ export class Expectation<T> extends Tests {
    * @returns - void
    */
   toBeInteger(): void {
-    this.verdict = isInteger<T>() ? Verdict.Ok : Verdict.Fail;
+    this.verdict = isInteger<T>() ? "ok" : "fail";
 
     this.left = nameof<T>();
     this.right = "float";
@@ -254,7 +256,7 @@ export class Expectation<T> extends Tests {
    * @returns - void
    */
   toBeFloat(): void {
-    this.verdict = isFloat<T>() ? Verdict.Ok : Verdict.Fail;
+    this.verdict = isFloat<T>() ? "ok" : "fail";
 
     this.left = nameof<T>();
     this.right = "integer";
@@ -275,8 +277,8 @@ export class Expectation<T> extends Tests {
     this.verdict =
       // @ts-ignore
       (isFloat<T>() || isInteger<T>()) && isFinite(this._left)
-        ? Verdict.Ok
-        : Verdict.Fail;
+        ? "ok"
+        : "fail";
 
     this.left = "Infinity";
     this.right = "Finite";
@@ -298,7 +300,7 @@ export class Expectation<T> extends Tests {
   toHaveLength(value: i32): void {
     this.verdict =
       // @ts-ignore
-      isArray<T>() && this._left.length == value ? Verdict.Ok : Verdict.Fail;
+      isArray<T>() && this._left.length == value ? "ok" : "fail";
 
     // @ts-ignore
     this.left = this._left.length.toString();
@@ -322,7 +324,7 @@ export class Expectation<T> extends Tests {
   toContain(value: valueof<T>): void {
     this.verdict =
       // @ts-ignore
-      isArray<T>() && this._left.includes(value) ? Verdict.Ok : Verdict.Fail;
+      isArray<T>() && this._left.includes(value) ? "ok" : "fail";
 
     // @ts-ignore
     this.left = "includes value";
@@ -347,15 +349,15 @@ export class Expectation<T> extends Tests {
       offsetof<Expectation<T>>("_right"),
     );
     if (isBoolean<T>()) {
-      this.verdict = this._left === equals ? Verdict.Ok : Verdict.Fail;
+      this.verdict = this._left === equals ? "ok" : "fail";
     } else if (isString<T>()) {
-      this.verdict = this._left === equals ? Verdict.Ok : Verdict.Fail;
+      this.verdict = this._left === equals ? "ok" : "fail";
     } else if (isInteger<T>() || isFloat<T>()) {
-      this.verdict = this._left === equals ? Verdict.Ok : Verdict.Fail;
+      this.verdict = this._left === equals ? "ok" : "fail";
     } else if (isArray<T>()) {
       // getArrayDepth<T>();
     } else {
-      this.verdict = Verdict.None;
+      this.verdict = "none";
     }
 
     this.instr = "toBe";

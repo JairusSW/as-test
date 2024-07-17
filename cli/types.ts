@@ -1,6 +1,7 @@
 export class Config {
   input: string[] = ["./assembly/__tests__/*.spec.ts"];
   outDir: string = "./build";
+  logs: string = "./logs";
   config: string = "none";
   plugins: {};
   buildOptions: BuildOptions = new BuildOptions();

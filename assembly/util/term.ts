@@ -1,40 +1,42 @@
-export class Log {
-    private line: i32 = 0;
-    constructor(line: i32 = 0) {
-        this.line = line;
+export class TermLine {
+    public start: i32 = 0;
+    public end: i32 = 0;
+    constructor(start: i32 = 0, end: i32 = 0) {
+        this.start = start;
+        this.end = end;
     }
-    edit(data: string): Log {
-        term.clearLn(this.line);
+    edit(data: string): TermLine {
+        let end = this.end;
+        while (--end >= this.start) {
+            term.clearLn(end);
+        }
         process.stdout.write(data);
-        process.stdout.write("\x1B[999B");
-        process.stdout.write("\x1B[0G");
-        return new Log(this.line);
+        term.resetCursor();
+        return new TermLine(this.end);
+    }
+    clear(): void {
+        term.clearLn(this.start);
     }
 }
 
 export namespace term {
     export let lines: i32 = 0;
-    export function write(data: string): Log {
-        process.stdout.write(data);
-        return new Log(term.lines++);
-    }
-    export function writeLn(data: string): void {
+    export function write(data: string): TermLine {
+        const start = term.lines;
         for (let i = 0; i < data.length; i++) {
             const code = data.charCodeAt(i);
             if (code === 10) term.lines++;
         }
-        term.lines++;
-        process.stdout.write(data + "\n");
+        process.stdout.write(data);
+        return new TermLine(start, term.lines);
     }
     export function clearLn(line: i32): void {
         process.stdout.write(`\u001B[${term.lines - line}A`);
         process.stdout.write("\x1B[2K");
         process.stdout.write("\x1B[0G");
     }
-    export function editLn(data: string, ln: i32): void {
-        process.stdout.write(`\u001B[${ln}A`);
-        process.stdout.write("\x1B[2K");
+    export function resetCursor(): void {
+        process.stdout.write("\x1B[999B");
         process.stdout.write("\x1B[0G");
-        term.writeLn(data);
     }
 }

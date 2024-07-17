@@ -1,14 +1,9 @@
-import { Verdict } from "..";
-
+@json
 export class Tests {
+  public order: i32 = 0;
   public type!: string;
-  public verdict: Verdict = Verdict.None;
+  public verdict: string = "none";
   public left: string = "";
   public right: string = "";
   public instr: string = "";
-}
-
-export class ReportLogs {
-  passed: string | null;
-  failed: string | null;
 }

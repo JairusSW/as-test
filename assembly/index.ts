@@ -1,34 +1,26 @@
 import { rainbow } from "as-rainbow";
-import { Suite, SuiteKind } from "./src/suite";
+import { Suite } from "./src/suite";
 import { Expectation } from "./src/expectation";
 import { stringify } from "as-console/stringify";
 import { __COVER, __HASHES, __POINTS } from "as-test/assembly/coverage";
 import { JSON } from "json-as";
-import { Report, SuiteReport, TestReport, Time } from "../reporters/report";
-import { term } from "./util/term";
-
-/**
- * Enumeration representing the verdict of a test case.
- */
-export type Verdict = string;
-export namespace Verdict {
-  export const None = "none";
-  export const Ok = "ok";
-  export const Fail = "fail";
-}
+import { term, TermLine } from "./util/term";
+import { Log } from "./src/log";
 
 let entrySuites: Suite[] = [];
 
 // @ts-ignore
 const FILE = isDefined(ENTRY_FILE) ? ENTRY_FILE : "unknown";
 // Globals
+// @ts-ignore
 @global let suites: Suite[] = [];
-
+// @ts-ignore
 @global let depth: i32 = -1;
-
+// @ts-ignore
 @global let current_suite: Suite | null = null;
-
+// @ts-ignore
 let before_all_callback: (() => void) | null = null;
+// @ts-ignore
 let after_all_callback: (() => void) | null = null;
 
 export let before_each_callback: (() => void) | null = null;
@@ -50,7 +42,7 @@ let __test_options!: RunOptions;
  * ```
  */
 export function describe(description: string, callback: () => void): void {
-  const suite = new Suite(description, callback, SuiteKind.Describe);
+  const suite = new Suite(description, callback, "describe");
 
   if (depth >= 0) {
     const _suite = suites[depth];
@@ -61,6 +53,7 @@ export function describe(description: string, callback: () => void): void {
       suites.push(suite);
     }
   } else {
+    suite.file = FILE;
     entrySuites.push(suite);
     suites.push(suite);
   }
@@ -81,7 +74,7 @@ export function describe(description: string, callback: () => void): void {
  * ```
  */
 export function test(description: string, callback: () => void): void {
-  const suite = new Suite(description, callback, SuiteKind.Test);
+  const suite = new Suite(description, callback, "test");
 
   if (depth >= 0) {
     const _suite = suites[depth];
@@ -92,6 +85,7 @@ export function test(description: string, callback: () => void): void {
       suites.push(suite);
     }
   } else {
+    suite.file = FILE;
     entrySuites.push(suite);
     suites.push(suite);
   }
@@ -112,7 +106,7 @@ export function test(description: string, callback: () => void): void {
  * ```
  */
 export function it(description: string, callback: () => void): void {
-  const suite = new Suite(description, callback, SuiteKind.It);
+  const suite = new Suite(description, callback, "it");
 
   if (depth >= 0) {
     const _suite = suites[depth];
@@ -123,6 +117,7 @@ export function it(description: string, callback: () => void): void {
       suites.push(suite);
     }
   } else {
+    suite.file = FILE;
     entrySuites.push(suite);
     suites.push(suite);
   }
@@ -175,9 +170,11 @@ export function log<T>(data: T): void {
     const lines = formatted.split("\n");
     for (let i = 0; i < lines.length; i++) {
       const line = unchecked(lines[i]);
-      console.log("  " + rainbow.bgYellow(" LOG ") + " " + line);
+      if (current_suite) {
+        current_suite!.addLog(new Log(line));
+      }
     }
-    console.log("");
+    term.write("\n");
   }
 }
 
@@ -272,8 +269,10 @@ class RunOptions {
  * ```
  */
 export function run(options: RunOptions = new RunOptions()): void {
+  // const buf = new ArrayBuffer(20);
+  // const bytes = process.stdin.read(buf);
+  // const stdinLn = term.write(String.UTF8.decodeUnsafe(changetype<usize>(buf), bytes) + "\n");
   __test_options = options;
-  term.write("\n");
   const time = new Time();
   const fileLn = term.write(`${rainbow.bgCyanBright(" FILE ")} ${rainbow.dimMk(FILE)}\n`);
   term.write("\n");
@@ -287,45 +286,80 @@ export function run(options: RunOptions = new RunOptions()): void {
     depth = -1;
     current_suite = null;
 
-    const suiteLn = term.write(`  ${rainbow.bgBlackBright(" ... ")} ${rainbow.dimMk(suite.description)}\n`);
-    term.write("\n");
     suite.run();
 
     suites = [];
     depth = -1;
     current_suite = null;
-
-    let suiteNone = true;
-    for (let ii = 0; ii < suite.suites.length; ii++) {
-      const _suite = unchecked(suite.suites[ii]);
-      if (_suite.verdict == Verdict.Fail) {
-        suite.verdict = Verdict.Fail;
-        suiteNone = false;
-      } else if (_suite.verdict == Verdict.Ok) {
-        suiteNone = false;
-      }
-    }
-
-    for (let iii = 0; iii < suite.tests.length; iii++) {
-      const _test = unchecked(suite.tests[iii]);
-      if (_test.verdict == Verdict.Fail) {
-        suite.verdict = Verdict.Fail;
-      }
-    }
-
-    if (!suiteNone && suite.tests.length) {
-      suite.verdict = Verdict.Ok;
-    }
-
-    if (suite.verdict == Verdict.Ok) {
-      suiteLn.edit(`  ${rainbow.bgGreenBright(" PASS ")} ${rainbow.dimMk(suite.description)} ${rainbow.dimMk(suite.time.format())}\n`);
-    }
   }
   time.end = performance.now();
   fileLn.edit(`${rainbow.bgCyanBright(" FILE ")} ${rainbow.dimMk(FILE)} ${rainbow.dimMk(time.format())}`);
+  const reportText = "\x1B[8mSTART_READ" + JSON.stringify(entrySuites) + "END_READ\x1B[0m\n";
+  term.write(reportText).clear();
 }
 
-export function getDepth(): string {
-  if (depth < 0) return "";
-  return "  ".repeat(depth);
+export class Result {
+  public name: string;
+  public arg1: i32;
+  public arg2: i32;
+  constructor(name: string, arg1: i32, arg2: i32) {
+    this.name = name;
+    this.arg1 = arg1;
+    this.arg2 = arg2;
+  }
+  display(): string {
+    let out = "";
+    out += `${rainbow.boldMk(this.name)} `;
+    if (this.arg1) {
+      out += `${rainbow.boldMk(rainbow.red(this.arg1.toString() + " " + "failed"))}`;
+    } else {
+      out += `${rainbow.boldMk(rainbow.green("0 failed"))}`;
+    }
+    out += ` ${this.arg1 + this.arg2} total\n`;
+    return out;
+  }
+  serialize(): string {
+    return JSON.stringify(this);
+  }
+}
+
+@json
+export class Time {
+  start: f64 = 0;
+  end: f64 = 0;
+  format(): string {
+    return formatTime(this.end - this.start);
+  }
+}
+
+class Unit {
+  name: string;
+  divisor: number;
+}
+
+function formatTime(time: f64): string {
+  if (time < 0) return "0.00μs";
+
+  const us = time * 1000;
+
+  const units: Unit[] = [
+    { name: "μs", divisor: 1 },
+    { name: "ms", divisor: 1000 },
+    { name: "s", divisor: 1000 * 1000 },
+    { name: "m", divisor: 60 * 1000 * 1000 },
+    { name: "h", divisor: 60 * 60 * 1000 * 1000 },
+    { name: "d", divisor: 24 * 60 * 60 * 1000 * 1000 },
+  ];
+
+  for (let i = units.length - 1; i >= 0; i--) {
+    const unit = units[i];
+    if (us >= unit.divisor) {
+      const value = (Math.round((us / unit.divisor) * 100) / 100).toString();
+      return `${value}${unit.name}`;
+    }
+  }
+
+  const _us = (Math.round(us * 100) / 100).toString();
+
+  return `${_us}μs`;
 }

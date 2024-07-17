@@ -1,6 +1,7 @@
 {
   "input": ["./assembly/__tests__/*.spec.ts"],
   "outDir": "./build",
+  "logs": "./logs",
   "config": "none",
   "plugins": {
     "coverage": true
