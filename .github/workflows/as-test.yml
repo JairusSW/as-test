@@ -19,9 +19,6 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Build reporter
-        run: bun run build:log
-
       - name: Build tests
         run: bun run pretest
 
