@@ -133,6 +133,10 @@ Build and run it using as-test
 npm run test
 ```
 
+And you should see an output similar to this:
+
+<img src="https://raw.githubusercontent.com/JairusSW/as-test/main/assets/img/download.png">
+
 <h6>
 
 ## Running
