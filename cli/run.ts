@@ -1,15 +1,14 @@
 import chalk from "chalk";
-import { exec, execSync } from "child_process";
+import { exec } from "child_process";
 import { glob } from "glob";
 
 import { formatTime, getExec, loadConfig } from "./util.js";
 import * as path from "path";
-import { appendFileSync, existsSync, fstat, mkdirSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { diff } from "typer-diff";
 
 const CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 
-const ansi = new RegExp("[\\u001B\\u009B][[\\]()#;?]*(?:(?:(?:(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]+)*|[a-zA-Z\\d]+(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]*)*)?\\u0007)|(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PR-TZcf-nq-uy=><~]))", "g");
 export async function run() {
   const reports: any[] = [];
   const config = loadConfig(CONFIG_PATH);
