@@ -42,7 +42,7 @@ export async function run() {
       chalk.bold.blueBright(`|__|__||_____|      |_|  |_____||_____|  |_|  `),
     );
     console.log(
-      chalk.dim("\n------------------- v0.3.0 -------------------\n"),
+      chalk.dim("\n------------------- v0.3.1 -------------------\n"),
     );
   }
 

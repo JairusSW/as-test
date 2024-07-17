@@ -22,7 +22,7 @@ export async function run() {
         console.log(chalk.bold.blueBright(`|  _  ||   __| ___|_   _||   __||   __||_   _|`));
         console.log(chalk.bold.blueBright(`|     ||__   ||___| | |  |   __||__   |  | |  `));
         console.log(chalk.bold.blueBright(`|__|__||_____|      |_|  |_____||_____|  |_|  `));
-        console.log(chalk.dim("\n------------------- v0.3.0 -------------------\n"));
+        console.log(chalk.dim("\n------------------- v0.3.1 -------------------\n"));
     }
     for (const plugin of Object.keys(config.plugins)) {
         if (!config.plugins[plugin])

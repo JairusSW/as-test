@@ -3,7 +3,7 @@
 |  _  ||   __| ___|_   _||   __||   __||_   _|
 |     ||__   ||___| | |  |   __||__   |  | |  
 |__|__||_____|      |_|  |_____||_____|  |_|  
-v0.3.0
+v0.3.1
 </pre>
 </h5>
 
@@ -133,9 +133,7 @@ Build and run it using as-test
 npm run test
 ```
 
-And you should see an output similar to this:
-
-<img src="https://raw.githubusercontent.com/JairusSW/as-test/main/assets/img/download.png">
+<img src="https://raw.githubusercontent.com/JairusSW/as-test/main/assets/img/screenshot.png">
 
 <h6>
 
