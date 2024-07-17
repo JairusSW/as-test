@@ -2,6 +2,7 @@ import { visualize } from "../util/helpers";
 import { Tests } from "./tests";
 import { after_each_callback, before_each_callback } from "..";
 
+
 @json
 export class Expectation<T> extends Tests {
   public verdict: string = "none";
@@ -25,9 +26,7 @@ export class Expectation<T> extends Tests {
    */
   toBeNull(): void {
     this.verdict =
-      isNullable<T>() && changetype<usize>(this._left)
-        ? "ok"
-        : "fail";
+      isNullable<T>() && changetype<usize>(this._left) ? "ok" : "fail";
 
     // @ts-ignore
     store<T>(changetype<usize>(this), null, offsetof<Expectation<T>>("_right"));
@@ -276,9 +275,7 @@ export class Expectation<T> extends Tests {
   toBeFinite(): void {
     this.verdict =
       // @ts-ignore
-      (isFloat<T>() || isInteger<T>()) && isFinite(this._left)
-        ? "ok"
-        : "fail";
+      (isFloat<T>() || isInteger<T>()) && isFinite(this._left) ? "ok" : "fail";
 
     this.left = "Infinity";
     this.right = "Finite";

@@ -18,9 +18,9 @@ describe("Should sleep", () => {
   });
   test("5s", () => {
     const start = Date.now();
-    log("Sleeping...")
+    log("Sleeping...");
     sleep(5000);
-    log("Done!")
+    log("Done!");
     expect(Date.now() - start).toBeGreaterOrEqualTo(5000);
   });
 });

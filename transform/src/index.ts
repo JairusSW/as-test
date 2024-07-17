@@ -5,7 +5,7 @@ import {
   Parser,
   SourceKind,
   Source,
-  Tokenizer
+  Tokenizer,
 } from "assemblyscript/dist/assemblyscript.js";
 
 import { isStdlib } from "visitor-as/dist/utils.js";

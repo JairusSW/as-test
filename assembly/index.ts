@@ -222,19 +222,19 @@ export function afterEach(callback: () => void): void {
 export function mockFn<returnType>(
   fn: string,
   callback: (...args: any[]) => returnType,
-): void { }
+): void {}
 
 /**
  * Unmock all references to an existing function to instead point to the original function
  * @param {string} fn - name of function to override
  */
-export function unmockFn(fn: string): void { }
+export function unmockFn(fn: string): void {}
 
 /**
  * Re-mock all references to an existing function to instead point to the declared function
  * @param {string} fn - name of function to override
  */
-export function remockFn(fn: string): void { }
+export function remockFn(fn: string): void {}
 
 /**
  * Class defining options that can be passed to the `run` function.
@@ -274,7 +274,9 @@ export function run(options: RunOptions = new RunOptions()): void {
   // const stdinLn = term.write(String.UTF8.decodeUnsafe(changetype<usize>(buf), bytes) + "\n");
   __test_options = options;
   const time = new Time();
-  const fileLn = term.write(`${rainbow.bgCyanBright(" FILE ")} ${rainbow.dimMk(FILE)}\n`);
+  const fileLn = term.write(
+    `${rainbow.bgCyanBright(" FILE ")} ${rainbow.dimMk(FILE)}\n`,
+  );
   term.write("\n");
   time.start = performance.now();
   for (let i = 0; i < entrySuites.length; i++) {
@@ -293,14 +295,22 @@ export function run(options: RunOptions = new RunOptions()): void {
     current_suite = null;
   }
   time.end = performance.now();
-  fileLn.edit(`${rainbow.bgCyanBright(" FILE ")} ${rainbow.dimMk(FILE)} ${rainbow.dimMk(time.format())}`);
+  fileLn.edit(
+    `${rainbow.bgCyanBright(" FILE ")} ${rainbow.dimMk(FILE)} ${rainbow.dimMk(time.format())}`,
+  );
   const reportText = JSON.stringify(entrySuites);
   const chunk_size = 48;
   let chunks = reportText.length / chunk_size;
   let index = 0;
   term.write("\x1B[8m\n").clear(); // Hide text (so that the cursor doesn't flash for a moment)
   while (chunks--) {
-    term.write("READ_LINE" + reportText.slice(index, index += chunk_size) + "END_LINE\n").clear(); // Write a line and then clear it, making it invisible
+    term
+      .write(
+        "READ_LINE" +
+          reportText.slice(index, (index += chunk_size)) +
+          "END_LINE\n",
+      )
+      .clear(); // Write a line and then clear it, making it invisible
   }
   if (index < reportText.length) {
     term.write("READ_LINE" + reportText.slice(index) + "END_LINE\n").clear();
@@ -332,6 +342,7 @@ export class Result {
     return JSON.stringify(this);
   }
 }
+
 
 @json
 export class Time {

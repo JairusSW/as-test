@@ -15,13 +15,13 @@ export function formatTime(ms: number): string {
     name: string;
     divisor: number;
   }[] = [
-      { name: "μs", divisor: 1 },
-      { name: "ms", divisor: 1000 },
-      { name: "s", divisor: 1000 * 1000 },
-      { name: "m", divisor: 60 * 1000 * 1000 },
-      { name: "h", divisor: 60 * 60 * 1000 * 1000 },
-      { name: "d", divisor: 24 * 60 * 60 * 1000 * 1000 },
-    ];
+    { name: "μs", divisor: 1 },
+    { name: "ms", divisor: 1000 },
+    { name: "s", divisor: 1000 * 1000 },
+    { name: "m", divisor: 60 * 1000 * 1000 },
+    { name: "h", divisor: 60 * 60 * 1000 * 1000 },
+    { name: "d", divisor: 24 * 60 * 60 * 1000 * 1000 },
+  ];
 
   for (let i = units.length - 1; i >= 0; i--) {
     const unit = units[i]!;
@@ -36,9 +36,10 @@ export function formatTime(ms: number): string {
 
 export function loadConfig(CONFIG_PATH: string, warn: boolean = false): Config {
   if (!existsSync(CONFIG_PATH)) {
-    if (warn) console.log(
-      `${chalk.bgMagentaBright(" WARN ")}${chalk.dim(":")} Could not locate config file in the current directory! Continuing with default config.`,
-    );
+    if (warn)
+      console.log(
+        `${chalk.bgMagentaBright(" WARN ")}${chalk.dim(":")} Could not locate config file in the current directory! Continuing with default config.`,
+      );
     return new Config();
   } else {
     return Object.assign(
@@ -52,7 +53,10 @@ export function getExec(exec: string): string | null {
   const PATH = process.env.PATH.split(delimiter);
 
   for (const pathDir of PATH) {
-    const fullPath = join(pathDir, exec + (process.platform === "win32" ? ".exe" : ""));
+    const fullPath = join(
+      pathDir,
+      exec + (process.platform === "win32" ? ".exe" : ""),
+    );
     if (existsSync(fullPath)) {
       return fullPath;
     }

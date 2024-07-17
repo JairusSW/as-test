@@ -22,26 +22,48 @@ export async function run() {
   let execPath = getExec(command);
 
   if (!execPath) {
-    console.log(`${chalk.bgRed(" ERROR ")}${chalk.dim(":")} could not locate ${command} in PATH variable!`);
+    console.log(
+      `${chalk.bgRed(" ERROR ")}${chalk.dim(":")} could not locate ${command} in PATH variable!`,
+    );
     process.exit(0);
   }
 
   if (inputFiles.length) {
-    console.log(chalk.bold.blueBright(` _____  _____      _____  _____  _____  _____ `));
-    console.log(chalk.bold.blueBright(`|  _  ||   __| ___|_   _||   __||   __||_   _|`));
-    console.log(chalk.bold.blueBright(`|     ||__   ||___| | |  |   __||__   |  | |  `));
-    console.log(chalk.bold.blueBright(`|__|__||_____|      |_|  |_____||_____|  |_|  `));
-    console.log(chalk.dim("\n------------------- v0.3.0 -------------------\n"));
+    console.log(
+      chalk.bold.blueBright(` _____  _____      _____  _____  _____  _____ `),
+    );
+    console.log(
+      chalk.bold.blueBright(`|  _  ||   __| ___|_   _||   __||   __||_   _|`),
+    );
+    console.log(
+      chalk.bold.blueBright(`|     ||__   ||___| | |  |   __||__   |  | |  `),
+    );
+    console.log(
+      chalk.bold.blueBright(`|__|__||_____|      |_|  |_____||_____|  |_|  `),
+    );
+    console.log(
+      chalk.dim("\n------------------- v0.3.0 -------------------\n"),
+    );
   }
 
   for (const plugin of Object.keys(config.plugins)) {
     if (!config.plugins[plugin]) continue;
-    console.log(chalk.bgBlueBright(" PLUGIN ") + " " + chalk.dim("Using " + plugin.slice(0, 1).toUpperCase() + plugin.slice(1)) + "\n")
+    console.log(
+      chalk.bgBlueBright(" PLUGIN ") +
+        " " +
+        chalk.dim(
+          "Using " + plugin.slice(0, 1).toUpperCase() + plugin.slice(1),
+        ) +
+        "\n",
+    );
   }
 
   for (let i = 0; i < inputFiles.length; i++) {
     const file = inputFiles[i];
-    const outFile = path.join(config.outDir, file.slice(file.lastIndexOf("/") + 1).replace(".ts", ".wasm"));
+    const outFile = path.join(
+      config.outDir,
+      file.slice(file.lastIndexOf("/") + 1).replace(".ts", ".wasm"),
+    );
 
     let cmd = config.runOptions.runtime.run
       .replace(command, execPath)
@@ -52,20 +74,22 @@ export async function run() {
         .replace("<file>", outFile.replace(".wasm", ".js"));
     }
 
-    const report = JSON.parse(await (() => {
-      return new Promise<string>((res, _) => {
-        let stdout = "";
-        const io = exec(cmd);
-        io.stdout.pipe(process.stdout);
-        io.stderr.pipe(process.stderr);
-        io.stdout.on("data", (data: string) => {
-          stdout += readData(data);
+    const report = JSON.parse(
+      await (() => {
+        return new Promise<string>((res, _) => {
+          let stdout = "";
+          const io = exec(cmd);
+          io.stdout.pipe(process.stdout);
+          io.stderr.pipe(process.stderr);
+          io.stdout.on("data", (data: string) => {
+            stdout += readData(data);
+          });
+          io.stdout.on("close", () => {
+            res(stdout);
+          });
         });
-        io.stdout.on("close", () => {
-          res(stdout);
-        });
-      });
-    })());
+      })(),
+    );
     reports.push(report);
   }
 
@@ -73,16 +97,24 @@ export async function run() {
     if (!existsSync(path.join(process.cwd(), config.logs))) {
       mkdirSync(path.join(process.cwd(), config.logs));
     }
-    writeFileSync(path.join(process.cwd(), config.logs, "test.log.json"), JSON.stringify(reports, null, 2));
+    writeFileSync(
+      path.join(process.cwd(), config.logs, "test.log.json"),
+      JSON.stringify(reports, null, 2),
+    );
   }
   const reporter = new Reporter(reports);
 
   if (reporter.failed.length) {
     console.log(chalk.dim("----------------- [FAILED] -------------------\n"));
     for (const failed of reporter.failed) {
-      console.log(`${chalk.bgRed(" FAIL ")} ${chalk.dim(failed.description)}\n`);
+      console.log(
+        `${chalk.bgRed(" FAIL ")} ${chalk.dim(failed.description)}\n`,
+      );
       for (const test of failed.tests) {
-        const diffResult = diff(JSON.stringify(test._left), JSON.stringify(test._right));
+        const diffResult = diff(
+          JSON.stringify(test._left),
+          JSON.stringify(test._right),
+        );
         let expected = chalk.dim(JSON.stringify(test._left));
         let received = "";
         for (const res of diffResult.diff) {
@@ -129,7 +161,9 @@ export async function run() {
   } else {
     process.stdout.write(chalk.bold.greenBright("0 failed"));
   }
-  process.stdout.write(", " + (reporter.failedFiles + reporter.passedFiles) + " total\n");
+  process.stdout.write(
+    ", " + (reporter.failedFiles + reporter.passedFiles) + " total\n",
+  );
 
   process.stdout.write(chalk.bold("Suites: "));
   if (reporter.failedSuites) {
@@ -137,7 +171,9 @@ export async function run() {
   } else {
     process.stdout.write(chalk.bold.greenBright("0 failed"));
   }
-  process.stdout.write(", " + (reporter.failedSuites + reporter.passedSuites) + " total\n");
+  process.stdout.write(
+    ", " + (reporter.failedSuites + reporter.passedSuites) + " total\n",
+  );
 
   process.stdout.write(chalk.bold("Tests:  "));
   if (reporter.failedTests) {
@@ -145,9 +181,13 @@ export async function run() {
   } else {
     process.stdout.write(chalk.bold.greenBright("0 failed"));
   }
-  process.stdout.write(", " + (reporter.failedTests + reporter.passedTests) + " total\n");
+  process.stdout.write(
+    ", " + (reporter.failedTests + reporter.passedTests) + " total\n",
+  );
 
-  process.stdout.write(chalk.bold("Time:   ") + formatTime(reporter.time) + "\n");
+  process.stdout.write(
+    chalk.bold("Time:   ") + formatTime(reporter.time) + "\n",
+  );
 
   if (reporter.failedFiles) process.exit(1);
   process.exit(0);

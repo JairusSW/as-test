@@ -5,6 +5,7 @@ import { Tests } from "./tests";
 import { term } from "../util/term";
 import { Log } from "./log";
 
+
 @json
 export class Suite {
   public file: string = "unknown";
@@ -50,7 +51,9 @@ export class Suite {
     depth++;
     this.time.start = performance.now();
     const suiteDepth = "  ".repeat(this.depth + 1);
-    const suiteLn = term.write(`${suiteDepth}${rainbow.bgBlackBright(" ... ")} ${rainbow.dimMk(this.description)}\n`);
+    const suiteLn = term.write(
+      `${suiteDepth}${rainbow.bgBlackBright(" ... ")} ${rainbow.dimMk(this.description)}\n`,
+    );
     term.write("\n");
     this.callback();
     this.time.end = performance.now();
@@ -79,12 +82,18 @@ export class Suite {
     }
 
     if (this.verdict == "fail") {
-      suiteLn.edit(`${suiteDepth}${rainbow.bgRed(" FAIL ")} ${rainbow.dimMk(this.description)}\n`);
+      suiteLn.edit(
+        `${suiteDepth}${rainbow.bgRed(" FAIL ")} ${rainbow.dimMk(this.description)}\n`,
+      );
     } else if (!suiteNone || this.tests.length) {
       this.verdict = "ok";
-      suiteLn.edit(`${suiteDepth}${rainbow.bgGreenBright(" PASS ")} ${rainbow.dimMk(this.description)}\n`);
+      suiteLn.edit(
+        `${suiteDepth}${rainbow.bgGreenBright(" PASS ")} ${rainbow.dimMk(this.description)}\n`,
+      );
     } else {
-      suiteLn.edit(`${suiteDepth}${rainbow.bgBlackBright(" EMPTY ")} ${rainbow.dimMk(this.description)}\n`);
+      suiteLn.edit(
+        `${suiteDepth}${rainbow.bgBlackBright(" EMPTY ")} ${rainbow.dimMk(this.description)}\n`,
+      );
     }
   }
 }
