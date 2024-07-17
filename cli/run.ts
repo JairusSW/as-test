@@ -52,7 +52,7 @@ export async function run() {
         .replace("<file>", outFile.replace(".wasm", ".js"));
     }
 
-    const report = await (() => {
+    const report = JSON.parse(await (() => {
       return new Promise<string>((res, _) => {
         let stdout = "";
         const io = exec(cmd);
@@ -65,7 +65,7 @@ export async function run() {
           res(stdout);
         });
       });
-    })();
+    })());
     reports.push(report);
   }
 
