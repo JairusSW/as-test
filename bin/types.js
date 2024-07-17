@@ -4,6 +4,9 @@ export class Config {
         this.outDir = "./build";
         this.logs = "./logs";
         this.config = "none";
+        this.plugins = {
+            coverage: true,
+        };
         this.buildOptions = new BuildOptions();
         this.runOptions = new RunOptions();
     }

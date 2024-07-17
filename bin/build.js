@@ -62,7 +62,7 @@ function buildFile(command) {
 }
 function getBuildArgs(config) {
     let buildArgs = "";
-    buildArgs += " --transform as-test/transform";
+    buildArgs += " --transform as-test/transform --transform json-as/transform";
     if (config.config && config.config !== "none") {
         buildArgs += " --config " + config.config;
     }

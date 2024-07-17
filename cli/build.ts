@@ -89,7 +89,7 @@ function buildFile(command: string): void {
 function getBuildArgs(config: Config): string {
   let buildArgs = "";
 
-  buildArgs += " --transform as-test/transform";
+  buildArgs += " --transform as-test/transform --transform json-as/transform";
 
   if (config.config && config.config !== "none") {
     buildArgs += " --config " + config.config;

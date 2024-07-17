@@ -1,7 +1,5 @@
 {
-  "input": [
-    "./assembly/__tests__/*.spec.ts"
-  ],
+  "input": ["./assembly/__tests__/*.spec.ts"],
   "outDir": "./build",
   "logs": "./logs",
   "config": "none",
@@ -9,13 +7,13 @@
     "coverage": true
   },
   "buildOptions": {
-    "args": ["--transform json-as/transform"],
-    "target": "wasi"
+    "args": [],
+    "target": "bindings"
   },
   "runOptions": {
     "runtime": {
-      "name": "wasmtime",
-      "run": "wasmtime <file>"
+      "name": "node",
+      "run": "node ./tests/<name>.run.js"
     }
   }
 }

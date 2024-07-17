@@ -29,7 +29,7 @@ as-test init
 
 Note: You can use either `ast` or `as-test` in the terminal.
 
-Next, create a test file
+Next, take a look at the generated test file
 
 `assembly/__tests__/example.spec.ts`
 
@@ -56,7 +56,7 @@ afterAll(() => {
 
 // Mock/override the function console.log
 mockFn<void>("console.log", (data: string): void => {
-    console.log("[MOCKED]: " + data + "\\n");
+    console.log("[MOCKED]: " + data + "\n");
 });
 
 describe("Should sleep", () => {
@@ -130,16 +130,12 @@ function sleep(ms: i64): void {
 Build and run it using as-test
 
 ```bash
-as-test test
+npm run test
 ```
 
 <h6>
 
 ## Running
-
-```bash
-npm run test
-```
 
 To add `as-test` to your CI/CD workflow, check out [The provided example](https://github.com/JairusSW/as-test/blob/main/.github/workflows/nodejs.yml)
 

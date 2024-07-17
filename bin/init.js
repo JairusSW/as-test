@@ -3,15 +3,15 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import * as path from "path";
 import { createInterface } from "readline";
 import { loadConfig } from "./util.js";
-const rl = createInterface({
-    input: process.stdin,
-    output: process.stdout,
-});
 const TARGETS = ["wasi", "bindings"];
 export async function init(args) {
+    const rl = createInterface({
+        input: process.stdin,
+        output: process.stdout,
+    });
     console.log(chalk.bold("as-test init v0.3.0") + "\n");
     console.log(chalk.dim("[1/3]") + " select a target [wasi/bindings]");
-    const target = await ask(chalk.dim(" -> "));
+    const target = await ask(chalk.dim(" -> "), rl);
     if (!TARGETS.includes(target)) {
         console.log("Invalid target " + target + ". Exiting.");
         process.exit(0);
@@ -19,7 +19,9 @@ export async function init(args) {
     process.stdout.write(`\u001B[1A`);
     process.stdout.write("\x1B[2K");
     process.stdout.write("\x1B[0G");
-    console.log("\n" + chalk.dim("[2/3]") + " attempting to create the following files. Continue? [y/n]\n");
+    console.log("\n" +
+        chalk.dim("[2/3]") +
+        " attempting to create the following files. Continue? [y/n]\n");
     console.log(chalk.dim(`  ├── 📂 assembly/
   │    └── 📂 __tests__/
   │         └── 🧪 example.spec.ts
@@ -29,7 +31,7 @@ export async function init(args) {
   │    └── 📃 as-test.run.js   
   ├── ⚙️  as-test.config.json
   └── ⚙️  package.json\n`));
-    const cont = (await ask(chalk.dim(" -> "))).toLowerCase().trim();
+    const cont = (await ask(chalk.dim(" -> "), rl)).toLowerCase().trim();
     if (cont == "n" || cont == "no") {
         console.log("Exiting.");
         process.exit(0);
@@ -43,7 +45,7 @@ export async function init(args) {
     else if (target == "bindings" && config.buildOptions.target != "bindings") {
         config.buildOptions.target = "bindings";
         config.runOptions.runtime.name = "node";
-        config.runOptions.runtime.run = "node ./tests/as-test.run.js";
+        config.runOptions.runtime.run = "node ./tests/<name>.run.js";
     }
     writeFile("./as-test.config.json", JSON.stringify(config, null, 2));
     writeFile("./assembly/__tests__/example.spec.ts", `import {
@@ -139,13 +141,23 @@ function sleep(ms: i64): void {
 }`);
     writeDir("./build/");
     writeDir("./logs/");
-    writeFile("./tests/as-test.run.js", ``);
+    if (target == "bindings") {
+        writeFile("./tests/example.run.js", `import { readFileSync } from "fs";
+import { instantiate } from "../build/example.spec.js";
+
+const binary = readFileSync("./build/example.spec.wasm");
+const module = new WebAssembly.Module(binary);
+
+const exports = instantiate(module, {});`);
+    }
     const PKG_PATH = path.join(process.cwd(), "./package.json");
+    if (!hasDep(PKG_PATH, "assemblyscript")) {
+        console.log(chalk.dim("AssemblyScript is not included in dependencies.\nInstall it with " +
+            (process.env.npm_config_user_agent == "yarn"
+                ? process.env.npm_config_user_agent + " add assemblyscript"
+                : process.env.npm_config_user_agent + " install assemblyscript")));
+    }
     const pkg = JSON.parse(existsSync(PKG_PATH) ? readFileSync(PKG_PATH).toString() : "{}");
-    if (!pkg["devDependencies"])
-        pkg["devDependencies"] = {};
-    if (!pkg["devDependencies"]["as-test"])
-        pkg["devDependencies"]["as-test"] = "^0.3.0";
     if (!pkg["scripts"])
         pkg["scripts"] = {};
     if (pkg.scripts["test"])
@@ -157,12 +169,19 @@ function sleep(ms: i64): void {
     else {
         pkg.scripts["test"] = "as-test test";
     }
+    if (!pkg["devDependencies"])
+        pkg["devDependencies"] = {};
+    if (!pkg["devDependencies"]["as-test"])
+        pkg["devDependencies"]["as-test"] = "^0.3.0";
+    if (target == "bindings") {
+        pkg["type"] = "module";
+    }
     writeFileSync(PKG_PATH, JSON.stringify(pkg, null, 2));
     process.exit(0);
 }
-function ask(question) {
+function ask(question, face) {
     return new Promise((res, _) => {
-        rl.question(question, (answer) => {
+        face.question(question, (answer) => {
             res(answer);
         });
     });
@@ -180,4 +199,18 @@ function writeDir(pth) {
     if (existsSync(fmtPath))
         return;
     mkdirSync(fmtPath);
+}
+function hasDep(PKG_PATH, dep) {
+    const pkg = JSON.parse(existsSync(PKG_PATH) ? readFileSync(PKG_PATH).toString() : "{}");
+    if (existsSync(path.join(process.cwd(), "./node_modules/", dep)))
+        return true;
+    if (pkg.dependencies &&
+        !Object.keys(pkg.dependencies).includes(dep) &&
+        pkg.devDependencies &&
+        !Object.keys(pkg.devDependencies).includes(dep) &&
+        pkg.peerDependencies &&
+        !Object.keys(pkg.peerDependencies).includes(dep)) {
+        return false;
+    }
+    return true;
 }

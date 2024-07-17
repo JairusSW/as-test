@@ -35,13 +35,24 @@ export async function run() {
     for (let i = 0; i < inputFiles.length; i++) {
         const file = inputFiles[i];
         const outFile = path.join(config.outDir, file.slice(file.lastIndexOf("/") + 1).replace(".ts", ".wasm"));
-        let cmd = config.runOptions.runtime.run
-            .replace(command, execPath)
-            .replace("<file>", outFile);
+        let cmd = config.runOptions.runtime.run.replace(command, execPath);
         if (config.buildOptions.target == "bindings") {
-            cmd = config.runOptions.runtime.run
-                .replace(command, execPath)
-                .replace("<file>", outFile.replace(".wasm", ".js"));
+            cmd = config.runOptions.runtime.run.replace(command, execPath);
+            if (cmd.includes("<name>")) {
+                cmd = cmd.replace("<name>", file
+                    .slice(file.lastIndexOf("/") + 1)
+                    .replace(".ts", "")
+                    .replace(".spec", ""));
+            }
+            else {
+                cmd = cmd.replace("<file>", outFile
+                    .replace("build", "tests")
+                    .replace(".spec", "")
+                    .replace(".wasm", ".run.js"));
+            }
+        }
+        else {
+            cmd = cmd.replace("<file>", outFile);
         }
         const report = JSON.parse(await (() => {
             return new Promise((res, _) => {

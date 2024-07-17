@@ -23,8 +23,4 @@ v0.1.10 - Feat: support node, deno, and bun
 v0.2.0 - Fix mock -> mockFn artifacts
 v0.2.1 - Remove accidental logging
 
-v0.3.0 - Pass metadata through terminal
-       - Support for multiple files
-       - Better reporting
-       - Timing for suites
-       - Terminal utilities
+v0.3.0 - Pass metadata through terminal - Support for multiple files - Better reporting - Timing for suites - Terminal utilities
