@@ -124,10 +124,6 @@ as-test test
 
 ## Running
 
-You can run as-test _anywhere_ that WASI is supported! I've yet to add support for bindings, but all it needs is access to the terminal.
-
-And finally, run it with:
-
 ```bash
 npm run test
 ```

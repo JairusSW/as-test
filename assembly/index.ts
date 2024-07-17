@@ -294,8 +294,18 @@ export function run(options: RunOptions = new RunOptions()): void {
   }
   time.end = performance.now();
   fileLn.edit(`${rainbow.bgCyanBright(" FILE ")} ${rainbow.dimMk(FILE)} ${rainbow.dimMk(time.format())}`);
-  const reportText = "\x1B[8mSTART_READ" + JSON.stringify(entrySuites) + "END_READ\x1B[0m\n";
-  term.write(reportText).clear();
+  const reportText = JSON.stringify(entrySuites);
+  const chunk_size = 48;
+  let chunks = reportText.length / chunk_size;
+  let index = 0;
+  term.write("\x1B[8m\n").clear(); // Hide text (so that the cursor doesn't flash for a moment)
+  while (chunks--) {
+    term.write("READ_LINE" + reportText.slice(index, index += chunk_size) + "END_LINE\n").clear(); // Write a line and then clear it, making it invisible
+  }
+  if (index < reportText.length) {
+    term.write("READ_LINE" + reportText.slice(index) + "END_LINE\n").clear();
+  }
+  term.write("\x1B[0m\n").clear(); // Un-hide text
 }
 
 export class Result {

@@ -11,15 +11,15 @@ describe("Should sleep", () => {
     sleep(10);
     expect(Date.now() - start).toBeGreaterOrEqualTo(10);
   });
-  test("100ms", () => {
-    const start = Date.now();
-    sleep(100);
-    expect(Date.now() - start).toBeGreaterOrEqualTo(100);
-  });
   test("1s", () => {
     const start = Date.now();
     sleep(1000);
     expect(Date.now() - start).toBeGreaterOrEqualTo(1000);
+  });
+  test("10s", () => {
+    const start = Date.now();
+    sleep(10000);
+    expect(Date.now() - start).toBeGreaterOrEqualTo(10000);
   });
 });
 

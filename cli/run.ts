@@ -4,7 +4,7 @@ import { glob } from "glob";
 
 import { formatTime, getExec, loadConfig } from "./util.js";
 import * as path from "path";
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "fs";
+import { appendFileSync, existsSync, fstat, mkdirSync, writeFileSync } from "fs";
 
 const CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 
@@ -52,22 +52,20 @@ export async function run() {
         .replace("<file>", outFile.replace(".wasm", ".js"));
     }
 
-    const report = JSON.parse(await (() => {
+    const report = await (() => {
       return new Promise<string>((res, _) => {
         let stdout = "";
         const io = exec(cmd);
         io.stdout.pipe(process.stdout);
         io.stderr.pipe(process.stderr);
-
         io.stdout.on("data", (data: string) => {
-          stdout += data;
+          stdout += readData(data);
         });
-
         io.stdout.on("close", () => {
-          res(stdout.slice(stdout.indexOf("START_READ") + 10, stdout.indexOf("END_READ")));
+          res(stdout);
         });
       });
-    })());
+    })();
     reports.push(report);
   }
 
@@ -188,4 +186,16 @@ class Reporter {
       this.passedTests++;
     }
   }
+}
+
+function readData(data: string): string {
+  let out = "";
+  const start = data.indexOf("READ_LINE");
+  if (start >= 0) {
+    const slice = data.slice(start + 9);
+    const end = slice.indexOf("END_LINE");
+    out += slice.slice(0, end);
+    out += readData(slice);
+  }
+  return out;
 }

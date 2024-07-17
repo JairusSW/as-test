@@ -1,9 +1,9 @@
 import chalk from "chalk";
 import { exec } from "child_process";
 import { glob } from "glob";
-import { formatTime, getExec, loadConfig } from "./util.js";
+import { getExec, loadConfig } from "./util.js";
 import * as path from "path";
-import { existsSync, mkdirSync, writeFileSync } from "fs";
+import { writeFileSync } from "fs";
 const CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 const ansi = new RegExp("[\\u001B\\u009B][[\\]()#;?]*(?:(?:(?:(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]+)*|[a-zA-Z\\d]+(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]*)*)?\\u0007)|(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PR-TZcf-nq-uy=><~]))", "g");
 export async function run() {
@@ -40,70 +40,67 @@ export async function run() {
                 .replace(command, execPath)
                 .replace("<file>", outFile.replace(".wasm", ".js"));
         }
-        const report = JSON.parse(await (() => {
+        const report = await (() => {
             return new Promise((res, _) => {
                 let stdout = "";
                 const io = exec(cmd);
                 io.stdout.pipe(process.stdout);
                 io.stderr.pipe(process.stderr);
                 io.stdout.on("data", (data) => {
-                    stdout += data;
+                    stdout += readData(data);
                 });
                 io.stdout.on("close", () => {
-                    res(stdout.slice(stdout.indexOf("START_READ") + 10, stdout.indexOf("END_READ")));
+                    res(stdout);
                 });
             });
-        })());
+        })();
         reports.push(report);
     }
-    if (config.logs && config.logs != "none") {
-        if (!existsSync(path.join(process.cwd(), config.logs))) {
-            mkdirSync(path.join(process.cwd(), config.logs));
-        }
-        writeFileSync(path.join(process.cwd(), config.logs, "test.log.json"), JSON.stringify(reports, null, 2));
-    }
-    const reporter = new Reporter(reports);
-    if (reporter.failed.length) {
-        console.log(chalk.dim("----------------- [FAILED] -------------------\n"));
-        for (const failed of reporter.failed) {
-            console.log(`${chalk.bgRed(" FAIL ")} ${chalk.dim(failed.description)}\n`);
-            for (const test of failed.tests) {
-                if (test.verdict == "fail") {
-                    console.log(`${chalk.dim("(expected) ->")} ${chalk.bold(test._left.toString())}`);
-                    console.log(`${chalk.dim("(received) ->")} ${chalk.bold(test._right.toString())}\n`);
-                }
-            }
-        }
-    }
-    console.log("----------------- [RESULTS] ------------------\n");
-    process.stdout.write(chalk.bold("Files:  "));
-    if (reporter.failedFiles) {
-        process.stdout.write(chalk.bold.red(reporter.failedFiles + " failed"));
-    }
-    else {
-        process.stdout.write(chalk.bold.greenBright("0 failed"));
-    }
-    process.stdout.write(", " + (reporter.failedFiles + reporter.passedFiles) + " total\n");
-    process.stdout.write(chalk.bold("Suites: "));
-    if (reporter.failedSuites) {
-        process.stdout.write(chalk.bold.red(reporter.failedSuites + " failed"));
-    }
-    else {
-        process.stdout.write(chalk.bold.greenBright("0 failed"));
-    }
-    process.stdout.write(", " + (reporter.failedSuites + reporter.passedSuites) + " total\n");
-    process.stdout.write(chalk.bold("Tests:  "));
-    if (reporter.failedTests) {
-        process.stdout.write(chalk.bold.red(reporter.failedTests + " failed"));
-    }
-    else {
-        process.stdout.write(chalk.bold.greenBright("0 failed"));
-    }
-    process.stdout.write(", " + (reporter.failedTests + reporter.passedTests) + " total\n");
-    process.stdout.write(chalk.bold("Time:   ") + formatTime(reporter.time) + "\n");
-    if (reporter.failedFiles)
-        process.exit(1);
-    process.exit(0);
+    writeFileSync(path.join(process.cwd(), config.logs, "test.log.json"), reports.join("\n\n"));
+    // if (config.logs && config.logs != "none") {
+    //   if (!existsSync(path.join(process.cwd(), config.logs))) {
+    //     mkdirSync(path.join(process.cwd(), config.logs));
+    //   }
+    //   writeFileSync(path.join(process.cwd(), config.logs, "test.log.json"), JSON.stringify(reports, null, 2));
+    // }
+    // const reporter = new Reporter(reports);
+    // if (reporter.failed.length) {
+    //   console.log(chalk.dim("----------------- [FAILED] -------------------\n"));
+    //   for (const failed of reporter.failed) {
+    //     console.log(`${chalk.bgRed(" FAIL ")} ${chalk.dim(failed.description)}\n`);
+    //     for (const test of failed.tests) {
+    //       if (test.verdict == "fail") {
+    //         console.log(`${chalk.dim("(expected) ->")} ${chalk.bold(test._left.toString())}`);
+    //         console.log(`${chalk.dim("(received) ->")} ${chalk.bold(test._right.toString())}\n`);
+    //       }
+    //     }
+    //   }
+    // }
+    // console.log("----------------- [RESULTS] ------------------\n");
+    // process.stdout.write(chalk.bold("Files:  "));
+    // if (reporter.failedFiles) {
+    //   process.stdout.write(chalk.bold.red(reporter.failedFiles + " failed"));
+    // } else {
+    //   process.stdout.write(chalk.bold.greenBright("0 failed"));
+    // }
+    // process.stdout.write(", " + (reporter.failedFiles + reporter.passedFiles) + " total\n");
+    // process.stdout.write(chalk.bold("Suites: "));
+    // if (reporter.failedSuites) {
+    //   process.stdout.write(chalk.bold.red(reporter.failedSuites + " failed"));
+    // } else {
+    //   process.stdout.write(chalk.bold.greenBright("0 failed"));
+    // }
+    // process.stdout.write(", " + (reporter.failedSuites + reporter.passedSuites) + " total\n");
+    // process.stdout.write(chalk.bold("Tests:  "));
+    // if (reporter.failedTests) {
+    //   process.stdout.write(chalk.bold.red(reporter.failedTests + " failed"));
+    // } else {
+    //   process.stdout.write(chalk.bold.greenBright("0 failed"));
+    // }
+    // process.stdout.write(", " + (reporter.failedTests + reporter.passedTests) + " total\n");
+    // process.stdout.write(chalk.bold("Time:   ") + formatTime(reporter.time) + "\n");
+    // if (reporter.failedFiles) process.exit(1);
+    // process.exit(0);
 }
 class Reporter {
     constructor(reports) {
@@ -172,4 +169,15 @@ class Reporter {
             this.passedTests++;
         }
     }
+}
+function readData(data) {
+    let out = "";
+    const start = data.indexOf("READ_LINE");
+    if (start >= 0) {
+        const slice = data.slice(start + 9);
+        const end = slice.indexOf("END_LINE");
+        out += slice.slice(0, end);
+        out += readData(slice);
+    }
+    return out;
 }
