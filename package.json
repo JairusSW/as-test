@@ -11,6 +11,7 @@
     "pretest": "node ./bin/index.js build",
     "build:transform": "tsc -p ./transform",
     "build:cli": "tsc -p cli",
+    "build:run": "tsc -p run",
     "prettier": "prettier -w .",
     "prepublish": "npm run build:cli && npm run build:transform && npm run test"
   },

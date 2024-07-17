@@ -17,14 +17,6 @@ You'll also need to install `visitor-as`
 
 `npm i visitor-as --save-dev`
 
-## Templates
-
-I provide two templates for reference
-
-[WASI](https://github.com/JairusSW/as-test/tree/template/wasi)
-
-[Node/Bun/Deno](https://github.com/JairusSW/as-test/tree/template/node-bun-deno)
-
 View the docs: https://docs.jairus.dev/as-test
 
 ## Usage
@@ -39,79 +31,100 @@ Note: You can use either `ast` or `as-test` in the terminal.
 
 Next, create a test file
 
-`assembly/__tests__/test.spec.ts`
+`assembly/__tests__/example.spec.ts`
 
 ```js
 import {
-  describe,
-  expect,
-  test,
-  beforeAll,
-  afterAll,
-  beforeEach,
-  afterEach,
-  mockFn,
-  log,
-  run
+    describe,
+    expect,
+    test,
+    beforeAll,
+    afterAll,
+    mockFn,
+    log,
+    run,
+    it
 } from "as-test";
 
 beforeAll(() => {
-  log("Setting up test environment...");
+    log("Setting up test environment...");
 });
 
 afterAll(() => {
-  log("Tearing down test environment...");
+    log("Tearing down test environment...");
 });
 
 // Mock/override the function console.log
 mockFn<void>("console.log", (data: string): void => {
-  console.log("[MOCKED]: " + data + "\n");
+    console.log("[MOCKED]: " + data + "\\n");
+});
+
+describe("Should sleep", () => {
+    test("1ms", () => {
+        const start = Date.now();
+        sleep(1);
+        expect(Date.now() - start).toBeGreaterOrEqualTo(1);
+    });
+    test("10ms", () => {
+        const start = Date.now();
+        sleep(10);
+        expect(Date.now() - start).toBeGreaterOrEqualTo(10);
+    });
+    test("1s", () => {
+        const start = Date.now();
+        sleep(1000);
+        expect(Date.now() - start).toBeGreaterOrEqualTo(1000);
+    });
+    test("5s", () => {
+        const start = Date.now();
+        log("Sleeping...");
+        sleep(5000);
+        log("Done!");
+        expect(Date.now() - start).toBeGreaterOrEqualTo(5000);
+    });
 });
 
 describe("Math operations", () => {
-  beforeEach(() => {
-    log("Initializing test...");
-  });
+    test("Addition", () => {
+        expect(1 + 2).toBe(3);
+    });
 
-  afterEach(() => {
-    log("Cleaning up after test...");
-  });
+    test("Subtraction", () => {
+        expect(1 - 2).toBe(-1);
+    });
 
-  test("Addition", () => {
-    expect(1 + 2).toBe(3);
-  });
+    test("Comparison", () => {
+        expect(5).toBeGreaterThan(3);
+        expect(2).toBeLessThan(4);
+    });
 
-  test("Comparison", () => {
-    expect(5).toBeGreaterThan(3);
-    expect(2).toBeLessThan(4);
-  });
-
-  test("Type checking", () => {
-    expect("hello").toBeString();
-    expect(true).toBeBoolean();
-    expect(10.5).toBeNumber();
-  });
+    test("Type checking", () => {
+        expect("hello").toBeString();
+        expect(true).toBeBoolean();
+        expect(10.5).toBeNumber();
+    });
 });
 
-let myArray: i32[] = [];
+let myArray: i32[] = [1, 2, 3];
 
 describe("Array manipulation", () => {
-  beforeAll(() => {
-    myArray = [1, 2, 3];
-  });
+    test("Array length", () => {
+        expect(myArray).toHaveLength(3);
+    });
 
-  test("Array length", () => {
-    expect(myArray).toHaveLength(3);
-  });
+    test("Array inclusion", () => {
+        expect(myArray).toContain(2);
+    });
 
-  test("Array inclusion", () => {
-    expect(myArray).toContain(2);
-  });
+    it("should be empty", () => { });
 });
 
-run({
-  log: true
-});
+run();
+
+function sleep(ms: i64): void {
+    const target = Date.now() + ms;
+    while (target > Date.now()) { }
+}
 ```
 
 Build and run it using as-test

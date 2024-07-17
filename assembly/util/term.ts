@@ -1,3 +1,7 @@
+// @ts-ignore
+@external("env", "process.stdout.write")
+declare function process_stdout_write(data: string): void;
+
 export class TermLine {
   public start: i32 = 0;
   public end: i32 = 0;
@@ -10,7 +14,7 @@ export class TermLine {
     while (--end >= this.start) {
       term.clearLn(end);
     }
-    process.stdout.write(data);
+    writeRaw(data);
     term.resetCursor();
     return new TermLine(this.end);
   }
@@ -27,16 +31,25 @@ export namespace term {
       const code = data.charCodeAt(i);
       if (code === 10) term.lines++;
     }
-    process.stdout.write(data);
+    writeRaw(data);
     return new TermLine(start, term.lines);
   }
   export function clearLn(line: i32): void {
-    process.stdout.write(`\u001B[${term.lines - line}A`);
-    process.stdout.write("\x1B[2K");
-    process.stdout.write("\x1B[0G");
+    writeRaw(`\u001B[${term.lines - line}A`);
+    writeRaw("\x1B[2K");
+    writeRaw("\x1B[0G");
   }
   export function resetCursor(): void {
-    process.stdout.write("\x1B[999B");
-    process.stdout.write("\x1B[0G");
+    writeRaw("\x1B[999B");
+    writeRaw("\x1B[0G");
+  }
+}
+
+export function writeRaw(data: string): void {
+  // @ts-ignore
+  if (isDefined(ASC_WASI)) {
+    process.stdout.write(data);
+  } else {
+    process_stdout_write(data);
   }
 }

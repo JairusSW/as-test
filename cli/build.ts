@@ -96,7 +96,7 @@ function getBuildArgs(config: Config): string {
   }
   // Should also strip any bindings-enabling from asconfig
   if (config.buildOptions.target == "bindings") {
-    buildArgs += " --bindings esm --exportRuntime --exportStart";
+    buildArgs += " --bindings raw --exportRuntime --exportStart _start";
   } else if (config.buildOptions.target == "wasi") {
     buildArgs +=
       " --config ./node_modules/@assemblyscript/wasi-shim/asconfig.json";

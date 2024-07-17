@@ -3,7 +3,9 @@ export class Config {
   outDir: string = "./build";
   logs: string = "./logs";
   config: string = "none";
-  plugins: {};
+  plugins: {
+    "coverage": true
+  };
   buildOptions: BuildOptions = new BuildOptions();
   runOptions: RunOptions = new RunOptions();
 }
