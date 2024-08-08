@@ -25,3 +25,4 @@ v0.2.1 - Remove accidental logging
 
 v0.3.0 - Pass metadata through terminal - Support for multiple files - Better reporting - Timing for suites - Terminal utilities
 v0.3.1 - Add screenshot of completed tests to readme
+v0.3.2 - Add `mockImport` to override imported functions

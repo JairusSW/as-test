@@ -9,7 +9,7 @@ export async function init(args: string[]) {
     input: process.stdin,
     output: process.stdout,
   });
-  console.log(chalk.bold("as-test init v0.3.1") + "\n");
+  console.log(chalk.bold("as-test init v0.3.2") + "\n");
   console.log(chalk.dim("[1/3]") + " select a target [wasi/bindings]");
   const target = await ask(chalk.dim(" -> "), rl);
   if (!TARGETS.includes(target)) {
@@ -184,7 +184,6 @@ const exports = instantiate(module, {});`,
     existsSync(PKG_PATH) ? readFileSync(PKG_PATH).toString() : "{}",
   );
   if (!pkg["scripts"]) pkg["scripts"] = {};
-  if (pkg.scripts["test"]) process.exit(0);
   if (!pkg.scripts["pretest"]) {
     pkg.scripts["pretest"] = "as-test build";
     pkg.scripts["test"] = "as-test run";
@@ -193,7 +192,7 @@ const exports = instantiate(module, {});`,
   }
   if (!pkg["devDependencies"]) pkg["devDependencies"] = {};
   if (!pkg["devDependencies"]["as-test"])
-    pkg["devDependencies"]["as-test"] = "^0.3.1";
+    pkg["devDependencies"]["as-test"] = "^0.3.2";
   if (target == "bindings") {
     pkg["type"] = "module";
   }

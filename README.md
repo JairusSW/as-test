@@ -3,7 +3,7 @@
 |  _  ||   __| ___|_   _||   __||   __||_   _|
 |     ||__   ||___| | |  |   __||__   |  | |  
 |__|__||_____|      |_|  |_____||_____|  |_|  
-v0.3.1
+v0.3.2
 </pre>
 </h5>
 
@@ -58,6 +58,8 @@ afterAll(() => {
 mockFn<void>("console.log", (data: string): void => {
     console.log("[MOCKED]: " + data + "\n");
 });
+
+// Or override an imported function with mockImport
 
 describe("Should sleep", () => {
     test("1ms", () => {
@@ -133,20 +135,11 @@ Build and run it using as-test
 npm run test
 ```
 
-<img src="https://raw.githubusercontent.com/JairusSW/as-test/main/assets/img/screenshot.png">
-
-<h6>
-
 ## Running
 
 To add `as-test` to your CI/CD workflow, check out [The provided example](https://github.com/JairusSW/as-test/blob/main/.github/workflows/nodejs.yml)
 
 If you use this project in your codebase, consider dropping a [⭐ HERE](https://github.com/JairusSW/as-test). I would really appreciate it!
-
-## Notes
-
-This library is in the EARLY STAGES OF DEVELOPMENT!
-If you want a feature, drop an issue (and again, maybe a star). I'll likely add it in less than 7 days.
 
 ## Issues
 

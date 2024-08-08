@@ -1,1 +1,1 @@
-export function report() { }
+export function report() {}

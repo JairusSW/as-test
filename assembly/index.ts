@@ -4,7 +4,7 @@ import { Expectation } from "./src/expectation";
 import { stringify } from "as-console/stringify";
 import { __COVER, __HASHES, __POINTS } from "as-test/assembly/coverage";
 import { JSON } from "json-as";
-import { term, TermLine } from "./util/term";
+import { term } from "./util/term";
 import { Log } from "./src/log";
 
 let entrySuites: Suite[] = [];
@@ -12,6 +12,10 @@ let entrySuites: Suite[] = [];
 // @ts-ignore
 const FILE = isDefined(ENTRY_FILE) ? ENTRY_FILE : "unknown";
 // Globals
+// @ts-ignore
+@global let __mock_global: Map<string, u32> = new Map<string, u32>();
+// @ts-ignore
+@global let __mock_import: Map<string, u32> = new Map<string, u32>();
 // @ts-ignore
 @global let suites: Suite[] = [];
 // @ts-ignore
@@ -215,26 +219,16 @@ export function afterEach(callback: () => void): void {
 }
 
 /**
- * Overrides all references to an existing function in local scope to instead point to new function
- * @param {string} fn - name of function to override
- * @param {() => returnType} callback - the function to substitute it with
+ * Replace all references to an existing function to new function
+ * @param {Function} oldFn - name of function to mock
+ * @param {Function} newFn - the function to substitute it with
  */
-export function mockFn<returnType>(
-  fn: string,
-  callback: (...args: any[]) => returnType,
-): void {}
+export function mockFn(oldFn: Function, newFn: Function): void {}
 
-/**
- * Unmock all references to an existing function to instead point to the original function
- * @param {string} fn - name of function to override
- */
-export function unmockFn(fn: string): void {}
-
-/**
- * Re-mock all references to an existing function to instead point to the declared function
- * @param {string} fn - name of function to override
- */
-export function remockFn(fn: string): void {}
+export function mockImport(oldFn: string, newFn: () => string): void {
+  __mock_import.set(oldFn, newFn.index);
+  // mocks.set(oldFn, new MockFn(oldFn, newFn).enable());
+}
 
 /**
  * Class defining options that can be passed to the `run` function.
