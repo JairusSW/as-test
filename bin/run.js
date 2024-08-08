@@ -35,7 +35,7 @@ export async function run() {
       chalk.bold.blueBright(`|__|__||_____|      |_|  |_____||_____|  |_|  `),
     );
     console.log(
-      chalk.dim("\n------------------- v0.3.2 -------------------\n"),
+      chalk.dim("\n------------------- v0.3.3 -------------------\n"),
     );
   }
   for (const plugin of Object.keys(config.plugins)) {

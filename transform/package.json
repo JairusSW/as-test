@@ -1,6 +1,6 @@
 {
   "name": "@as-test/transform",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Testing framework for AssemblyScript. Compatible with WASI or Bindings ",
   "main": "./lib/index.js",
   "author": "Jairus Tanaka",

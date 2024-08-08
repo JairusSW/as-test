@@ -225,7 +225,7 @@ export function afterEach(callback: () => void): void {
  */
 export function mockFn(oldFn: Function, newFn: Function): void {}
 
-export function mockImport(oldFn: string, newFn: () => string): void {
+export function mockImport<T extends Function>(oldFn: string, newFn: T): void {
   __mock_import.set(oldFn, newFn.index);
   // mocks.set(oldFn, new MockFn(oldFn, newFn).enable());
 }
