@@ -3,7 +3,7 @@ import {
   FunctionDeclaration,
 } from "assemblyscript/dist/assemblyscript.js";
 import { BaseVisitor } from "visitor-as/dist/index.js";
-import { isStdlib, toString } from "visitor-as/dist/utils.js";
+import { toString } from "visitor-as/dist/utils.js";
 export class MockTransform extends BaseVisitor {
   currentSource;
   globalStatements = [];
@@ -25,6 +25,7 @@ export class MockTransform extends BaseVisitor {
     }
     if (name == "mockImport") {
       this.importMocked.add(node.args[0].value);
+      return;
     }
     if (name != "mockFn") return;
     const ov = toString(node.args[0]);
@@ -60,18 +61,16 @@ export class MockTransform extends BaseVisitor {
     super.visitFunctionDeclaration(node, isDefault);
   }
   visitSource(node) {
-    if (node.isLibrary || isStdlib(node)) {
-      if (!node.normalizedPath.startsWith("~lib/as-test")) {
-        return;
-      }
-    }
     this.mocked = new Set();
     this.currentSource = node;
+    this.importFns = [];
     super.visitSource(node);
     for (const node of this.importFns) {
       let path = "";
       const dec = node.decorators?.find((v) => v.name.text == "external");
-      if (dec.args[0] && dec.args[1])
+      if (!dec) {
+        path = "env." + node.name.text;
+      } else if (dec.args[0] && dec.args[1])
         path = dec.args.map((v) => v.value).join(".");
       else if (dec.args[0])
         path = this.currentSource.simplePath + "." + dec.args[0].value;
@@ -115,7 +114,6 @@ export class MockTransform extends BaseVisitor {
         0,
         node.range,
       );
-      newFn.signature = node.signature;
       const stmts = this.currentSource.statements;
       let index = -1;
       for (let i = 0; i < stmts.length; i++) {
@@ -131,7 +129,6 @@ export class MockTransform extends BaseVisitor {
       if (index === -1) return;
       stmts.splice(index, 1, newFn);
     }
-    this.importFns = [];
   }
 }
 //# sourceMappingURL=mock.js.map

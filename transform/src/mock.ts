@@ -37,6 +37,7 @@ export class MockTransform extends BaseVisitor {
 
     if (name == "mockImport") {
       this.importMocked.add((node.args[0] as StringLiteralExpression).value);
+      return;
     }
     if (name != "mockFn") return;
     const ov = toString(node.args[0]);
@@ -77,13 +78,9 @@ export class MockTransform extends BaseVisitor {
     super.visitFunctionDeclaration(node, isDefault);
   }
   visitSource(node: Source): void {
-    if (node.isLibrary || isStdlib(node)) {
-      if (!node.normalizedPath.startsWith("~lib/as-test")) {
-        return;
-      }
-    }
     this.mocked = new Set<string>();
     this.currentSource = node;
+    this.importFns = [];
     super.visitSource(node);
 
     for (const node of this.importFns) {
@@ -91,7 +88,9 @@ export class MockTransform extends BaseVisitor {
       const dec = node.decorators?.find(
         (v) => (v.name as IdentifierExpression).text == "external",
       );
-      if (dec.args[0] && dec.args[1])
+      if (!dec) {
+        path = "env." + node.name.text;
+      } else if (dec.args[0] && dec.args[1])
         path = dec.args
           .map((v) => (v as StringLiteralExpression).value)
           .join(".");
@@ -101,7 +100,6 @@ export class MockTransform extends BaseVisitor {
           "." +
           (dec.args[0] as StringLiteralExpression).value;
       else path = this.currentSource.simplePath + "." + node.name.text;
-
       if (!this.importMocked.has(path)) return;
 
       let args: Expression[] = [
@@ -147,8 +145,6 @@ export class MockTransform extends BaseVisitor {
         node.range,
       );
 
-      newFn.signature = node.signature;
-
       const stmts = this.currentSource.statements;
       let index = -1;
       for (let i = 0; i < stmts.length; i++) {
@@ -164,6 +160,5 @@ export class MockTransform extends BaseVisitor {
       if (index === -1) return;
       stmts.splice(index, 1, newFn);
     }
-    this.importFns = [];
   }
 }
