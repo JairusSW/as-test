@@ -9,7 +9,7 @@ export async function init(args) {
     input: process.stdin,
     output: process.stdout,
   });
-  console.log(chalk.bold("as-test init v0.3.4") + "\n");
+  console.log(chalk.bold("as-test init v0.3.5") + "\n");
   console.log(chalk.dim("[1/3]") + " select a target [wasi/bindings]");
   const target = await ask(chalk.dim(" -> "), rl);
   if (!TARGETS.includes(target)) {
@@ -182,7 +182,7 @@ const exports = instantiate(module, {});`,
   }
   if (!pkg["devDependencies"]) pkg["devDependencies"] = {};
   if (!pkg["devDependencies"]["as-test"])
-    pkg["devDependencies"]["as-test"] = "^0.3.4";
+    pkg["devDependencies"]["as-test"] = "^0.3.5";
   if (target == "bindings") {
     pkg["type"] = "module";
   }

@@ -1,6 +1,6 @@
 {
   "name": "@as-test/run",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Testing framework for AssemblyScript. Compatible with WASI or Bindings ",
   "main": "./lib/index.js",
   "author": "Jairus Tanaka",

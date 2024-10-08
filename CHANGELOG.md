@@ -27,4 +27,5 @@ v0.3.0 - Pass metadata through terminal - Support for multiple files - Better re
 v0.3.1 - Add screenshot of completed tests to readme
 v0.3.2 - Add `mockImport` to override imported functions
 v0.3.3 - Allow `mockImport`'s return type to be any
-v0.3.4 - Fix: import functions were not received after visitSource()
+v0.3.4 - Fix: import functions were not received after visitSource
+v0.3.5 - Fix: allow arrays to be used in `.toBe()`

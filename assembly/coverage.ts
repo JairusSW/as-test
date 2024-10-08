@@ -3,7 +3,7 @@ export class CoverPoint {
   public hash: string = "";
   public line: i32 = 0;
   public column: i32 = 0;
-  public type!: string;
+  public type: string = "";
   public executed: boolean = false;
 }
 

@@ -1,4 +1,5 @@
 import { rainbow } from "as-rainbow";
+import { JSON } from "json-as";
 
 export function visualize<T>(value: T): string {
   if (isNullable<T>() && changetype<usize>(value) == <usize>0) {
@@ -11,6 +12,18 @@ export function visualize<T>(value: T): string {
   } else if (isInteger<T>() || isFloat<T>()) {
     // @ts-ignore
     return value.toString();
+  } else if (isArray<T>()) {
+    // @ts-ignore
+    if (!value.length) return "[]";
+    let out = "[";
+    // @ts-ignore
+    for (let i = 0; i < value.length - 1; i++) {
+      // @ts-ignore
+      out += visualize<valueof<T>>(value[i]);
+    }
+    // @ts-ignore
+    out += visualize<valueof<T>>(value[value.length - 1]);
+    return out;
   }
 
   return unreachable();

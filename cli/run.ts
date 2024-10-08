@@ -42,7 +42,7 @@ export async function run() {
       chalk.bold.blueBright(`|__|__||_____|      |_|  |_____||_____|  |_|  `),
     );
     console.log(
-      chalk.dim("\n------------------- v0.3.4 -------------------\n"),
+      chalk.dim("\n------------------- v0.3.5 -------------------\n"),
     );
   }
 
@@ -128,8 +128,8 @@ export async function run() {
       );
       for (const test of failed.tests) {
         const diffResult = diff(
-          JSON.stringify(test._left),
-          JSON.stringify(test._right),
+          JSON.stringify(test.left),
+          JSON.stringify(test.right),
         );
         let expected = chalk.dim(JSON.stringify(test._left));
         let received = "";

@@ -11,7 +11,7 @@ const args: string[] = [];
 
 const COMMANDS: string[] = ["run", "build", "test", "init"];
 
-const version = "0.3.4";
+const version = "0.3.5";
 
 for (const arg of _args) {
   if (arg.startsWith("-")) flags.push(arg);

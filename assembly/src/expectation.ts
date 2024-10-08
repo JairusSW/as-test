@@ -1,11 +1,14 @@
 import { visualize } from "../util/helpers";
 import { Tests } from "./tests";
-import { after_each_callback, before_each_callback } from "..";
+import { after_each_callback, before_each_callback, log } from "..";
+import { JSON } from "json-as";
 
 
 @json
 export class Expectation<T> extends Tests {
   public verdict: string = "none";
+  public right: JSON.Raw = "";
+  public left: JSON.Raw = "";
   private _left: T;
   // @ts-ignore
   private _right: u64 = 0;
@@ -340,33 +343,38 @@ export class Expectation<T> extends Tests {
    * @returns - void
    */
   toBe(equals: T): void {
-    store<T>(
-      changetype<usize>(this),
-      equals,
-      offsetof<Expectation<T>>("_right"),
-    );
-    if (isBoolean<T>()) {
+    if (isArray<T>()) {
+      // @ts-ignore
+      this.verdict = arrayEquals(this._left, equals) ? "ok" : "fail";
+    } else if (isBoolean<T>()) {
       this.verdict = this._left === equals ? "ok" : "fail";
     } else if (isString<T>()) {
       this.verdict = this._left === equals ? "ok" : "fail";
     } else if (isInteger<T>() || isFloat<T>()) {
       this.verdict = this._left === equals ? "ok" : "fail";
-    } else if (isArray<T>()) {
-      // getArrayDepth<T>();
     } else {
       this.verdict = "none";
     }
 
     this.instr = "toBe";
 
-    this.left = visualize<T>(this._left);
-    this.right = visualize<T>(
-      load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")),
-    );
+    this.left = JSON.stringify<T>(this._left);
+    this.right = JSON.stringify<T>(equals);
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
     // @ts-ignore
     if (before_each_callback) before_each_callback();
+
+    // store<T>(
+    //   changetype<usize>(this),
+    //   equals,
+    //   offsetof<Expectation<T>>("_right"),
+    // );
   }
+}
+
+function arrayEquals<T extends any[]>(a: T, b: T): boolean {
+  if (a.length != b.length) return false;
+  return JSON.stringify(a) == JSON.stringify(b);
 }
