@@ -31,7 +31,7 @@
     "as-variant": "^0.4.1",
     "chalk": "^5.3.0",
     "glob": "^11.0.0",
-    "json-as": "^0.9.21",
+    "json-as": "JairusSW/json-as",
     "typer-diff": "^1.1.1"
   },
   "overrides": {

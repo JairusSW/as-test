@@ -1,14 +1,14 @@
 import { visualize } from "../util/helpers";
 import { Tests } from "./tests";
-import { after_each_callback, before_each_callback, log } from "..";
+import { after_each_callback, before_each_callback } from "..";
 import { JSON } from "json-as";
 
 
 @json
 export class Expectation<T> extends Tests {
   public verdict: string = "none";
-  public right: JSON.Raw = "";
-  public left: JSON.Raw = "";
+  public right: JSON.Raw = JSON.Raw.from("");
+  public left: JSON.Raw = JSON.Raw.from("");
   private _left: T;
   // @ts-ignore
   private _right: u64 = 0;
@@ -36,10 +36,10 @@ export class Expectation<T> extends Tests {
 
     this.instr = "toBeNull";
 
-    this.left = visualize<T>(this._left);
-    this.right = visualize<T>(
+    this.left.set(visualize<T>(this._left));
+    this.right.set(visualize<T>(
       load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")),
-    );
+    ));
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -65,10 +65,10 @@ export class Expectation<T> extends Tests {
 
     this.instr = "toBeGreaterThan";
 
-    this.left = visualize<T>(this._left);
-    this.right = visualize<T>(
+    this.left.set(visualize<T>(this._left));
+    this.right.set(visualize<T>(
       load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")),
-    );
+    ));
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -94,10 +94,10 @@ export class Expectation<T> extends Tests {
 
     this.instr = "toBeGreaterThanOrEqualTo";
 
-    this.left = visualize<T>(this._left);
-    this.right = visualize<T>(
+    this.left.set(visualize<T>(this._left));
+    this.right.set(visualize<T>(
       load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")),
-    );
+    ));
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -123,10 +123,10 @@ export class Expectation<T> extends Tests {
 
     this.instr = "toBeLessThan";
 
-    this.left = visualize<T>(this._left);
-    this.right = visualize<T>(
+    this.left.set(visualize<T>(this._left));
+    this.right.set(visualize<T>(
       load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")),
-    );
+    ));
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -152,10 +152,10 @@ export class Expectation<T> extends Tests {
 
     this.instr = "toBeLessThanOrEqualTo";
 
-    this.left = visualize<T>(this._left);
-    this.right = visualize<T>(
+    this.left.set(visualize<T>(this._left));
+    this.right.set(visualize<T>(
       load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")),
-    );
+    ));
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -170,8 +170,8 @@ export class Expectation<T> extends Tests {
   toBeString(): void {
     this.verdict = isString<T>() ? "ok" : "fail";
 
-    this.left = nameof<T>();
-    this.right = "string";
+    this.left.set(nameof<T>());
+    this.right.set("string");
 
     this.instr = "toBeString";
 
@@ -188,8 +188,8 @@ export class Expectation<T> extends Tests {
   toBeBoolean(): void {
     this.verdict = isBoolean<T>() ? "ok" : "fail";
 
-    this.left = nameof<T>();
-    this.right = "boolean";
+    this.left.set(nameof<T>());
+    this.right.set("boolean");
 
     this.instr = "toBeBoolean";
 
@@ -206,8 +206,8 @@ export class Expectation<T> extends Tests {
   toBeArray(): void {
     this.verdict = isArray<T>() ? "ok" : "fail";
 
-    this.left = nameof<T>();
-    this.right = "Array<any>";
+    this.left.set(nameof<T>());
+    this.right.set("Array<any>");
 
     this.instr = "toBeArray";
 
@@ -224,8 +224,8 @@ export class Expectation<T> extends Tests {
   toBeNumber(): void {
     this.verdict = isFloat<T>() || isInteger<T>() ? "ok" : "fail";
 
-    this.left = nameof<T>();
-    this.right = "number";
+    this.left.set(nameof<T>());
+    this.right.set("number");
 
     this.instr = "toBeNumber";
 
@@ -242,8 +242,8 @@ export class Expectation<T> extends Tests {
   toBeInteger(): void {
     this.verdict = isInteger<T>() ? "ok" : "fail";
 
-    this.left = nameof<T>();
-    this.right = "float";
+    this.left.set(nameof<T>());
+    this.right.set("float");
 
     this.instr = "toBeInteger";
 
@@ -260,8 +260,8 @@ export class Expectation<T> extends Tests {
   toBeFloat(): void {
     this.verdict = isFloat<T>() ? "ok" : "fail";
 
-    this.left = nameof<T>();
-    this.right = "integer";
+    this.left.set(nameof<T>());
+    this.right.set("integer");
 
     this.instr = "toBeFloat";
 
@@ -280,8 +280,8 @@ export class Expectation<T> extends Tests {
       // @ts-ignore
       (isFloat<T>() || isInteger<T>()) && isFinite(this._left) ? "ok" : "fail";
 
-    this.left = "Infinity";
-    this.right = "Finite";
+    this.left.set("Infinity");
+    this.right.set("Finite");
 
     this.instr = "toBeFinite";
 
@@ -303,8 +303,8 @@ export class Expectation<T> extends Tests {
       isArray<T>() && this._left.length == value ? "ok" : "fail";
 
     // @ts-ignore
-    this.left = this._left.length.toString();
-    this.right = value.toString();
+    this.left.set(this._left.length.toString());
+    this.right.set(value.toString());
 
     this.instr = "toHaveLength";
 
@@ -326,9 +326,8 @@ export class Expectation<T> extends Tests {
       // @ts-ignore
       isArray<T>() && this._left.includes(value) ? "ok" : "fail";
 
-    // @ts-ignore
-    this.left = "includes value";
-    this.right = "does not include value";
+    this.left.set("includes value");
+    this.right.set("does not include value");
     this.instr = "toContain";
 
     // @ts-ignore
@@ -358,8 +357,8 @@ export class Expectation<T> extends Tests {
 
     this.instr = "toBe";
 
-    this.left = JSON.stringify<T>(this._left);
-    this.right = JSON.stringify<T>(equals);
+    this.left.set(JSON.stringify<T>(this._left));
+    this.right.set(JSON.stringify<T>(equals));
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();

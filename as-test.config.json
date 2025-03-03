@@ -7,7 +7,7 @@
     "coverage": true
   },
   "buildOptions": {
-    "args": [],
+    "args": ["--lib ./node_modules/json-as/modules/"],
     "target": "bindings"
   },
   "runOptions": {
