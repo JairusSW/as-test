@@ -4,10 +4,10 @@
   "logs": "./logs",
   "config": "none",
   "plugins": {
-    "coverage": true
+    "coverage": false
   },
   "buildOptions": {
-    "args": ["--lib ./node_modules/json-as/modules/"],
+    "args": ["--lib ./node_modules/json-as/lib"],
     "target": "bindings"
   },
   "runOptions": {

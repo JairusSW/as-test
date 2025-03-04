@@ -1,33 +1,4 @@
 {
-  "name": "@as-test/transform",
-  "version": "0.3.5",
-  "description": "Testing framework for AssemblyScript. Compatible with WASI or Bindings ",
   "main": "./lib/index.js",
-  "author": "Jairus Tanaka",
-  "contributors": [],
-  "license": "MIT",
-  "scripts": {},
-  "devDependencies": {
-    "assemblyscript": "^0.27.28",
-    "typescript": "^5.5.3",
-    "visitor-as": "^0.11.4"
-  },
-  "dependencies": {},
-  "overrides": {
-    "assemblyscript": "$assemblyscript",
-    "visitor-as": "$visitor-as"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/JairusSW/as-test.git"
-  },
-  "keywords": [],
-  "bugs": {
-    "url": "https://github.com/JairusSW/as-test/issues"
-  },
-  "homepage": "https://github.com/JairusSW/as-test#readme",
-  "type": "module",
-  "publishConfig": {
-    "@JairusSW:registry": "https://npm.pkg.github.com"
-  }
+  "type": "module"
 }

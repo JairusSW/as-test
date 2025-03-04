@@ -1,6 +1,6 @@
 {
   "name": "as-test",
-  "version": "0.3.5",
+  "version": "0.4.0-beta.1",
   "description": "Testing framework for AssemblyScript. Compatible with WASI or Bindings ",
   "types": "assembly/index.ts",
   "author": "Jairus Tanaka",
@@ -17,21 +17,21 @@
   },
   "devDependencies": {
     "@assemblyscript/wasi-shim": "^0.1.0",
-    "@types/node": "^20.14.10",
+    "@types/node": "^22.13.9",
     "as-sleep": "^0.0.2",
     "as-test": "./",
-    "assemblyscript": "^0.27.29",
+    "assemblyscript": "^0.27.34",
     "assemblyscript-prettier": "^3.0.1",
-    "typescript": "^5.5.3",
+    "typescript": "^5.8.2",
     "visitor-as": "^0.11.4"
   },
   "dependencies": {
     "as-console": "^7.0.0",
     "as-rainbow": "^0.1.0",
     "as-variant": "^0.4.1",
-    "chalk": "^5.3.0",
-    "glob": "^11.0.0",
-    "json-as": "JairusSW/json-as",
+    "chalk": "^5.4.1",
+    "glob": "^11.0.1",
+    "json-as": "1.0.0-beta.9",
     "typer-diff": "^1.1.1"
   },
   "overrides": {
