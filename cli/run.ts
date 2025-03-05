@@ -131,24 +131,24 @@ export async function run() {
           JSON.stringify(test.left),
           JSON.stringify(test.right),
         );
-        let expected = chalk.dim(JSON.stringify(test._left));
-        let received = "";
+        let expected = "";
+        let received = chalk.dim(JSON.stringify(test._left));
         for (const res of diffResult.diff) {
           switch (res.type) {
             case "correct": {
-              received += chalk.dim(res.value);
+              expected += chalk.dim(res.value);
               continue;
             }
             case "extra": {
-              received += chalk.red.strikethrough(res.value);
+              expected += chalk.red.strikethrough(res.value);
               continue;
             }
             case "missing": {
-              received += chalk.bgBlack(res.value);
+              expected += chalk.bgBlack(res.value);
               continue;
             }
             case "wrong": {
-              received += chalk.bgRed(res.value);
+              expected += chalk.bgRed(res.value);
               continue;
             }
             case "untouched": {

@@ -1,6 +1,6 @@
 {
   "name": "as-test",
-  "version": "0.4.0-beta.1",
+  "version": "0.4.0-beta.3",
   "description": "Testing framework for AssemblyScript. Compatible with WASI or Bindings ",
   "types": "assembly/index.ts",
   "author": "Jairus Tanaka",
@@ -31,7 +31,7 @@
     "as-variant": "^0.4.1",
     "chalk": "^5.4.1",
     "glob": "^11.0.1",
-    "json-as": "1.0.0-beta.9",
+    "json-as": "1.0.0-beta.10",
     "typer-diff": "^1.1.1"
   },
   "overrides": {

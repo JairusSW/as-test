@@ -9,9 +9,12 @@ export class Expectation<T> extends Tests {
   public verdict: string = "none";
   public right: JSON.Raw = JSON.Raw.from("");
   public left: JSON.Raw = JSON.Raw.from("");
+  @omit
   private _left: T;
+  @omit
   // @ts-ignore
   private _right: u64 = 0;
+  @omit
   // @ts-ignore
   private _not: boolean = false;
   constructor(left: T) {
