@@ -2,7 +2,7 @@
 
 ## 2025-03-03 - v0.4.0-beta.3
 
-- fix: flip 'expected' and 'recieved'
+- fix: flip 'expected' and 'received'
 
 ## 2025-03-03 - v0.4.0-beta.2
 
