@@ -12,10 +12,10 @@ describe("Array manipulation", () => {
   // });
 
   test("Array check", () => {
-    const a = [1,2,3];
-    const b = [1,2,3];
+    const a = [1, 2, 3];
+    const b = [1, 2, 3];
     expect(a).toBe(b);
-  })
+  });
 
   it("should be empty", () => {});
 });

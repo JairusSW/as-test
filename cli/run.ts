@@ -1,19 +1,18 @@
 import chalk from "chalk";
 import { exec } from "child_process";
 import { glob } from "glob";
-
 import { formatTime, getExec, loadConfig } from "./util.js";
 import * as path from "path";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { diff } from "typer-diff";
+import gradient from "gradient-string";
 
 const CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
-
+const version = "0.4.0";
 export async function run() {
   const reports: any[] = [];
   const config = loadConfig(CONFIG_PATH);
   const inputFiles = await glob(config.input);
-
   console.log(
     chalk.dim("Running tests using " + config.runOptions.runtime.name + ""),
   );
@@ -30,19 +29,18 @@ export async function run() {
 
   if (inputFiles.length) {
     console.log(
-      chalk.bold.blueBright(` _____  _____      _____  _____  _____  _____ `),
+      "\n" +
+        gradient(["#87afff", "#3a5fcd"])
+          .multiline(` █████  ███████       ████████ ███████ ███████ ████████ 
+██   ██ ██               ██    ██      ██         ██    
+███████ ███████ █████    ██    █████   ███████    ██    
+██   ██      ██          ██    ██           ██    ██    
+██   ██ ███████          ██    ███████ ███████    ██    `),
     );
     console.log(
-      chalk.bold.blueBright(`|  _  ||   __| ___|_   _||   __||   __||_   _|`),
-    );
-    console.log(
-      chalk.bold.blueBright(`|     ||__   ||___| | |  |   __||__   |  | |  `),
-    );
-    console.log(
-      chalk.bold.blueBright(`|__|__||_____|      |_|  |_____||_____|  |_|  `),
-    );
-    console.log(
-      chalk.dim("\n------------------- v0.3.5 -------------------\n"),
+      chalk.dim(
+        `\n----------------------- v${version} -----------------------\n`,
+      ),
     );
   }
 
@@ -132,7 +130,7 @@ export async function run() {
           JSON.stringify(test.right),
         );
         let expected = "";
-        let received = chalk.dim(JSON.stringify(test._left));
+        let received = chalk.dim(JSON.stringify(test.left));
         for (const res of diffResult.diff) {
           switch (res.type) {
             case "correct": {

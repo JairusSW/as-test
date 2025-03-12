@@ -6,7 +6,7 @@
 ██   ██      ██          ██    ██           ██    ██    
 ██   ██ ███████          ██    ███████ ███████    ██    
                                                         </span>
-    AssemblyScript - v0.4.0
+    AssemblyScript - v0.4.1
 </pre>
 </h5>
 
@@ -44,17 +44,17 @@ Create a new test file in `assembly/__tests__/`, for example, `math.spec.ts`:
 import { describe, test, expect, run } from "as-test";
 
 describe("Math operations", () => {
-    test("Addition", () => {
-        expect(1 + 2).toBe(3);
-    });
+  test("Addition", () => {
+    expect(1 + 2).toBe(3);
+  });
 
-    test("Subtraction", () => {
-        expect(5 - 2).toBe(3);
-    });
+  test("Subtraction", () => {
+    expect(5 - 2).toBe(3);
+  });
 
-    test("Multiplication", () => {
-        expect(3 * 3).toBe(9);
-    });
+  test("Multiplication", () => {
+    expect(3 * 3).toBe(9);
+  });
 });
 
 run();
@@ -87,11 +87,11 @@ Use `beforeAll` and `afterAll` to run code before and after a test is run.
 import { beforeAll, afterAll } from "as-test";
 
 beforeAll(() => {
-    log("Setting up test environment...");
+  log("Setting up test environment...");
 });
 
 afterAll(() => {
-    log("Tearing down test environment...");
+  log("Tearing down test environment...");
 });
 
 run();

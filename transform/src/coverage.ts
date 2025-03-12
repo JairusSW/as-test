@@ -18,10 +18,9 @@ import {
   ArrowKind,
   Node,
 } from "assemblyscript/dist/assemblyscript.js";
-
-import { BaseVisitor, SimpleParser } from "visitor-as/dist/index.js";
-import { RangeTransform } from "visitor-as/dist/transformRange.js";
-import { isStdlib } from "visitor-as/dist/utils.js";
+import { RangeTransform } from "./range.js";
+import { isStdlib, SimpleParser } from "./util.js";
+import { Visitor } from "./visitor.js";
 
 enum CoverType {
   Function,
@@ -38,7 +37,7 @@ class CoverPoint {
   public executed: boolean = false;
 }
 
-export class CoverageTransform extends BaseVisitor {
+export class CoverageTransform extends Visitor {
   public mustImport: boolean = false;
   public points: Map<string, CoverPoint> = new Map<string, CoverPoint>();
   public globalStatements: Statement[] = [];
@@ -359,14 +358,14 @@ export class CoverageTransform extends BaseVisitor {
         if (ifTrue.visited) return;
         // @ts-ignore
         ifTrue.visited = true;
-        this._visit(ifTrue);
+        this.visit(ifTrue);
       }
       if (visitIfFalse) {
         // @ts-ignore
         if (ifFalse.visited) return;
         // @ts-ignore
         ifFalse.visited = true;
-        this._visit(ifFalse!);
+        this.visit(ifFalse!);
       }
     } else {
       super.visitIfStatement(node);

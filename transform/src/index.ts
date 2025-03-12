@@ -7,10 +7,9 @@ import {
   Source,
   Tokenizer,
 } from "assemblyscript/dist/assemblyscript.js";
-
-import { isStdlib } from "visitor-as/dist/utils.js";
 import { CoverageTransform } from "./coverage.js";
 import { MockTransform } from "./mock.js";
+import { isStdlib } from "./util.js";
 
 export default class Transformer extends Transform {
   // Trigger the transform after parse.

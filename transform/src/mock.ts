@@ -11,11 +11,10 @@ import {
   Expression,
   FunctionDeclaration,
 } from "assemblyscript/dist/assemblyscript.js";
-
-import { BaseVisitor } from "visitor-as/dist/index.js";
-import { isStdlib, toString } from "visitor-as/dist/utils.js";
-export class MockTransform extends BaseVisitor {
-  public currentSource: Source;
+import { Visitor } from "./visitor.js";
+import { toString } from "./util.js";
+export class MockTransform extends Visitor {
+  public srcCurrent: Source | null = null;
   public globalStatements: Statement[] = [];
   public mocked = new Set<string>();
   public importFns: FunctionDeclaration[] = [];
@@ -58,7 +57,7 @@ export class MockTransform extends BaseVisitor {
       cb.range,
     );
 
-    const stmts = this.currentSource.statements;
+    const stmts = this.srcCurrent.statements;
     let index = -1;
     for (let i = 0; i < stmts.length; i++) {
       const stmt = stmts[i];
@@ -79,7 +78,7 @@ export class MockTransform extends BaseVisitor {
   }
   visitSource(node: Source): void {
     this.mocked = new Set<string>();
-    this.currentSource = node;
+    this.srcCurrent = node;
     this.importFns = [];
     super.visitSource(node);
 
@@ -96,10 +95,10 @@ export class MockTransform extends BaseVisitor {
           .join(".");
       else if (dec.args[0])
         path =
-          this.currentSource.simplePath +
+          this.srcCurrent.simplePath +
           "." +
           (dec.args[0] as StringLiteralExpression).value;
-      else path = this.currentSource.simplePath + "." + node.name.text;
+      else path = this.srcCurrent.simplePath + "." + node.name.text;
       if (!this.importMocked.has(path)) return;
 
       let args: Expression[] = [
@@ -145,7 +144,7 @@ export class MockTransform extends BaseVisitor {
         node.range,
       );
 
-      const stmts = this.currentSource.statements;
+      const stmts = this.srcCurrent.statements;
       let index = -1;
       for (let i = 0; i < stmts.length; i++) {
         const stmt = stmts[i];

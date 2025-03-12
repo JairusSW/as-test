@@ -1,8 +1,8 @@
 import { Transform } from "assemblyscript/dist/transform.js";
 import { Node, Source, Tokenizer, } from "assemblyscript/dist/assemblyscript.js";
-import { isStdlib } from "visitor-as/dist/utils.js";
 import { CoverageTransform } from "./coverage.js";
 import { MockTransform } from "./mock.js";
+import { isStdlib } from "./util.js";
 export default class Transformer extends Transform {
     afterParse(parser) {
         const mock = new MockTransform();

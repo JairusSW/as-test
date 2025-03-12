@@ -1,8 +1,8 @@
 import { Node, FunctionDeclaration, } from "assemblyscript/dist/assemblyscript.js";
-import { BaseVisitor } from "visitor-as/dist/index.js";
-import { toString } from "visitor-as/dist/utils.js";
-export class MockTransform extends BaseVisitor {
-    currentSource;
+import { Visitor } from "./visitor.js";
+import { toString } from "./util.js";
+export class MockTransform extends Visitor {
+    srcCurrent = null;
     globalStatements = [];
     mocked = new Set();
     importFns = [];
@@ -30,7 +30,7 @@ export class MockTransform extends BaseVisitor {
             .replaceAll("[", "_")
             .replaceAll("]", "_");
         const newFn = Node.createFunctionDeclaration(Node.createIdentifierExpression(newName + "_mock", cb.range), cb.declaration.decorators, 0, cb.declaration.typeParameters, cb.declaration.signature, cb.declaration.body, cb.declaration.arrowKind, cb.range);
-        const stmts = this.currentSource.statements;
+        const stmts = this.srcCurrent.statements;
         let index = -1;
         for (let i = 0; i < stmts.length; i++) {
             const stmt = stmts[i];
@@ -51,7 +51,7 @@ export class MockTransform extends BaseVisitor {
     }
     visitSource(node) {
         this.mocked = new Set();
-        this.currentSource = node;
+        this.srcCurrent = node;
         this.importFns = [];
         super.visitSource(node);
         for (const node of this.importFns) {
@@ -66,11 +66,11 @@ export class MockTransform extends BaseVisitor {
                     .join(".");
             else if (dec.args[0])
                 path =
-                    this.currentSource.simplePath +
+                    this.srcCurrent.simplePath +
                         "." +
                         dec.args[0].value;
             else
-                path = this.currentSource.simplePath + "." + node.name.text;
+                path = this.srcCurrent.simplePath + "." + node.name.text;
             if (!this.importMocked.has(path))
                 return;
             let args = [
@@ -82,7 +82,7 @@ export class MockTransform extends BaseVisitor {
             const newFn = Node.createFunctionDeclaration(node.name, node.decorators.filter((v) => v.name.text != "external"), node.flags - 32768 - 4, null, node.signature, Node.createBlockStatement([
                 Node.createReturnStatement(Node.createCallExpression(Node.createIdentifierExpression("call_indirect", node.range), null, args, node.range), node.range),
             ], node.range), 0, node.range);
-            const stmts = this.currentSource.statements;
+            const stmts = this.srcCurrent.statements;
             let index = -1;
             for (let i = 0; i < stmts.length; i++) {
                 const stmt = stmts[i];

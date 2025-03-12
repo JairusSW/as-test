@@ -9,11 +9,14 @@ export class Expectation<T> extends Tests {
   public verdict: string = "none";
   public right: JSON.Raw = JSON.Raw.from("");
   public left: JSON.Raw = JSON.Raw.from("");
+
   @omit
   private _left: T;
+
   @omit
   // @ts-ignore
   private _right: u64 = 0;
+
   @omit
   // @ts-ignore
   private _not: boolean = false;
@@ -40,9 +43,11 @@ export class Expectation<T> extends Tests {
     this.instr = "toBeNull";
 
     this.left.set(visualize<T>(this._left));
-    this.right.set(visualize<T>(
-      load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")),
-    ));
+    this.right.set(
+      visualize<T>(
+        load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")),
+      ),
+    );
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -69,9 +74,11 @@ export class Expectation<T> extends Tests {
     this.instr = "toBeGreaterThan";
 
     this.left.set(visualize<T>(this._left));
-    this.right.set(visualize<T>(
-      load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")),
-    ));
+    this.right.set(
+      visualize<T>(
+        load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")),
+      ),
+    );
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -98,9 +105,11 @@ export class Expectation<T> extends Tests {
     this.instr = "toBeGreaterThanOrEqualTo";
 
     this.left.set(visualize<T>(this._left));
-    this.right.set(visualize<T>(
-      load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")),
-    ));
+    this.right.set(
+      visualize<T>(
+        load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")),
+      ),
+    );
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -127,9 +136,11 @@ export class Expectation<T> extends Tests {
     this.instr = "toBeLessThan";
 
     this.left.set(visualize<T>(this._left));
-    this.right.set(visualize<T>(
-      load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")),
-    ));
+    this.right.set(
+      visualize<T>(
+        load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")),
+      ),
+    );
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();
@@ -156,9 +167,11 @@ export class Expectation<T> extends Tests {
     this.instr = "toBeLessThanOrEqualTo";
 
     this.left.set(visualize<T>(this._left));
-    this.right.set(visualize<T>(
-      load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")),
-    ));
+    this.right.set(
+      visualize<T>(
+        load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")),
+      ),
+    );
 
     // @ts-ignore
     if (after_each_callback) after_each_callback();

@@ -1,5 +1,6 @@
 import { JSON } from "json-as";
 
+
 @json
 export class Tests {
   public order: i32 = 0;

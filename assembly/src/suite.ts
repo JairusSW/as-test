@@ -8,6 +8,8 @@ import { Log } from "./log";
 
 @json
 export class Suite {
+
+  @omitif((self: Suite) => self.depth > 0)
   public file: string = "unknown";
   public order: i32 = 0;
   public time: Time = new Time();

@@ -1,7 +1,7 @@
 import { BlockStatement, ExpressionStatement, Node, } from "assemblyscript/dist/assemblyscript.js";
-import { BaseVisitor, SimpleParser } from "visitor-as/dist/index.js";
-import { RangeTransform } from "visitor-as/dist/transformRange.js";
-import { isStdlib } from "visitor-as/dist/utils.js";
+import { RangeTransform } from "./range.js";
+import { isStdlib, SimpleParser } from "./util.js";
+import { Visitor } from "./visitor.js";
 var CoverType;
 (function (CoverType) {
     CoverType[CoverType["Function"] = 0] = "Function";
@@ -16,7 +16,7 @@ class CoverPoint {
     type;
     executed = false;
 }
-export class CoverageTransform extends BaseVisitor {
+export class CoverageTransform extends Visitor {
     mustImport = false;
     points = new Map();
     globalStatements = [];
@@ -246,13 +246,13 @@ export class CoverageTransform extends BaseVisitor {
                 if (ifTrue.visited)
                     return;
                 ifTrue.visited = true;
-                this._visit(ifTrue);
+                this.visit(ifTrue);
             }
             if (visitIfFalse) {
                 if (ifFalse.visited)
                     return;
                 ifFalse.visited = true;
-                this._visit(ifFalse);
+                this.visit(ifFalse);
             }
         }
         else {
