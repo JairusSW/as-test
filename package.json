@@ -1,6 +1,6 @@
 {
   "name": "as-test",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Testing framework for AssemblyScript. Compatible with WASI or Bindings ",
   "types": "assembly/index.ts",
   "author": "Jairus Tanaka",
@@ -34,7 +34,7 @@
     "typer-diff": "^1.1.1"
   },
   "peerDependencies": {
-    "json-as": "1.1.11"
+    "json-as": "*"
   },
   "peerDependenciesMeta": {
     "json-as": {

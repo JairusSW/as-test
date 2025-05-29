@@ -6,7 +6,7 @@
 ██   ██      ██          ██    ██           ██    ██    
 ██   ██ ███████          ██    ███████ ███████    ██    
                                                         </span>
-    AssemblyScript - v0.4.1
+    AssemblyScript - v0.4.3
 </pre>
 </h5>
 
@@ -26,6 +26,7 @@ A lightweight testing framework for AssemblyScript.
 
 ```bash
 npm install as-test
+npm intall json-as
 ```
 
 Initialize your test setup with:
