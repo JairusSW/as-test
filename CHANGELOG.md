@@ -1,5 +1,9 @@
 # Change Log
 
+## 2025-05-28 - v0.4.4
+
+- deps: update json-as to `v1.1.13`
+
 ## 2025-05-29 - v0.4.3
 
 - deps: add json-as to peer dependencies as `*`

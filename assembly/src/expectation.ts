@@ -35,7 +35,7 @@ export class Expectation<T> extends Tests {
    */
   toBeNull(): void {
     this.verdict =
-      isNullable<T>() && changetype<usize>(this._left) ? "ok" : "fail";
+      ((isNullable<T>() && changetype<usize>(this._left) == 0) || (isInteger<T>() && nameof<T>() == "usize" && this._left == 0)) ? "ok" : "fail";
 
     // @ts-ignore
     store<T>(changetype<usize>(this), null, offsetof<Expectation<T>>("_right"));
