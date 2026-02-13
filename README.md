@@ -1,14 +1,6 @@
-<h5 align="center">
-  <pre>
-<span style="font-size: 0.8em;"> █████  ███████       ████████ ███████ ███████ ████████ 
-██   ██ ██               ██    ██      ██         ██    
-███████ ███████ █████    ██    █████   ███████    ██    
-██   ██      ██          ██    ██           ██    ██    
-██   ██ ███████          ██    ███████ ███████    ██    
-                                                        </span>
-    AssemblyScript - v0.4.3
-</pre>
-</h5>
+<h1 align="center"><pre>╔═╗ ╔═╗    ╔═╗ ╔═╗ ╔═╗ ╔═╗
+╠═╣ ╚═╗ ══  ║  ╠═  ╚═╗  ║ 
+╩ ╩ ╚═╝     ╩  ╚═╝ ╚═╝  ╩ </pre></h1>
 
 A lightweight testing framework for AssemblyScript.
 
@@ -72,7 +64,7 @@ import { mockFn } from "as-test";
 
 // Mock console.log
 mockFn<void>("console.log", (data: string): void => {
-    console.log("[MOCKED]: " + data);
+  console.log("[MOCKED]: " + data);
 });
 
 run();

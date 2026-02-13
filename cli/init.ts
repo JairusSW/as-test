@@ -2,19 +2,19 @@ import chalk from "chalk";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import * as path from "path";
 import { createInterface, Interface } from "readline";
-import { loadConfig } from "./util.js";
+import { getCliVersion, loadConfig } from "./util.js";
 const TARGETS = ["wasi", "bindings"];
 export async function init(args: string[]) {
   const rl = createInterface({
     input: process.stdin,
     output: process.stdout,
   });
-  console.log(chalk.bold("as-test init v0.3.5") + "\n");
+  console.log(chalk.bold(`as-test init v${getCliVersion()}`) + "\n");
   console.log(chalk.dim("[1/3]") + " select a target [wasi/bindings]");
   const target = await ask(chalk.dim(" -> "), rl);
   if (!TARGETS.includes(target)) {
     console.log("Invalid target " + target + ". Exiting.");
-    process.exit(0);
+    process.exit(1);
   }
   process.stdout.write(`\u001B[1A`);
   process.stdout.write("\x1B[2K");
@@ -32,7 +32,7 @@ export async function init(args: string[]) {
   ├── 📂 build/
   ├── 📂 logs/
   ├── 📂 tests/
-  │    └── 📃 as-test.run.js   
+  │    └── 📃 as-test.run.js
   ├── ⚙️  as-test.config.json
   └── ⚙️  package.json\n`,
     ),
@@ -171,12 +171,15 @@ const exports = instantiate(module, {});`,
 
   const PKG_PATH = path.join(process.cwd(), "./package.json");
   if (!hasDep(PKG_PATH, "assemblyscript")) {
+    const userAgent = process.env.npm_config_user_agent ?? "npm";
+    const packageManager = userAgent.split("/")[0] ?? "npm";
+    const installCmd =
+      packageManager === "yarn"
+        ? `${packageManager} add assemblyscript`
+        : `${packageManager} install assemblyscript`;
     console.log(
       chalk.dim(
-        "AssemblyScript is not included in dependencies.\nInstall it with " +
-          (process.env.npm_config_user_agent == "yarn"
-            ? process.env.npm_config_user_agent + " add assemblyscript"
-            : process.env.npm_config_user_agent + " install assemblyscript"),
+        `AssemblyScript is not included in dependencies.\nInstall it with ${installCmd}`,
       ),
     );
   }
@@ -192,7 +195,7 @@ const exports = instantiate(module, {});`,
   }
   if (!pkg["devDependencies"]) pkg["devDependencies"] = {};
   if (!pkg["devDependencies"]["as-test"])
-    pkg["devDependencies"]["as-test"] = "^0.3.5";
+    pkg["devDependencies"]["as-test"] = "^" + getCliVersion();
   if (target == "bindings") {
     pkg["type"] = "module";
   }
@@ -226,22 +229,14 @@ function hasDep(PKG_PATH: string, dep: string): boolean {
   const pkg = JSON.parse(
     existsSync(PKG_PATH) ? readFileSync(PKG_PATH).toString() : "{}",
   ) as {
-    dependencies: string[] | null;
-    devDependencies: string[] | null;
-    peerDependencies: string[] | null;
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+    peerDependencies?: Record<string, string>;
   };
 
   if (existsSync(path.join(process.cwd(), "./node_modules/", dep))) return true;
 
-  if (
-    pkg.dependencies &&
-    !Object.keys(pkg.dependencies).includes(dep) &&
-    pkg.devDependencies &&
-    !Object.keys(pkg.devDependencies).includes(dep) &&
-    pkg.peerDependencies &&
-    !Object.keys(pkg.peerDependencies).includes(dep)
-  ) {
-    return false;
-  }
-  return true;
+  return Boolean(
+    pkg.dependencies?.[dep] || pkg.devDependencies?.[dep] || pkg.peerDependencies?.[dep],
+  );
 }

@@ -4,7 +4,7 @@ import { glob } from "glob";
 import chalk from "chalk";
 import { execSync } from "child_process";
 import * as path from "path";
-import { loadConfig } from "./util.js";
+import { getPkgRunner, loadConfig } from "./util.js";
 
 const CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 const PKG_PATH = path.join(process.cwd(), "./package.json");
@@ -37,9 +37,9 @@ export async function build() {
 
 function ensureDeps(config: Config): void {
   const pkg = JSON.parse(readFileSync(PKG_PATH).toString()) as {
-    dependencies: string[] | null;
-    devDependencies: string[] | null;
-    peerDependencies: string[] | null;
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+    peerDependencies?: Record<string, string>;
   };
 
   if (config.buildOptions.target == "wasi") {
@@ -50,14 +50,7 @@ function ensureDeps(config: Config): void {
       process.exit(1);
     }
     if (
-      pkg.dependencies &&
-      !Object.keys(pkg.dependencies).includes("@assemblyscript/wasi-shim") &&
-      pkg.devDependencies &&
-      !Object.keys(pkg.devDependencies).includes("@assemblyscript/wasi-shim") &&
-      pkg.peerDependencies &&
-      !Object.keys(pkg.peerDependencies).includes(
-        "@assemblyscript/wasi-shim",
-      ) &&
+      !hasDep(pkg, "@assemblyscript/wasi-shim") &&
       existsSync("./node_modules/@assemblyscript/wasi-shim/asconfig.json")
     ) {
       console.log(
@@ -65,21 +58,13 @@ function ensureDeps(config: Config): void {
       );
     }
   }
-}
 
-function getPkgRunner(): string {
-  switch (process.env.npm_config_user_agent) {
-    case "pnpm": {
-      return "pnpx";
-    }
-    case "yarn": {
-      return "yarn";
-    }
-    case "bun": {
-      return "bunx";
-    }
+  if (!hasJsonAsTransform()) {
+    console.log(
+      `${chalk.bgRed(" ERROR ")}${chalk.dim(":")} could not find json-as. Install it to compile as-test suites.`,
+    );
+    process.exit(1);
   }
-  return "npx";
 }
 
 function buildFile(command: string): void {
@@ -89,7 +74,8 @@ function buildFile(command: string): void {
 function getBuildArgs(config: Config): string {
   let buildArgs = "";
 
-  buildArgs += " --transform as-test/transform --transform json-as/transform";
+  buildArgs += " --transform as-test/transform";
+  buildArgs += " --transform json-as/transform";
 
   if (config.config && config.config !== "none") {
     buildArgs += " --config " + config.config;
@@ -102,9 +88,9 @@ function getBuildArgs(config: Config): string {
       " --config ./node_modules/@assemblyscript/wasi-shim/asconfig.json";
   } else {
     console.log(
-      `${chalk.bgRed(" ERROR ")}${chalk.dim(":")} could determine target in config! Set target to 'bindings' or 'wasi'`,
+      `${chalk.bgRed(" ERROR ")}${chalk.dim(":")} could not determine target in config! Set target to 'bindings' or 'wasi'`,
     );
-    process.exit(0);
+    process.exit(1);
   }
 
   if (
@@ -114,4 +100,25 @@ function getBuildArgs(config: Config): string {
     buildArgs += " " + config.buildOptions.args.join(" ");
   }
   return buildArgs;
+}
+
+function hasDep(
+  pkg: {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+    peerDependencies?: Record<string, string>;
+  },
+  dep: string,
+): boolean {
+  return Boolean(
+    pkg.dependencies?.[dep] || pkg.devDependencies?.[dep] || pkg.peerDependencies?.[dep],
+  );
+}
+
+function hasJsonAsTransform(): boolean {
+  return (
+    existsSync(path.join(process.cwd(), "node_modules/json-as/transform.js")) ||
+    existsSync(path.join(process.cwd(), "node_modules/json-as/transform.ts")) ||
+    existsSync(path.join(process.cwd(), "node_modules/json-as/transform"))
+  );
 }

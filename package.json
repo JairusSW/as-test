@@ -22,6 +22,7 @@
     "as-test": "./",
     "assemblyscript": "^0.27.35",
     "assemblyscript-prettier": "^3.0.1",
+    "json-as": "^1.2.5",
     "typescript": "^5.8.2"
   },
   "dependencies": {
@@ -31,15 +32,11 @@
     "chalk": "^5.4.1",
     "glob": "^11.0.1",
     "gradient-string": "^3.0.0",
-    "typer-diff": "^1.1.1"
+    "typer-diff": "^1.1.1",
+    "wipc-js": "^0.1.1"
   },
   "peerDependencies": {
-    "json-as": "*"
-  },
-  "peerDependenciesMeta": {
-    "json-as": {
-      "optional": true
-    }
+    "json-as": "^1.2.5"
   },
   "repository": {
     "type": "git",

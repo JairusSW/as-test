@@ -50,9 +50,9 @@ export class Expectation<T> extends Tests {
     );
 
     // @ts-ignore
-    if (after_each_callback) after_each_callback();
-    // @ts-ignore
     if (before_each_callback) before_each_callback();
+    // @ts-ignore
+    if (after_each_callback) after_each_callback();
   }
 
   /**
@@ -81,9 +81,9 @@ export class Expectation<T> extends Tests {
     );
 
     // @ts-ignore
-    if (after_each_callback) after_each_callback();
-    // @ts-ignore
     if (before_each_callback) before_each_callback();
+    // @ts-ignore
+    if (after_each_callback) after_each_callback();
   }
 
   /**
@@ -112,9 +112,9 @@ export class Expectation<T> extends Tests {
     );
 
     // @ts-ignore
-    if (after_each_callback) after_each_callback();
-    // @ts-ignore
     if (before_each_callback) before_each_callback();
+    // @ts-ignore
+    if (after_each_callback) after_each_callback();
   }
 
   /**
@@ -143,9 +143,9 @@ export class Expectation<T> extends Tests {
     );
 
     // @ts-ignore
-    if (after_each_callback) after_each_callback();
-    // @ts-ignore
     if (before_each_callback) before_each_callback();
+    // @ts-ignore
+    if (after_each_callback) after_each_callback();
   }
 
   /**
@@ -174,9 +174,9 @@ export class Expectation<T> extends Tests {
     );
 
     // @ts-ignore
-    if (after_each_callback) after_each_callback();
-    // @ts-ignore
     if (before_each_callback) before_each_callback();
+    // @ts-ignore
+    if (after_each_callback) after_each_callback();
   }
 
   /**
@@ -192,9 +192,9 @@ export class Expectation<T> extends Tests {
     this.instr = "toBeString";
 
     // @ts-ignore
-    if (after_each_callback) after_each_callback();
-    // @ts-ignore
     if (before_each_callback) before_each_callback();
+    // @ts-ignore
+    if (after_each_callback) after_each_callback();
   }
 
   /**
@@ -210,9 +210,9 @@ export class Expectation<T> extends Tests {
     this.instr = "toBeBoolean";
 
     // @ts-ignore
-    if (after_each_callback) after_each_callback();
-    // @ts-ignore
     if (before_each_callback) before_each_callback();
+    // @ts-ignore
+    if (after_each_callback) after_each_callback();
   }
 
   /**
@@ -228,9 +228,9 @@ export class Expectation<T> extends Tests {
     this.instr = "toBeArray";
 
     // @ts-ignore
-    if (after_each_callback) after_each_callback();
-    // @ts-ignore
     if (before_each_callback) before_each_callback();
+    // @ts-ignore
+    if (after_each_callback) after_each_callback();
   }
 
   /**
@@ -246,9 +246,9 @@ export class Expectation<T> extends Tests {
     this.instr = "toBeNumber";
 
     // @ts-ignore
-    if (after_each_callback) after_each_callback();
-    // @ts-ignore
     if (before_each_callback) before_each_callback();
+    // @ts-ignore
+    if (after_each_callback) after_each_callback();
   }
 
   /**
@@ -264,9 +264,9 @@ export class Expectation<T> extends Tests {
     this.instr = "toBeInteger";
 
     // @ts-ignore
-    if (after_each_callback) after_each_callback();
-    // @ts-ignore
     if (before_each_callback) before_each_callback();
+    // @ts-ignore
+    if (after_each_callback) after_each_callback();
   }
 
   /**
@@ -282,9 +282,9 @@ export class Expectation<T> extends Tests {
     this.instr = "toBeFloat";
 
     // @ts-ignore
-    if (after_each_callback) after_each_callback();
-    // @ts-ignore
     if (before_each_callback) before_each_callback();
+    // @ts-ignore
+    if (after_each_callback) after_each_callback();
   }
 
   /**
@@ -302,9 +302,9 @@ export class Expectation<T> extends Tests {
     this.instr = "toBeFinite";
 
     // @ts-ignore
-    if (after_each_callback) after_each_callback();
-    // @ts-ignore
     if (before_each_callback) before_each_callback();
+    // @ts-ignore
+    if (after_each_callback) after_each_callback();
   }
 
   /**
@@ -325,9 +325,9 @@ export class Expectation<T> extends Tests {
     this.instr = "toHaveLength";
 
     // @ts-ignore
-    if (after_each_callback) after_each_callback();
-    // @ts-ignore
     if (before_each_callback) before_each_callback();
+    // @ts-ignore
+    if (after_each_callback) after_each_callback();
   }
 
   /**
@@ -347,9 +347,9 @@ export class Expectation<T> extends Tests {
     this.instr = "toContain";
 
     // @ts-ignore
-    if (after_each_callback) after_each_callback();
-    // @ts-ignore
     if (before_each_callback) before_each_callback();
+    // @ts-ignore
+    if (after_each_callback) after_each_callback();
   }
 
   /**
@@ -377,9 +377,9 @@ export class Expectation<T> extends Tests {
     this.right.set(JSON.stringify<T>(equals));
 
     // @ts-ignore
-    if (after_each_callback) after_each_callback();
-    // @ts-ignore
     if (before_each_callback) before_each_callback();
+    // @ts-ignore
+    if (after_each_callback) after_each_callback();
 
     // store<T>(
     //   changetype<usize>(this),

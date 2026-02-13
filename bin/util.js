@@ -35,6 +35,28 @@ export function loadConfig(CONFIG_PATH, warn = false) {
         return Object.assign(new Config(), JSON.parse(readFileSync(CONFIG_PATH).toString()));
     }
 }
+export function getCliVersion() {
+    const pkgPath = join(process.cwd(), "package.json");
+    if (!existsSync(pkgPath))
+        return "0.0.0";
+    try {
+        const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+        return pkg.version ?? "0.0.0";
+    }
+    catch {
+        return "0.0.0";
+    }
+}
+export function getPkgRunner() {
+    const userAgent = process.env.npm_config_user_agent ?? "";
+    if (userAgent.startsWith("pnpm"))
+        return "pnpx";
+    if (userAgent.startsWith("yarn"))
+        return "yarn";
+    if (userAgent.startsWith("bun"))
+        return "bunx";
+    return "npx";
+}
 export function getExec(exec) {
     const PATH = process.env.PATH.split(delimiter);
     for (const pathDir of PATH) {

@@ -8,7 +8,6 @@ import { diff } from "typer-diff";
 import gradient from "gradient-string";
 
 const CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
-const version = "0.4.0";
 export async function run() {
   const reports: any[] = [];
   const config = loadConfig(CONFIG_PATH);
@@ -24,23 +23,16 @@ export async function run() {
     console.log(
       `${chalk.bgRed(" ERROR ")}${chalk.dim(":")} could not locate ${command} in PATH variable!`,
     );
-    process.exit(0);
+    process.exit(1);
   }
 
   if (inputFiles.length) {
     console.log(
       "\n" +
         gradient(["#87afff", "#3a5fcd"])
-          .multiline(` █████  ███████       ████████ ███████ ███████ ████████ 
-██   ██ ██               ██    ██      ██         ██    
-███████ ███████ █████    ██    █████   ███████    ██    
-██   ██      ██          ██    ██           ██    ██    
-██   ██ ███████          ██    ███████ ███████    ██    `),
-    );
-    console.log(
-      chalk.dim(
-        `\n----------------------- v${version} -----------------------\n`,
-      ),
+          .multiline(`╔═╗ ╔═╗    ╔═╗ ╔═╗ ╔═╗ ╔═╗
+╠═╣ ╚═╗ ══  ║  ╠═  ╚═╗  ║
+╩ ╩ ╚═╝     ╩  ╚═╝ ╚═╝  ╩ \n`),
     );
   }
 
@@ -119,7 +111,7 @@ export async function run() {
   const reporter = new Reporter(reports);
 
   if (reporter.failed.length) {
-    console.log(chalk.dim("----------------- [FAILED] -------------------\n"));
+    console.log("");
     for (const failed of reporter.failed) {
       console.log(
         `${chalk.bgRed(" FAIL ")} ${chalk.dim(failed.description)}\n`,
@@ -167,7 +159,7 @@ export async function run() {
     }
   }
 
-  console.log(chalk.dim("----------------- [RESULTS] ------------------\n"));
+  console.log("");
 
   process.stdout.write(chalk.bold("Files:  "));
   if (reporter.failedFiles) {
@@ -231,9 +223,11 @@ class Reporter {
   readFile(file: any) {
     let failed = false;
     for (const suite of file) {
+      let suiteFailed = false;
       if (suite.verdict == "fail") {
         failed = true;
         this.failedSuites++;
+        suiteFailed = true;
       } else {
         this.passedSuites++;
       }
@@ -242,16 +236,19 @@ class Reporter {
         this.readSuite(subSuite);
       }
       for (const test of suite.tests) {
-        if (test.verdict == "fail") this.failed.push(suite);
+        if (test.verdict == "fail") suiteFailed = true;
         this.readTest(test);
       }
+      if (suiteFailed) this.failed.push(suite);
     }
     if (failed) this.failedFiles++;
     else this.passedFiles++;
   }
   readSuite(suite: any) {
+    let suiteFailed = false;
     if (suite.verdict == "fail") {
       this.failedSuites++;
+      suiteFailed = true;
     } else {
       this.passedSuites++;
     }
@@ -260,9 +257,10 @@ class Reporter {
       this.readSuite(subSuite);
     }
     for (const test of suite.tests) {
-      if (test.verdict == "fail") this.failed.push(suite);
+      if (test.verdict == "fail") suiteFailed = true;
       this.readTest(test);
     }
+    if (suiteFailed) this.failed.push(suite);
   }
   readTest(test: any) {
     if (test.verdict == "fail") {

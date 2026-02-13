@@ -4,6 +4,7 @@ import chalk from "chalk";
 import { build } from "./build.js";
 import { run } from "./run.js";
 import { init } from "./init.js";
+import { getCliVersion } from "./util.js";
 
 const _args = process.argv.slice(2);
 const flags: string[] = [];
@@ -11,7 +12,7 @@ const args: string[] = [];
 
 const COMMANDS: string[] = ["run", "build", "test", "init"];
 
-const version = "0.3.5";
+const version = getCliVersion();
 
 for (const arg of _args) {
   if (arg.startsWith("-")) flags.push(arg);
