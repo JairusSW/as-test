@@ -10,4 +10,5 @@ export class Tests {
   public right: JSON.Raw = JSON.Raw.from("");
   public instr: string = "";
   public message: string = "";
+  public location: string = "";
 }

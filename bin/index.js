@@ -4,11 +4,13 @@ import { build } from "./build.js";
 import { run } from "./run.js";
 import { init } from "./init.js";
 import { getCliVersion } from "./util.js";
+import * as path from "path";
 const _args = process.argv.slice(2);
 const flags = [];
 const args = [];
 const COMMANDS = ["run", "build", "test", "init"];
 const version = getCliVersion();
+const configPath = resolveConfigPath(_args);
 for (const arg of _args) {
     if (arg.startsWith("-"))
         flags.push(arg);
@@ -25,15 +27,20 @@ if (!args.length) {
 }
 else if (COMMANDS.includes(args[0])) {
     const command = args.shift();
+    const runFlags = {
+        snapshot: !flags.includes("--no-snapshot"),
+        updateSnapshots: flags.includes("--update-snapshots"),
+        clean: flags.includes("--clean"),
+    };
     if (command === "build") {
-        build();
+        build(configPath);
     }
     else if (command === "run") {
-        run();
+        run(runFlags, configPath);
     }
     else if (command === "test") {
-        build().then(() => {
-            run();
+        build(configPath).then(() => {
+            run(runFlags, configPath);
         });
     }
     else if (command === "init") {
@@ -85,63 +92,63 @@ function info() {
     console.log("  " +
         chalk.bold.magentaBright("init") +
         "       " +
-        chalk.strikethrough.dim("") +
-        "                       " +
         "Initialize an empty testing template");
-    console.log("  " +
-        chalk.strikethrough.bold.magentaBright("config") +
-        "     " +
-        chalk.strikethrough.dim("as-test.config.json") +
-        "    " +
-        "Specify the configuration file");
-    console.log("  " +
-        chalk.strikethrough.bold.magentaBright("reporter") +
-        "   " +
-        chalk.strikethrough.dim("<tap>") +
-        "                  " +
-        "Specify the test reporter to use");
-    console.log("  " +
-        chalk.strikethrough.bold.magentaBright("use") +
-        "        " +
-        chalk.strikethrough.dim("wasmtime") +
-        "               " +
-        "Specify the runtime to use" +
-        "\n");
+    console.log("");
     console.log(chalk.bold("Flags:"));
     console.log("  " +
-        chalk.strikethrough.dim("run") +
-        "        " +
-        chalk.strikethrough.bold.blue("--coverage") +
-        "             " +
-        "Use code coverage");
-    console.log("  " +
-        chalk.strikethrough.dim("run") +
-        "        " +
-        chalk.strikethrough.bold.blue("--snapshot") +
-        "             " +
-        "Take a snapshot of the tests");
-    console.log("  " +
-        chalk.strikethrough.dim("use") +
-        "        " +
-        chalk.strikethrough.bold.blue("--list") +
-        "                 " +
-        "List supported runtimes");
-    console.log("  " +
-        chalk.strikethrough.dim("reporter") +
+        chalk.dim("build/run/test") +
         "   " +
-        chalk.strikethrough.bold.blue("--list") +
-        "                 " +
-        "List supported reporters");
+        chalk.bold.blue("--config <path>") +
+        "       " +
+        "Use a specific config file");
     console.log("  " +
-        chalk.strikethrough.dim("<command>") +
-        "  " +
-        chalk.strikethrough.bold.blue("--help") +
-        "                 " +
-        "Print info about command" +
-        "\n");
+        chalk.dim("run/test") +
+        "   " +
+        chalk.bold.blue("--snapshot") +
+        "             " +
+        "Snapshot assertions (enabled by default)");
+    console.log("  " +
+        chalk.dim("run/test") +
+        "   " +
+        chalk.bold.blue("--update-snapshots") +
+        "     " +
+        "Create/update snapshot files on mismatch");
+    console.log("  " +
+        chalk.dim("run/test") +
+        "   " +
+        chalk.bold.blue("--no-snapshot") +
+        "          " +
+        "Disable snapshot assertions for this run");
+    console.log("  " +
+        chalk.dim("run/test") +
+        "   " +
+        chalk.bold.blue("--clean") +
+        "                " +
+        "Minimal output (summary-first)");
+    console.log("");
     console.log(chalk.dim("If your using this, consider dropping a star, it would help a lot!") + "\n");
     console.log("View the repo:                   " +
         chalk.magenta("https://github.com/JairusSW/as-test"));
     console.log("View the docs:                   " +
-        chalk.strikethrough.blue("https://docs.jairus.dev/as-test"));
+        chalk.blue("https://docs.jairus.dev/as-test"));
+}
+function resolveConfigPath(rawArgs) {
+    for (let i = 0; i < rawArgs.length; i++) {
+        const arg = rawArgs[i];
+        if (arg == "--config") {
+            const next = rawArgs[i + 1];
+            if (next && !next.startsWith("-")) {
+                return path.resolve(process.cwd(), next);
+            }
+            return undefined;
+        }
+        if (arg.startsWith("--config=")) {
+            const value = arg.slice("--config=".length);
+            if (value.length) {
+                return path.resolve(process.cwd(), value);
+            }
+            return undefined;
+        }
+    }
+    return undefined;
 }

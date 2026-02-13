@@ -1,11 +1,10 @@
-import { rainbow } from "as-rainbow";
 import { Suite } from "./src/suite";
 import { Expectation } from "./src/expectation";
 import { stringify } from "as-console/stringify";
 import { __COVER, __HASHES, __POINTS } from "as-test/assembly/coverage";
 import { JSON } from "json-as";
-import { term } from "./util/term";
 import { Log } from "./src/log";
+import { sendFileEnd, sendFileStart, sendReport } from "./util/wipc";
 
 let entrySuites: Suite[] = [];
 
@@ -145,8 +144,12 @@ export function it(description: string, callback: () => void): void {
  * });
  * ```
  */
-export function expect<T>(value: T, message: string = ""): Expectation<T> {
-  const test = new Expectation<T>(value, message);
+export function expect<T>(
+  value: T,
+  message: string = "",
+  location: string = "",
+): Expectation<T> {
+  const test = new Expectation<T>(value, message, snapshotKey(), location);
 
   if (current_suite) {
     current_suite!.addExpectation(test);
@@ -178,7 +181,6 @@ export function log<T>(data: T): void {
         current_suite!.addLog(new Log(line));
       }
     }
-    term.write("\n");
   }
 }
 
@@ -263,15 +265,10 @@ class RunOptions {
  * ```
  */
 export function run(options: RunOptions = new RunOptions()): void {
-  // const buf = new ArrayBuffer(20);
-  // const bytes = process.stdin.read(buf);
-  // const stdinLn = term.write(String.UTF8.decodeUnsafe(changetype<usize>(buf), bytes) + "\n");
   __test_options = options;
   const time = new Time();
-  const fileLn = term.write(
-    `${rainbow.bgCyanBright(" FILE ")} ${rainbow.dimMk(FILE)}\n`,
-  );
-  term.write("\n");
+  let fileVerdict = "none";
+  sendFileStart(FILE);
   time.start = performance.now();
   for (let i = 0; i < entrySuites.length; i++) {
     // @ts-ignore
@@ -283,33 +280,32 @@ export function run(options: RunOptions = new RunOptions()): void {
     current_suite = null;
 
     suite.run();
+    if (suite.verdict == "fail") {
+      fileVerdict = "fail";
+    } else if (fileVerdict != "fail" && suite.verdict == "ok") {
+      fileVerdict = "ok";
+    }
 
     suites = [];
     depth = -1;
     current_suite = null;
   }
   time.end = performance.now();
-  fileLn.edit(
-    `${rainbow.bgCyanBright(" FILE ")} ${rainbow.dimMk(FILE)} ${rainbow.dimMk(time.format())}`,
-  );
-  const reportText = JSON.stringify(entrySuites);
-  const chunk_size = 48;
-  let chunks = reportText.length / chunk_size;
-  let index = 0;
-  term.write("\x1B[8m\n").clear(); // Hide text (so that the cursor doesn't flash for a moment)
-  while (chunks--) {
-    term
-      .write(
-        "READ_LINE" +
-          reportText.slice(index, (index += chunk_size)) +
-          "END_LINE\n",
-      )
-      .clear(); // Write a line and then clear it, making it invisible
+  sendFileEnd(FILE, fileVerdict, time.format());
+  sendReport(JSON.stringify(entrySuites));
+}
+
+function snapshotKey(): string {
+  if (!current_suite) return FILE + "::global::0";
+  const suite = current_suite!;
+  const parts = new Array<string>();
+  let cursor: Suite | null = suite;
+  while (cursor) {
+    parts.unshift(cursor.description);
+    cursor = cursor.parent;
   }
-  if (index < reportText.length) {
-    term.write("READ_LINE" + reportText.slice(index) + "END_LINE\n").clear();
-  }
-  term.write("\x1B[0m\n").clear(); // Un-hide text
+  const path = parts.join(" > ");
+  return FILE + "::" + path + "::" + suite.tests.length.toString();
 }
 
 export class Result {

@@ -2,11 +2,13 @@ import { Transform } from "assemblyscript/dist/transform.js";
 import { Node, Source, Tokenizer, } from "assemblyscript/dist/assemblyscript.js";
 import { CoverageTransform } from "./coverage.js";
 import { MockTransform } from "./mock.js";
+import { LocationTransform } from "./location.js";
 import { isStdlib } from "./util.js";
 export default class Transformer extends Transform {
     afterParse(parser) {
         const mock = new MockTransform();
         const coverage = new CoverageTransform();
+        const location = new LocationTransform();
         const sources = parser.sources
             .filter((source) => !isStdlib(source))
             .sort((_a, _b) => {
@@ -30,6 +32,7 @@ export default class Transformer extends Transform {
             source.statements.unshift(node);
             mock.visit(source);
             coverage.visit(source);
+            location.visit(source);
             if (coverage.globalStatements.length) {
                 source.statements.unshift(...coverage.globalStatements);
                 const tokenizer = new Tokenizer(new Source(0, source.normalizedPath, 'import { __REGISTER, __COVER } from "as-test/assembly/coverage";'));

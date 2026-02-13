@@ -63,6 +63,16 @@ Truthy/falsy behavior follows framework-specific checks for strings, numbers, nu
 - `toHaveLength(length)`
 - `toContain(item)`
 
+## Snapshots
+
+- `toMatchSnapshot(name?: string)`
+
+Behavior:
+- Snapshot comparison is handled by the host through WIPC.
+- Without a name, the matcher uses the generated assertion key.
+- With a name, the key is suffixed with `::name`.
+- Missing/mismatched snapshots fail in read-only mode and are written in update mode.
+
 ## Hook Execution
 
 Hook semantics that affect assertions:

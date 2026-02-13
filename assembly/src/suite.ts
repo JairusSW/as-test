@@ -1,10 +1,9 @@
-import { rainbow } from "as-rainbow";
 import { Time } from "..";
 import { Expectation } from "./expectation";
 import { Tests } from "./tests";
-import { term } from "../util/term";
 import { Log } from "./log";
 import { after_each_callback, before_each_callback } from "..";
+import { sendSuiteEnd, sendSuiteStart } from "../util/wipc";
 
 
 @json
@@ -20,6 +19,9 @@ export class Suite {
   public tests: Tests[] = [];
   public logs: Log[] = [];
   public kind: string;
+
+  @omit
+  public parent: Suite | null = null;
 
   public verdict: string = "none";
 
@@ -39,6 +41,7 @@ export class Suite {
     this.suites.push(suite);
     suite.depth = this.depth + 1;
     suite.file = this.file;
+    suite.parent = this;
   }
   addLog(log: Log): void {
     log.order = this.order++;
@@ -53,11 +56,7 @@ export class Suite {
     // @ts-ignore
     depth++;
     this.time.start = performance.now();
-    const suiteDepth = "  ".repeat(this.depth + 1);
-    const suiteLn = term.write(
-      `${suiteDepth}${rainbow.bgBlackBright(" ... ")} ${rainbow.dimMk(this.description)}\n`,
-    );
-    term.write("\n");
+    sendSuiteStart(this.file, this.depth, this.kind, this.description);
     const isTestCase =
       this.kind == "test" ||
       this.kind == "it" ||
@@ -95,18 +94,15 @@ export class Suite {
     }
 
     if (this.verdict == "fail") {
-      suiteLn.edit(
-        `${suiteDepth}${rainbow.bgRed(" FAIL ")} ${rainbow.dimMk(this.description)}\n`,
-      );
     } else if (!suiteNone || this.tests.length) {
       this.verdict = "ok";
-      suiteLn.edit(
-        `${suiteDepth}${rainbow.bgGreenBright(" PASS ")} ${rainbow.dimMk(this.description)}\n`,
-      );
-    } else {
-      suiteLn.edit(
-        `${suiteDepth}${rainbow.bgBlackBright(" EMPTY ")} ${rainbow.dimMk(this.description)}\n`,
-      );
     }
+    sendSuiteEnd(
+      this.file,
+      this.depth,
+      this.kind,
+      this.description,
+      this.verdict,
+    );
   }
 }

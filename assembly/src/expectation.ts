@@ -1,6 +1,7 @@
 import { visualize } from "../util/helpers";
 import { Tests } from "./tests";
 import { JSON } from "json-as";
+import { sendAssertionFailure, snapshotAssert } from "../util/wipc";
 
 
 @json
@@ -23,10 +24,24 @@ export class Expectation<T> extends Tests {
   @omit
   private _message: string = "";
 
-  constructor(left: T, message: string = "") {
+  @omit
+  private _snapshotKey: string = "";
+
+  @omit
+  private _location: string = "";
+
+  constructor(
+    left: T,
+    message: string = "",
+    snapshotKey: string = "",
+    location: string = "",
+  ) {
     super();
     this._left = left;
     this._message = message;
+    this._snapshotKey = snapshotKey;
+    this._location = location;
+    this.location = location;
   }
 
   get not(): Expectation<T> {
@@ -46,6 +61,9 @@ export class Expectation<T> extends Tests {
     this.left.set(left);
     this.right.set(right);
     this.message = isFail ? this._message : "";
+    if (isFail) {
+      sendAssertionFailure(this._snapshotKey, instr, left, right, this.message);
+    }
     this._not = false;
   }
 
@@ -295,6 +313,18 @@ export class Expectation<T> extends Tests {
       q("includes value"),
       q("does not include value"),
     );
+  }
+
+  /**
+   * Tests if serialized value matches stored snapshot.
+   */
+  toMatchSnapshot(name: string = ""): void {
+    let key = this._snapshotKey;
+    if (name.length) key += "::" + name;
+
+    const actual = JSON.stringify<T>(this._left);
+    const res = snapshotAssert(key, actual);
+    this._resolve(res.ok, "toMatchSnapshot", actual, res.expected);
   }
 
   /**

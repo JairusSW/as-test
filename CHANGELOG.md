@@ -8,6 +8,7 @@
 - fix: `toBeInteger()` / `toBeFloat()` expected type labels were swapped and are now corrected
 - fix: `beforeEach` / `afterEach` now execute once per test case instead of once per matcher call
 - fix: `toBe()` now handles non-primitive values via JSON serialization fallback instead of returning `"none"`
+- fix: failed assertion summaries now include `file:line:column` source locations when available
 
 ### New Features
 
@@ -15,15 +16,21 @@
 - feat: add `toBeCloseTo()` assertion for floating-point comparison with configurable precision
 - feat: add `toMatch()` assertion for string substring matching
 - feat: add optional custom failure message to `expect(value, message)`
+- feat: add `toMatchSnapshot(name?)` matcher with host-managed snapshot storage
+- feat: add CLI snapshot flags `--snapshot` and `--update-snapshots`
 
 ### Refactors
 
 - refactor: extract shared assertion result handling into `_resolve()` helper
+- refactor: switch bindings test transport to WIPC frames for host/guest communication
+- refactor: move assertion failure reporting to host in real-time via WIPC events
+- refactor: simplify live progress output to file-level status lines (`PASS/FAIL <file> <time>`) for cleaner terminal output
 
 ### Documentation
 
 - docs: rewrite `README.md` to match current CLI/runtime behavior and usage
 - docs: add matcher reference at `docs/assertions.md`
+- docs: document snapshot workflow and WIPC host-reporting behavior
 
 ## 2025-05-28 - v0.4.4
 

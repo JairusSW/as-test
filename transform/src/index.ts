@@ -9,6 +9,7 @@ import {
 } from "assemblyscript/dist/assemblyscript.js";
 import { CoverageTransform } from "./coverage.js";
 import { MockTransform } from "./mock.js";
+import { LocationTransform } from "./location.js";
 import { isStdlib } from "./util.js";
 
 export default class Transformer extends Transform {
@@ -17,6 +18,7 @@ export default class Transformer extends Transform {
     // Create new transform
     const mock = new MockTransform();
     const coverage = new CoverageTransform();
+    const location = new LocationTransform();
 
     // Sort the sources so that user scripts are visited last
     const sources = parser.sources
@@ -54,6 +56,7 @@ export default class Transformer extends Transform {
       source.statements.unshift(node);
       mock.visit(source);
       coverage.visit(source);
+      location.visit(source);
       if (coverage.globalStatements.length) {
         source.statements.unshift(...coverage.globalStatements);
         const tokenizer = new Tokenizer(

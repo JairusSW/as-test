@@ -4,10 +4,10 @@ import chalk from "chalk";
 import { execSync } from "child_process";
 import * as path from "path";
 import { getPkgRunner, loadConfig } from "./util.js";
-const CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
+const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 const PKG_PATH = path.join(process.cwd(), "./package.json");
-export async function build() {
-    let config = loadConfig(CONFIG_PATH, true);
+export async function build(configPath = DEFAULT_CONFIG_PATH) {
+    let config = loadConfig(configPath, true);
     const ASCONFIG_PATH = path.join(process.cwd(), config.config);
     if (config.config && config.config !== "none" && !existsSync(ASCONFIG_PATH)) {
         console.log(`${chalk.bgMagentaBright(" WARN ")}${chalk.dim(":")} Could not locate asconfig.json file! If you do not want to provide a config, set "config": "none"`);

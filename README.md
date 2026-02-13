@@ -4,6 +4,8 @@ A lightweight test framework for AssemblyScript.
 
 `as-test` provides a familiar `describe/test/expect` API, compiles test files to WebAssembly, runs them with your configured runtime, and prints a concise terminal report.
 
+For bindings-based runs, result reporting is host-driven over WIPC. The guest runtime emits only WIPC frames and panic/abort output.
+
 ## Installation
 
 ```bash
@@ -85,6 +87,7 @@ Available matchers:
 - `toMatch(substring)`
 - `toHaveLength(length)`
 - `toContain(item)`
+- `toMatchSnapshot(name?)`
 
 Detailed matcher notes and examples: `docs/assertions.md`.
 
@@ -96,6 +99,13 @@ Commands:
 - `as-test run`: execute compiled tests with configured runtime
 - `as-test test`: build, then run
 - `as-test init`: scaffold test setup
+
+Snapshot flags:
+
+- `as-test run --snapshot`: enable snapshot assertions in read-only mode
+- `as-test run --update-snapshots`: create/update snapshot files
+- `as-test test --snapshot`: build + run with snapshots enabled
+- `as-test test --update-snapshots`: build + run + write snapshot updates
 
 Version:
 
@@ -135,6 +145,14 @@ Example:
 - `buildOptions.target` supports `bindings` and `wasi`.
 - For `bindings`, runtime command usually points to `tests/<name>.run.js` wrappers.
 - For `wasi`, install `@assemblyscript/wasi-shim`.
+
+## Snapshots
+
+- Snapshot files are written under `__snapshots__/`.
+- `toMatchSnapshot()` uses a deterministic key based on file, suite path, and assertion order.
+- `toMatchSnapshot("name")` appends a stable suffix for multiple snapshots in one test.
+- In read-only mode (`--snapshot`), missing/mismatched snapshots fail the run.
+- In update mode (`--update-snapshots`), missing/mismatched snapshots are written and treated as pass.
 
 ## CI
 

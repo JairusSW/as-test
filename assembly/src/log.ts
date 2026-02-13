@@ -1,7 +1,3 @@
-import { rainbow } from "as-rainbow";
-import { term } from "../util/term";
-
-
 @json
 export class Log {
   public order: i32 = 0;
@@ -10,10 +6,5 @@ export class Log {
   constructor(text: string) {
     this.text = text;
   }
-  display(): void {
-    term.write(
-      "  ".repeat(this.depth + 1) +
-        `${rainbow.bgBlackBright(" LOG ")}${rainbow.dimMk(": " + this.text)}\n`,
-    );
-  }
+  display(): void {}
 }
