@@ -1,13 +1,18 @@
 export class Config {
+  $schema: string = "./as-test.config.schema.json";
   input: string[] = ["./assembly/__tests__/*.spec.ts"];
-  outDir: string = "./build";
-  logs: string = "./logs";
+  outDir: string = "./.as-test/build";
+  logs: string = "./.as-test/logs";
+  snapshotDir: string = "./.as-test/snapshots";
   config: string = "none";
-  plugins: {} = {
-    coverage: true,
-  };
+  coverage: boolean | CoverageOptions = true;
   buildOptions: BuildOptions = new BuildOptions();
   runOptions: RunOptions = new RunOptions();
+}
+
+export class CoverageOptions {
+  enabled: boolean = true;
+  includeSpecs: boolean = false;
 }
 
 export class Suite {
@@ -21,6 +26,7 @@ export class BuildOptions {
 
 export class RunOptions {
   runtime: Runtime = new Runtime();
+  reporter: string = "";
 }
 
 export class Runtime {

@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/JairusSW/as-test/blob/main/as-test.config.schema.json",
+  "title": "as-test configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "JSON Schema reference for editor validation/autocomplete."
+    },
+    "input": {
+      "type": "array",
+      "description": "Glob patterns for test specification files.",
+      "items": {
+        "type": "string"
+      },
+      "default": [
+        "./assembly/__tests__/*.spec.ts"
+      ]
+    },
+    "outDir": {
+      "type": "string",
+      "description": "Directory where compiled artifacts are written.",
+      "default": "./.as-test/build"
+    },
+    "logs": {
+      "description": "Directory for log artifacts, or \"none\" to disable.",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": "none"
+        }
+      ],
+      "default": "./.as-test/logs"
+    },
+    "snapshotDir": {
+      "type": "string",
+      "description": "Directory for snapshot files written by snapshot assertions.",
+      "default": "./.as-test/snapshots"
+    },
+    "config": {
+      "type": "string",
+      "description": "Reserved config field used by existing projects.",
+      "default": "none"
+    },
+    "coverage": {
+      "description": "Coverage settings. Use a boolean for quick toggle or object for options.",
+      "oneOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "includeSpecs": {
+              "type": "boolean",
+              "description": "Include *.spec.ts files in coverage collection.",
+              "default": false
+            }
+          }
+        }
+      ],
+      "default": true
+    },
+    "buildOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "target": {
+          "type": "string",
+          "enum": [
+            "wasi",
+            "bindings"
+          ],
+          "default": "wasi"
+        }
+      },
+      "default": {
+        "args": [],
+        "target": "wasi"
+      }
+    },
+    "runOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "runtime": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string",
+              "default": "wasmtime"
+            },
+            "run": {
+              "type": "string",
+              "description": "Runtime command; supports placeholders like <file> and <name>.",
+              "default": "wasmtime <file>"
+            }
+          },
+          "default": {
+            "name": "wasmtime",
+            "run": "wasmtime <file>"
+          }
+        },
+        "reporter": {
+          "type": "string",
+          "description": "Optional path to a custom reporter module.",
+          "default": ""
+        }
+      },
+      "default": {
+        "runtime": {
+          "name": "wasmtime",
+          "run": "wasmtime <file>"
+        },
+        "reporter": ""
+      }
+    }
+  }
+}

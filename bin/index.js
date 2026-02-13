@@ -31,6 +31,7 @@ else if (COMMANDS.includes(args[0])) {
         snapshot: !flags.includes("--no-snapshot"),
         updateSnapshots: flags.includes("--update-snapshots"),
         clean: flags.includes("--clean"),
+        showCoverage: flags.includes("--show-coverage"),
     };
     if (command === "build") {
         build(configPath);
@@ -125,6 +126,12 @@ function info() {
         chalk.bold.blue("--clean") +
         "                " +
         "Minimal output (summary-first)");
+    console.log("  " +
+        chalk.dim("run/test") +
+        "   " +
+        chalk.bold.blue("--show-coverage") +
+        "        " +
+        "Print all coverage points with line:column refs");
     console.log("");
     console.log(chalk.dim("If your using this, consider dropping a star, it would help a lot!") + "\n");
     console.log("View the repo:                   " +

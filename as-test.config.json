@@ -1,11 +1,11 @@
 {
+  "$schema": "./as-test.config.schema.json",
   "input": ["./assembly/__tests__/*.spec.ts"],
-  "outDir": "./build",
-  "logs": "./logs",
+  "outDir": "./.as-test/build",
+  "logs": "./.as-test/logs",
+  "snapshotDir": "./.as-test/snapshots",
   "config": "none",
-  "plugins": {
-    "coverage": false
-  },
+  "coverage": true,
   "buildOptions": {
     "args": [],
     "target": "bindings"

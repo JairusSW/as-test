@@ -9,6 +9,10 @@ describe("Math operations", () => {
     expect(5).toBeGreaterThan(3);
     expect(2).toBeLessThan(4);
   });
+
+  test("Approximation", () => {
+    expect(3.14159).toBeCloseTo(3.14, 2);
+  });
 });
 
 run({

@@ -18,6 +18,9 @@
 - feat: add optional custom failure message to `expect(value, message)`
 - feat: add `toMatchSnapshot(name?)` matcher with host-managed snapshot storage
 - feat: add CLI snapshot flags `--snapshot` and `--update-snapshots`
+- feat: add `as-test.config.schema.json` for config autocomplete and validation
+- feat: add `--show-coverage` to print every coverage point with line/column references
+- feat: support coverage config as boolean or object (`{ enabled, includeSpecs }`)
 
 ### Refactors
 
@@ -25,12 +28,19 @@
 - refactor: switch bindings test transport to WIPC frames for host/guest communication
 - refactor: move assertion failure reporting to host in real-time via WIPC events
 - refactor: simplify live progress output to file-level status lines (`PASS/FAIL <file> <time>`) for cleaner terminal output
+- refactor: move default CLI reporter to `cli/reporters/default.ts` and introduce an extensible reporter lifecycle interface
+- refactor: complete coverage plumbing from wasm runtime to host summary/report outputs
+- fix: dedupe coverage points across per-file wasm runs and report point locations by each point's real source file
+- fix: exclude `*.spec.ts`, `node_modules`, and as-test runtime files from coverage by default
+- refactor: remove generic `plugins` config usage and use top-level `coverage` config only
+- refactor: default generated outputs to `./.as-test/` (`build`, `logs`, and snapshots via `snapshotDir`)
 
 ### Documentation
 
 - docs: rewrite `README.md` to match current CLI/runtime behavior and usage
 - docs: add matcher reference at `docs/assertions.md`
 - docs: document snapshot workflow and WIPC host-reporting behavior
+- docs: add custom reporter authoring guide at `docs/reporters.md`
 
 ## 2025-05-28 - v0.4.4
 

@@ -106,6 +106,7 @@ Snapshot flags:
 - `as-test run --update-snapshots`: create/update snapshot files
 - `as-test test --snapshot`: build + run with snapshots enabled
 - `as-test test --update-snapshots`: build + run + write snapshot updates
+- `as-test run --show-coverage`: print all coverage points with line:column references
 
 Version:
 
@@ -114,19 +115,19 @@ Version:
 
 ## Configuration
 
-Default config file: `as-test.config.json`
+Default config file: `as-test.config.json` (generated artifacts default to `./.as-test/*`)
 
 Example:
 
 ```json
 {
+  "$schema": "./as-test.config.schema.json",
   "input": ["./assembly/__tests__/*.spec.ts"],
-  "outDir": "./build",
-  "logs": "./logs",
+  "outDir": "./.as-test/build",
+  "logs": "./.as-test/logs",
+  "snapshotDir": "./.as-test/snapshots",
   "config": "none",
-  "plugins": {
-    "coverage": false
-  },
+  "coverage": false,
   "buildOptions": {
     "args": [],
     "target": "bindings"
@@ -135,10 +136,16 @@ Example:
     "runtime": {
       "name": "node",
       "run": "node ./tests/<name>.run.js"
-    }
+    },
+    "reporter": ""
   }
 }
 ```
+
+`$schema` enables editor autocomplete and validation for `as-test.config.json`.
+
+`runOptions.reporter` is optional. Leave it empty to use the built-in reporter.
+If set, it must point to a JS/TS module exporting a reporter factory (see `docs/reporters.md`).
 
 ## Runtime Notes
 
@@ -148,15 +155,33 @@ Example:
 
 ## Snapshots
 
-- Snapshot files are written under `__snapshots__/`.
+- Snapshot files are written under `snapshotDir` (default: `./.as-test/snapshots/`).
 - `toMatchSnapshot()` uses a deterministic key based on file, suite path, and assertion order.
 - `toMatchSnapshot("name")` appends a stable suffix for multiple snapshots in one test.
 - In read-only mode (`--snapshot`), missing/mismatched snapshots fail the run.
 - In update mode (`--update-snapshots`), missing/mismatched snapshots are written and treated as pass.
 
+## Coverage
+
+- Coverage instrumentation is collected during test execution.
+- Configure coverage using either:
+  - `"coverage": true|false`
+  - `"coverage": { "enabled": true|false, "includeSpecs": false }`
+- When enabled:
+  - Terminal summary prints overall point coverage.
+  - `--show-coverage` prints every coverage point with `line:column` and hit/miss status.
+  - If `logs` is not `"none"`, coverage data is written to `logs/coverage.log.json`.
+- By default, `*.spec.ts` files are excluded from coverage (`includeSpecs: false`).
+
 ## CI
 
 See `.github/workflows/as-test.yml` for a working CI example.
+
+## Custom Reporters
+
+Reporter extension docs and module contract:
+
+- `docs/reporters.md`
 
 ## License
 

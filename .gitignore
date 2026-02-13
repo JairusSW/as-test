@@ -1,6 +1,7 @@
 node_modules
 *.lock
 build
+.as-test
 pnpm-lock.yaml
 package-lock.json
 .vscode

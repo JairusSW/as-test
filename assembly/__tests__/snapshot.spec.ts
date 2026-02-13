@@ -8,7 +8,6 @@ describe("Snapshot support", () => {
 
   test("named snapshot", () => {
     expect("named-value").toMatchSnapshot("named");
-    expect("1").toBe("2")
   });
 });
 

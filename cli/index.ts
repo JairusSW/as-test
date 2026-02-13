@@ -33,6 +33,7 @@ if (!args.length) {
     snapshot: !flags.includes("--no-snapshot"),
     updateSnapshots: flags.includes("--update-snapshots"),
     clean: flags.includes("--clean"),
+    showCoverage: flags.includes("--show-coverage"),
   };
   if (command === "build") {
     build(configPath);
@@ -152,6 +153,14 @@ function info(): void {
       chalk.bold.blue("--clean") +
       "                " +
       "Minimal output (summary-first)",
+  );
+  console.log(
+    "  " +
+      chalk.dim("run/test") +
+      "   " +
+      chalk.bold.blue("--show-coverage") +
+      "        " +
+      "Print all coverage points with line:column refs",
   );
   console.log("");
 

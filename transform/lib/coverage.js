@@ -350,6 +350,10 @@ export class CoverageTransform extends Visitor {
         if (node.visited)
             return;
         node.visited = true;
+        if (!isConcreteSourceBlock(node)) {
+            super.visitBlockStatement(node);
+            return;
+        }
         const path = node.range.source.normalizedPath;
         const blockLc = getLineCol(node);
         const point = new CoverPoint();
@@ -413,5 +417,12 @@ function getLineCol(node) {
         line: node.range.source.lineAt(node.range.start),
         column: node.range.source.columnAt(),
     };
+}
+function isConcreteSourceBlock(node) {
+    const source = node.range.source;
+    const start = node.range.start;
+    if (start < 0 || start >= source.text.length)
+        return false;
+    return source.text.charCodeAt(start) == 123;
 }
 //# sourceMappingURL=coverage.js.map

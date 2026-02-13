@@ -25,8 +25,9 @@ export async function init(args) {
     console.log(chalk.dim(`  ├── 📂 assembly/
   │    └── 📂 __tests__/
   │         └── 🧪 example.spec.ts
-  ├── 📂 build/
-  ├── 📂 logs/
+  ├── 📂 .as-test/
+  │    ├── 📂 build/
+  │    └── 📂 logs/
   ├── 📂 tests/
   │    └── 📃 as-test.run.js
   ├── ⚙️  as-test.config.json
@@ -37,6 +38,7 @@ export async function init(args) {
         process.exit(0);
     }
     let config = loadConfig(path.join(process.cwd(), "./as-test.config.json"));
+    config.$schema = "./as-test.config.schema.json";
     if (target == "wasi" && config.buildOptions.target != "wasi") {
         config.buildOptions.target = "wasi";
         config.runOptions.runtime.name = "wasmtime";
@@ -139,13 +141,13 @@ function sleep(ms: i64): void {
     const target = Date.now() + ms;
     while (target > Date.now()) { }
 }`);
-    writeDir("./build/");
-    writeDir("./logs/");
+    writeDir("./.as-test/build/");
+    writeDir("./.as-test/logs/");
     if (target == "bindings") {
         writeFile("./tests/example.run.js", `import { readFileSync } from "fs";
-import { instantiate } from "../build/example.spec.js";
+import { instantiate } from "../.as-test/build/example.spec.js";
 
-const binary = readFileSync("./build/example.spec.wasm");
+const binary = readFileSync("./.as-test/build/example.spec.wasm");
 const module = new WebAssembly.Module(binary);
 
 const exports = instantiate(module, {});`);

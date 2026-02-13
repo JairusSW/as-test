@@ -1,7 +1,13 @@
 import { Suite } from "./src/suite";
 import { Expectation } from "./src/expectation";
 import { stringify } from "as-console/stringify";
-import { __COVER, __HASHES, __POINTS } from "as-test/assembly/coverage";
+import {
+  __COVER,
+  __POINTS,
+  __UNCOVERED,
+  __ALL_POINTS,
+  CoverPoint,
+} from "as-test/assembly/coverage";
 import { JSON } from "json-as";
 import { Log } from "./src/log";
 import { sendFileEnd, sendFileStart, sendReport } from "./util/wipc";
@@ -292,7 +298,65 @@ export function run(options: RunOptions = new RunOptions()): void {
   }
   time.end = performance.now();
   sendFileEnd(FILE, fileVerdict, time.format());
-  sendReport(JSON.stringify(entrySuites));
+  const report = new FileReport();
+  report.suites = entrySuites;
+  report.coverage = collectCoverage();
+  sendReport(JSON.stringify(report));
+}
+
+@json
+class CoverageReport {
+  total: i32 = 0;
+  covered: i32 = 0;
+  uncovered: i32 = 0;
+  percent: f64 = 100.0;
+  points: CoveragePointReport[] = [];
+}
+
+@json
+class CoveragePointReport {
+  hash: string = "";
+  file: string = "";
+  line: i32 = 0;
+  column: i32 = 0;
+  type: string = "";
+  executed: bool = false;
+}
+
+@json
+class FileReport {
+  suites: Suite[] = [];
+  coverage: CoverageReport = new CoverageReport();
+}
+
+function collectCoverage(): CoverageReport {
+  const out = new CoverageReport();
+  out.total = __POINTS();
+  out.uncovered = __UNCOVERED();
+  out.covered = out.total - out.uncovered;
+  if (out.total <= 0) {
+    out.percent = 100.0;
+  } else {
+    out.percent = (<f64>out.covered * 100.0) / <f64>out.total;
+  }
+
+  const points = __ALL_POINTS();
+  for (let i = 0; i < points.length; i++) {
+    const point = unchecked(points[i]);
+    out.points.push(toCoveragePointReport(point));
+  }
+  return out;
+}
+
+function toCoveragePointReport(point: CoverPoint): CoveragePointReport {
+  const out = new CoveragePointReport();
+  out.hash = point.hash;
+  out.file = point.file;
+  out.line = point.line;
+  out.column = point.column;
+  out.type = point.type;
+  out.executed = point.executed;
+  return out;
 }
 
 function snapshotKey(): string {

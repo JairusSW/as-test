@@ -1,5 +1,0 @@
-{
-  "snapshot.spec.ts::Snapshot support > string snapshot::0": "\"snapshot-value-v1\"",
-  "snapshot.spec.ts::Snapshot support > named snapshot::0::named": "\"named-value\"",
-  "snapshot.spec.ts::Snapshot support > named snapshot::1": "\"foo\""
-}
