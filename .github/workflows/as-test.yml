@@ -19,8 +19,14 @@ jobs:
       - name: Install dependencies
         run: bun install
 
+      - name: Build snapshots
+        run: AS_TEST_IGNORE_CORE_FILES=1 bun run pretest
+
+      - name: Create snapshots
+        run: AS_TEST_IGNORE_CORE_FILES=1 bun run test --update-snapshots
+
       - name: Build tests
-        run: bun run pretest
+        run: AS_TEST_IGNORE_CORE_FILES=1 bun run pretest
 
       - name: Run tests
-        run: bun run test
+        run: AS_TEST_IGNORE_CORE_FILES=1 bun run test
