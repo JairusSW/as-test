@@ -145,8 +145,8 @@ export function it(description: string, callback: () => void): void {
  * });
  * ```
  */
-export function expect<T>(value: T): Expectation<T> {
-  const test = new Expectation<T>(value);
+export function expect<T>(value: T, message: string = ""): Expectation<T> {
+  const test = new Expectation<T>(value, message);
 
   if (current_suite) {
     current_suite!.addExpectation(test);

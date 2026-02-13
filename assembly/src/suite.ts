@@ -4,6 +4,7 @@ import { Expectation } from "./expectation";
 import { Tests } from "./tests";
 import { term } from "../util/term";
 import { Log } from "./log";
+import { after_each_callback, before_each_callback } from "..";
 
 
 @json
@@ -57,7 +58,17 @@ export class Suite {
       `${suiteDepth}${rainbow.bgBlackBright(" ... ")} ${rainbow.dimMk(this.description)}\n`,
     );
     term.write("\n");
+    const isTestCase =
+      this.kind == "test" ||
+      this.kind == "it" ||
+      this.kind == "xtest" ||
+      this.kind == "xit";
+
+    // @ts-ignore
+    if (isTestCase && before_each_callback) before_each_callback();
     this.callback();
+    // @ts-ignore
+    if (isTestCase && after_each_callback) after_each_callback();
     this.time.end = performance.now();
     // @ts-ignore
     depth--;

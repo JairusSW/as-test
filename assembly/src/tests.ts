@@ -9,4 +9,5 @@ export class Tests {
   public left: JSON.Raw = JSON.Raw.from("");
   public right: JSON.Raw = JSON.Raw.from("");
   public instr: string = "";
+  public message: string = "";
 }

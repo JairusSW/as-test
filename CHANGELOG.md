@@ -1,5 +1,30 @@
 # Change Log
 
+## Unreleased
+
+### Bug Fixes
+
+- fix: `.not` modifier now correctly inverts assertion verdicts
+- fix: `toBeInteger()` / `toBeFloat()` expected type labels were swapped and are now corrected
+- fix: `beforeEach` / `afterEach` now execute once per test case instead of once per matcher call
+- fix: `toBe()` now handles non-primitive values via JSON serialization fallback instead of returning `"none"`
+
+### New Features
+
+- feat: add `toBeTruthy()` and `toBeFalsy()` assertions
+- feat: add `toBeCloseTo()` assertion for floating-point comparison with configurable precision
+- feat: add `toMatch()` assertion for string substring matching
+- feat: add optional custom failure message to `expect(value, message)`
+
+### Refactors
+
+- refactor: extract shared assertion result handling into `_resolve()` helper
+
+### Documentation
+
+- docs: rewrite `README.md` to match current CLI/runtime behavior and usage
+- docs: add matcher reference at `docs/assertions.md`
+
 ## 2025-05-28 - v0.4.4
 
 - deps: update json-as to `v1.1.13`

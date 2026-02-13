@@ -1,134 +1,145 @@
-<h1 align="center"><pre>╔═╗ ╔═╗    ╔═╗ ╔═╗ ╔═╗ ╔═╗
-╠═╣ ╚═╗ ══  ║  ╠═  ╚═╗  ║ 
-╩ ╩ ╚═╝     ╩  ╚═╝ ╚═╝  ╩ </pre></h1>
+# as-test
 
-A lightweight testing framework for AssemblyScript.
+A lightweight test framework for AssemblyScript.
 
-🔹 Minimal and fast – Run your tests without unnecessary overhead.
+`as-test` provides a familiar `describe/test/expect` API, compiles test files to WebAssembly, runs them with your configured runtime, and prints a concise terminal report.
 
-🔹 Familiar API – Inspired by modern JavaScript testing frameworks.
-
-🔹 Powerful mocking – Easily override functions and track calls.
-
-🔹 Seamless CI/CD integration – Works effortlessly in automation pipelines.
-
-🔹 Universal environment – Run your tests on any platform, runtime, or bindings.
-
-## 💾 Installation
+## Installation
 
 ```bash
-npm install as-test
-npm intall json-as
+npm install --save-dev as-test json-as
 ```
 
-Initialize your test setup with:
+Initialize a starter layout:
 
 ```bash
-as-test init
+npx as-test init
 ```
 
-This creates a test directory at `assembly/__tests__/` with a sample test file.
+## Quick Start
 
-## 📝 Writing Tests
+Create a spec file in `assembly/__tests__/math.spec.ts`:
 
-Create a new test file in `assembly/__tests__/`, for example, `math.spec.ts`:
-
-```js
+```ts
 import { describe, test, expect, run } from "as-test";
 
-describe("Math operations", () => {
-  test("Addition", () => {
+describe("math", () => {
+  test("addition", () => {
     expect(1 + 2).toBe(3);
   });
 
-  test("Subtraction", () => {
-    expect(5 - 2).toBe(3);
-  });
-
-  test("Multiplication", () => {
-    expect(3 * 3).toBe(9);
+  test("approx", () => {
+    expect(3.14159).toBeCloseTo(3.14, 2);
   });
 });
 
-run();
+run({ log: false });
 ```
 
-## 🔍 Examples
+Run tests:
 
-### 🏗️ Mocking Functions
-
-Use `mockFn` to override functions during testing:
-
-```js
-import { mockFn } from "as-test";
-
-// Mock console.log
-mockFn<void>("console.log", (data: string): void => {
-  console.log("[MOCKED]: " + data);
-});
-
-run();
+```bash
+npx as-test test
 ```
 
-Or override imported functions with `mockImport`.
+## Core API
 
-### ⚒️ Setup and Teardown
+- Suite builders:
+  - `describe(name, fn)`
+  - `test(name, fn)`
+  - `it(name, fn)`
+- Assertions:
+  - `expect(value)`
+  - `expect(value, message)` for custom failure context
+  - Negation: `expect(value).not.<matcher>()`
+- Hooks:
+  - `beforeAll(fn)`
+  - `afterAll(fn)`
+  - `beforeEach(fn)`
+  - `afterEach(fn)`
+- Logging:
+  - `log(value)` (pretty terminal-aware logging)
 
-Use `beforeAll` and `afterAll` to run code before and after a test is run.
+`beforeEach` and `afterEach` run once per test case (`test`/`it`), not once per assertion.
 
-```js
-import { beforeAll, afterAll } from "as-test";
+## Assertion Matchers
 
-beforeAll(() => {
-  log("Setting up test environment...");
-});
+Available matchers:
 
-afterAll(() => {
-  log("Tearing down test environment...");
-});
+- `toBe(expected)`
+- `toBeNull()`
+- `toBeGreaterThan(value)`
+- `toBeGreaterOrEqualTo(value)`
+- `toBeLessThan(value)`
+- `toBeLessThanOrEqualTo(value)`
+- `toBeString()`
+- `toBeBoolean()`
+- `toBeArray()`
+- `toBeNumber()`
+- `toBeInteger()`
+- `toBeFloat()`
+- `toBeFinite()`
+- `toBeTruthy()`
+- `toBeFalsy()`
+- `toBeCloseTo(expected, precision = 2)`
+- `toMatch(substring)`
+- `toHaveLength(length)`
+- `toContain(item)`
 
-run();
+Detailed matcher notes and examples: `docs/assertions.md`.
+
+## CLI
+
+Commands:
+
+- `as-test build`: compile test specs to artifacts in `outDir`
+- `as-test run`: execute compiled tests with configured runtime
+- `as-test test`: build, then run
+- `as-test init`: scaffold test setup
+
+Version:
+
+- `as-test --version`
+- `as-test -v`
+
+## Configuration
+
+Default config file: `as-test.config.json`
+
+Example:
+
+```json
+{
+  "input": ["./assembly/__tests__/*.spec.ts"],
+  "outDir": "./build",
+  "logs": "./logs",
+  "config": "none",
+  "plugins": {
+    "coverage": false
+  },
+  "buildOptions": {
+    "args": [],
+    "target": "bindings"
+  },
+  "runOptions": {
+    "runtime": {
+      "name": "node",
+      "run": "node ./tests/<name>.run.js"
+    }
+  }
+}
 ```
 
-### 📃 Pretty Logging
+## Runtime Notes
 
-Using `console.log` will mess up the terminal output. Instead, use the inbuilt `log` function:
+- `buildOptions.target` supports `bindings` and `wasi`.
+- For `bindings`, runtime command usually points to `tests/<name>.run.js` wrappers.
+- For `wasi`, install `@assemblyscript/wasi-shim`.
 
-```js
-import { log } from "as-test";
+## CI
 
-log("This is a pretty log function");
+See `.github/workflows/as-test.yml` for a working CI example.
 
-run();
-```
+## License
 
-Or override all existing `console.log` calls with `log`:
-
-```js
-import { mockFn, log } from "as-test";
-
-mockFn<void>("console.log", (data: string): void => {
-    log(data);
-});
-
-run();
-```
-
-### 🔄 Running Tests in CI
-
-To integrate `as-test` into your CI/CD workflow, see the [example configuration](https://github.com/JairusSW/as-test/blob/main/.github/workflows/as-test.yml).
-
-`assembly/__tests__/example.spec.ts`
-
-## 📃 License
-
-This project is distributed under an open source license. You can view the full license using the following link: [License](./LICENSE)
-
-## 📫 Contact
-
-Please send all issues to [GitHub Issues](https://github.com/JairusSW/as-test/issues) and to converse, please send me an email at [me@jairus.dev](mailto:me@jairus.dev)
-
-- **Email:** Send me inquiries, questions, or requests at [me@jairus.dev](mailto:me@jairus.dev)
-- **GitHub:** Visit the official GitHub repository [Here](https://github.com/JairusSW/as-test)
-- **Website:** Visit my official website at [jairus.dev](https://jairus.dev/)
-- **Discord:** Contact me at [My Discord](https://discord.com/users/600700584038760448) or on the [AssemblyScript Discord Server](https://discord.gg/assemblyscript/)
+MIT. See `LICENSE`.
