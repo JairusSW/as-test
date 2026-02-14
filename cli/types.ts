@@ -30,6 +30,6 @@ export class RunOptions {
 }
 
 export class Runtime {
-  name: string = "wasmtime";
-  run: string = "wasmtime <file>";
+  name: string = "node-wasi";
+  run: string = "node ./bin/wasi-run.js <file>";
 }

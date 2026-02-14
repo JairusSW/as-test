@@ -6,11 +6,34 @@ declare function process_stdout_write(data: ArrayBuffer): void;
 @external("env", "process.stdin.read")
 declare function process_stdin_read(max: i32): ArrayBuffer;
 
+// @ts-ignore
+@external("wasi_snapshot_preview1", "fd_write")
+declare function wasi_fd_write(
+  fd: i32,
+  iovs: usize,
+  iovsLen: i32,
+  written: usize,
+): i32;
+
+// @ts-ignore
+@external("wasi_snapshot_preview1", "fd_read")
+declare function wasi_fd_read(
+  fd: i32,
+  iovs: usize,
+  iovsLen: i32,
+  read: usize,
+): i32;
+
 const MAGIC_W: u8 = 0x57; // W
 const MAGIC_I: u8 = 0x49; // I
 const MAGIC_P: u8 = 0x50; // P
 const MAGIC_C: u8 = 0x43; // C
 const HEADER_SIZE: i32 = 9;
+const IOV_SIZE: usize = sizeof<usize>() * 2;
+const U32_SIZE: usize = sizeof<u32>();
+
+// @ts-ignore
+const IS_BINDINGS: bool = isDefined(AS_TEST_BINDINGS);
 
 enum MessageType {
   OPEN = 0x00,
@@ -121,7 +144,7 @@ function sendFrame(type: MessageType, payload: ArrayBuffer): void {
     memory.copy(ptr + HEADER_SIZE, changetype<usize>(payload), payloadLen);
   }
 
-  process_stdout_write(out);
+  writeStdout(out);
 }
 
 class Frame {
@@ -154,7 +177,7 @@ function readExact(length: i32): ArrayBuffer {
   const out = new ArrayBuffer(length);
   let offset = 0;
   while (offset < length) {
-    const chunk = process_stdin_read(length - offset);
+    const chunk = readStdin(length - offset);
     const size = chunk.byteLength;
     if (!size) break;
     memory.copy(
@@ -171,6 +194,68 @@ function readExact(length: i32): ArrayBuffer {
   if (offset) {
     memory.copy(changetype<usize>(partial), changetype<usize>(out), offset);
   }
+  return partial;
+}
+
+function writeStdout(data: ArrayBuffer): void {
+  if (IS_BINDINGS) {
+    process_stdout_write(data);
+    return;
+  }
+  wasiWriteAll(data);
+}
+
+function readStdin(max: i32): ArrayBuffer {
+  if (max <= 0) return new ArrayBuffer(0);
+  if (IS_BINDINGS) {
+    return process_stdin_read(max);
+  }
+  return wasiRead(max);
+}
+
+function wasiWriteAll(data: ArrayBuffer): void {
+  const total = data.byteLength;
+  if (!total) return;
+
+  const iovec = new ArrayBuffer(<i32>IOV_SIZE);
+  const writtenBuf = new ArrayBuffer(<i32>U32_SIZE);
+  let offset: i32 = 0;
+  while (offset < total) {
+    const left = total - offset;
+    const ptr = changetype<usize>(data) + <usize>offset;
+    const iovPtr = changetype<usize>(iovec);
+    const writtenPtr = changetype<usize>(writtenBuf);
+    store<usize>(iovPtr, ptr, 0);
+    store<usize>(iovPtr, <usize>left, sizeof<usize>());
+    store<u32>(writtenPtr, 0, 0);
+    const errno = wasi_fd_write(1, iovPtr, 1, writtenPtr);
+    if (errno != 0) return;
+    const written = <i32>load<u32>(writtenPtr, 0);
+    if (written <= 0) return;
+    offset += written;
+  }
+}
+
+function wasiRead(max: i32): ArrayBuffer {
+  const out = new ArrayBuffer(max);
+  const iovec = new ArrayBuffer(<i32>IOV_SIZE);
+  const readBuf = new ArrayBuffer(<i32>U32_SIZE);
+  const iovPtr = changetype<usize>(iovec);
+  const readPtr = changetype<usize>(readBuf);
+
+  store<usize>(iovPtr, changetype<usize>(out), 0);
+  store<usize>(iovPtr, <usize>max, sizeof<usize>());
+  store<u32>(readPtr, 0, 0);
+
+  const errno = wasi_fd_read(0, iovPtr, 1, readPtr);
+  if (errno != 0) return new ArrayBuffer(0);
+
+  const size = <i32>load<u32>(readPtr, 0);
+  if (size <= 0) return new ArrayBuffer(0);
+  if (size == max) return out;
+
+  const partial = new ArrayBuffer(size);
+  memory.copy(changetype<usize>(partial), changetype<usize>(out), size);
   return partial;
 }
 

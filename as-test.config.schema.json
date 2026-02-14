@@ -105,17 +105,17 @@
           "properties": {
             "name": {
               "type": "string",
-              "default": "wasmtime"
+              "default": "node-wasi"
             },
             "run": {
               "type": "string",
               "description": "Runtime command; supports placeholders like <file> and <name>.",
-              "default": "wasmtime <file>"
+              "default": "node ./bin/wasi-run.js <file>"
             }
           },
           "default": {
-            "name": "wasmtime",
-            "run": "wasmtime <file>"
+            "name": "node-wasi",
+            "run": "node ./bin/wasi-run.js <file>"
           }
         },
         "reporter": {
@@ -126,8 +126,8 @@
       },
       "default": {
         "runtime": {
-          "name": "wasmtime",
-          "run": "wasmtime <file>"
+          "name": "node-wasi",
+          "run": "node ./bin/wasi-run.js <file>"
         },
         "reporter": ""
       }

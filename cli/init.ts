@@ -50,8 +50,8 @@ export async function init(args: string[]) {
   config.$schema = "./as-test.config.schema.json";
   if (target == "wasi" && config.buildOptions.target != "wasi") {
     config.buildOptions.target = "wasi";
-    config.runOptions.runtime.name = "wasmtime";
-    config.runOptions.runtime.run = "wasmtime <file>";
+    config.runOptions.runtime.name = "node-wasi";
+    config.runOptions.runtime.run = "node ./bin/wasi-run.js <file>";
   } else if (target == "bindings" && config.buildOptions.target != "bindings") {
     config.buildOptions.target = "bindings";
     config.runOptions.runtime.name = "node";

@@ -36,7 +36,7 @@ export class RunOptions {
 }
 export class Runtime {
     constructor() {
-        this.name = "wasmtime";
-        this.run = "wasmtime <file>";
+        this.name = "node-wasi";
+        this.run = "node ./bin/wasi-run.js <file>";
     }
 }

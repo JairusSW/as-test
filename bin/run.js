@@ -181,20 +181,17 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH) {
     for (let i = 0; i < inputFiles.length; i++) {
         const file = inputFiles[i];
         const outFile = path.join(config.outDir, file.slice(file.lastIndexOf("/") + 1).replace(".ts", ".wasm"));
+        const fileBase = file
+            .slice(file.lastIndexOf("/") + 1)
+            .replace(".ts", "")
+            .replace(".spec", "");
         let cmd = config.runOptions.runtime.run.replace(command, execPath);
-        if (config.buildOptions.target == "bindings") {
-            if (cmd.includes("<name>")) {
-                cmd = cmd.replace("<name>", file
-                    .slice(file.lastIndexOf("/") + 1)
-                    .replace(".ts", "")
-                    .replace(".spec", ""));
-            }
-            else {
-                cmd = cmd.replace("<file>", outFile
-                    .replace("build", "tests")
-                    .replace(".spec", "")
-                    .replace(".wasm", ".run.js"));
-            }
+        cmd = cmd.replace("<name>", fileBase);
+        if (config.buildOptions.target == "bindings" && !cmd.includes("<file>")) {
+            cmd = cmd.replace("<file>", outFile
+                .replace("build", "tests")
+                .replace(".spec", "")
+                .replace(".wasm", ".run.js"));
         }
         else {
             cmd = cmd.replace("<file>", outFile);

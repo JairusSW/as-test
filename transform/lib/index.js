@@ -26,6 +26,8 @@ export default class Transformer extends Transform {
         });
         const entryFile = sources.find((v) => v.sourceKind == 1).simplePath;
         for (const source of sources) {
+            const shouldInjectRunCall = source.sourceKind == 1 &&
+                shouldAutoInjectRun(source.text);
             const node = Node.createVariableStatement(null, [
                 Node.createVariableDeclaration(Node.createIdentifierExpression("ENTRY_FILE", source.range), null, 8, null, Node.createStringLiteralExpression(entryFile + ".ts", source.range), source.range),
             ], source.range);
@@ -33,6 +35,20 @@ export default class Transformer extends Transform {
             mock.visit(source);
             coverage.visit(source);
             location.visit(source);
+            if (shouldInjectRunCall) {
+                const runImportPath = detectRunImportPath(source.text);
+                let runCall = "run();";
+                if (runImportPath) {
+                    const autoImport = new Tokenizer(new Source(0, source.normalizedPath, `import { run as __as_test_auto_run } from "${runImportPath}";`));
+                    parser.currentSource = autoImport.source;
+                    source.statements.unshift(parser.parseTopLevelStatement(autoImport));
+                    runCall = "__as_test_auto_run();";
+                }
+                const autoCall = new Tokenizer(new Source(0, source.normalizedPath, runCall));
+                parser.currentSource = autoCall.source;
+                source.statements.push(parser.parseTopLevelStatement(autoCall));
+                parser.currentSource = source;
+            }
             if (coverage.globalStatements.length) {
                 source.statements.unshift(...coverage.globalStatements);
                 const tokenizer = new Tokenizer(new Source(0, source.normalizedPath, 'import { __REGISTER, __COVER } from "as-test/assembly/coverage";'));
@@ -43,5 +59,55 @@ export default class Transformer extends Transform {
         }
         coverage.globalStatements = [];
     }
+}
+function shouldAutoInjectRun(sourceText) {
+    const text = stripComments(sourceText);
+    const hasSuiteCalls = /\b(?:describe|test|it)\s*\(/.test(text);
+    if (!hasSuiteCalls)
+        return false;
+    const runAlias = detectRunAlias(text);
+    if (runAlias && new RegExp(`\\b${escapeRegex(runAlias)}\\s*\\(`).test(text)) {
+        return false;
+    }
+    const hasRunCall = /\brun\s*\(/.test(text);
+    return !hasRunCall;
+}
+function detectRunImportPath(sourceText) {
+    const text = stripComments(sourceText);
+    const imports = text.matchAll(/import\s*\{([^}]+)\}\s*from\s*["']([^"']+)["']/g);
+    for (const match of imports) {
+        const specifiers = match[1] ?? "";
+        if (!looksLikeAsTestImport(specifiers))
+            continue;
+        const modulePath = (match[2] ?? "").trim();
+        if (modulePath.length)
+            return modulePath;
+    }
+    return null;
+}
+function detectRunAlias(sourceText) {
+    const text = stripComments(sourceText);
+    const imports = text.matchAll(/import\s*\{([^}]+)\}\s*from\s*["']([^"']+)["']/g);
+    for (const match of imports) {
+        const specifiers = match[1] ?? "";
+        if (!looksLikeAsTestImport(specifiers))
+            continue;
+        const runAlias = specifiers.match(/\brun\b(?:\s+as\s+([A-Za-z_$][\w$]*))?/);
+        if (runAlias) {
+            return runAlias[1] ?? "run";
+        }
+    }
+    return null;
+}
+function looksLikeAsTestImport(specifiers) {
+    return /\b(?:describe|test|it|expect|beforeAll|afterAll|beforeEach|afterEach|mockFn|mockImport|log|run)\b/.test(specifiers);
+}
+function stripComments(sourceText) {
+    return sourceText
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/\/\/.*$/gm, "");
+}
+function escapeRegex(value) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 //# sourceMappingURL=index.js.map

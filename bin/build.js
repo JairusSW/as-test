@@ -54,9 +54,11 @@ function getBuildArgs(config) {
     }
     // Should also strip any bindings-enabling from asconfig
     if (config.buildOptions.target == "bindings") {
+        buildArgs += " --use AS_TEST_BINDINGS=1";
         buildArgs += " --bindings raw --exportRuntime --exportStart _start";
     }
     else if (config.buildOptions.target == "wasi") {
+        buildArgs += " --use AS_TEST_WASI=1";
         buildArgs +=
             " --config ./node_modules/@assemblyscript/wasi-shim/asconfig.json";
     }

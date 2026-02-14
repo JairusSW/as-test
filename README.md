@@ -1,8 +1,32 @@
-# as-test
+<h1 align="center"><pre>╔═╗ ╔═╗    ╔═╗ ╔═╗ ╔═╗ ╔═╗
+╠═╣ ╚═╗ ══  ║  ╠═  ╚═╗  ║ 
+╩ ╩ ╚═╝     ╩  ╚═╝ ╚═╝  ╩ </pre></h1>
 
-A lightweight test framework for AssemblyScript.
+<details>
+<summary>Table of Contents</summary>
 
-`as-test` provides a familiar `describe/test/expect` API, compiles test files to WebAssembly, runs them with your configured runtime, and prints a concise terminal report.
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Examples](#examples)
+- [API](#api)
+- [Assertions](#assertions)
+- [CLI](#cli)
+- [Configuration](#configuration)
+- [Runtime Recipes](#runtime-recipes)
+- [Snapshots](#snapshots)
+- [Coverage](#coverage)
+- [Custom Reporters](#custom-reporters)
+- [Runtime Notes](#runtime-notes)
+- [CI](#ci)
+- [Contributing](#contributing)
+- [License](#license)
+- [Contact](#contact)
+
+</details>
+
+`as-test` is a lightweight test framework for AssemblyScript.
+
+It provides a familiar `describe/test/expect` API, compiles test files to WebAssembly, runs them with your configured runtime, and prints a concise terminal report.
 
 For bindings-based runs, result reporting is host-driven over WIPC. The guest runtime emits only WIPC frames and panic/abort output.
 
@@ -20,7 +44,7 @@ npx as-test init
 
 ## Quick Start
 
-Create a spec file in `assembly/__tests__/math.spec.ts`:
+Create `assembly/__tests__/math.spec.ts`:
 
 ```ts
 import { describe, test, expect, run } from "as-test";
@@ -44,7 +68,146 @@ Run tests:
 npx as-test test
 ```
 
-## Core API
+`run()` is optional. If a spec defines suites and omits `run()`, `as-test` auto-injects it at compile time.
+
+## Examples
+
+### Hooks and Shared Setup
+
+```ts
+import { describe, test, expect, beforeAll, afterAll, beforeEach, run } from "as-test";
+
+let calls = 0;
+
+beforeAll(() => {
+  calls = 0;
+});
+
+afterAll(() => {
+  // one-time teardown
+});
+
+beforeEach(() => {
+  calls++;
+});
+
+describe("counter", () => {
+  test("increments before each test", () => {
+    expect(calls).toBeGreaterOrEqualTo(1);
+  });
+
+  test("runs once per test", () => {
+    expect(calls).toBe(2);
+  });
+});
+
+run();
+```
+
+### Snapshot Assertions
+
+```ts
+import { describe, test, expect, run } from "as-test";
+
+describe("user payload", () => {
+  test("matches default key snapshot", () => {
+    expect('{"id":1,"name":"jairus"}').toMatchSnapshot();
+  });
+
+  test("matches named snapshot", () => {
+    expect('{"id":2,"name":"tari"}').toMatchSnapshot("user-2");
+  });
+});
+
+run();
+```
+
+Run in read-only mode:
+
+```bash
+npx as-test run --snapshot
+```
+
+Create or update snapshots:
+
+```bash
+npx as-test run --update-snapshots
+```
+
+### Custom Assertion Messages
+
+```ts
+import { describe, test, expect, run } from "as-test";
+
+describe("price checks", () => {
+  test("tax-inclusive total", () => {
+    const subtotal = 100;
+    const total = subtotal * 1.07;
+    expect(total, "total should include 7% tax").toBe(107);
+  });
+});
+
+run();
+```
+
+### Coverage Configuration
+
+```json
+{
+  "coverage": {
+    "enabled": true,
+    "includeSpecs": false
+  },
+  "logs": "./.as-test/logs"
+}
+```
+
+Show every coverage point in terminal:
+
+```bash
+npx as-test run --show-coverage
+```
+
+### Using WASI Runtime
+
+```json
+{
+  "buildOptions": {
+    "target": "wasi",
+    "args": []
+  },
+  "runOptions": {
+    "runtime": {
+      "name": "node-wasi",
+      "run": "node ./bin/wasi-run.js <file>"
+    }
+  }
+}
+```
+
+### Using a Custom Reporter
+
+```json
+{
+  "runOptions": {
+    "reporter": "./tests/my-reporter.js"
+  }
+}
+```
+
+```js
+// tests/my-reporter.js
+export function createReporter() {
+  return {
+    onFileEnd(event) {
+      const verdict = (event.verdict ?? "none").toUpperCase();
+      process.stdout.write(`${verdict} ${event.file}\n`);
+    },
+  };
+}
+```
+
+## API
 
 - Suite builders:
   - `describe(name, fn)`
@@ -54,6 +217,9 @@ npx as-test test
   - `expect(value)`
   - `expect(value, message)` for custom failure context
   - Negation: `expect(value).not.<matcher>()`
+- Execution:
+  - `run(options?)` remains available for explicit control
+  - If omitted, `as-test` auto-injects `run()` for entry specs with tests
 - Hooks:
   - `beforeAll(fn)`
   - `afterAll(fn)`
@@ -64,7 +230,7 @@ npx as-test test
 
 `beforeEach` and `afterEach` run once per test case (`test`/`it`), not once per assertion.
 
-## Assertion Matchers
+## Assertions
 
 Available matchers:
 
@@ -100,13 +266,13 @@ Commands:
 - `as-test test`: build, then run
 - `as-test init`: scaffold test setup
 
-Snapshot flags:
+Snapshot and coverage flags:
 
 - `as-test run --snapshot`: enable snapshot assertions in read-only mode
-- `as-test run --update-snapshots`: create/update snapshot files
-- `as-test test --snapshot`: build + run with snapshots enabled
-- `as-test test --update-snapshots`: build + run + write snapshot updates
-- `as-test run --show-coverage`: print all coverage points with line:column references
+- `as-test run --update-snapshots`: create or update snapshot files
+- `as-test test --snapshot`: build and run with snapshots enabled
+- `as-test test --update-snapshots`: build, run, and write snapshot updates
+- `as-test run --show-coverage`: print all coverage points with `line:column`
 
 Version:
 
@@ -115,7 +281,7 @@ Version:
 
 ## Configuration
 
-Default config file: `as-test.config.json` (generated artifacts default to `./.as-test/*`)
+Default config file: `as-test.config.json` (generated artifacts default to `./.as-test/*`).
 
 Example:
 
@@ -130,12 +296,12 @@ Example:
   "coverage": false,
   "buildOptions": {
     "args": [],
-    "target": "bindings"
+    "target": "wasi"
   },
   "runOptions": {
     "runtime": {
-      "name": "node",
-      "run": "node ./tests/<name>.run.js"
+      "name": "node-wasi",
+      "run": "node ./bin/wasi-run.js <file>"
     },
     "reporter": ""
   }
@@ -144,45 +310,160 @@ Example:
 
 `$schema` enables editor autocomplete and validation for `as-test.config.json`.
 
-`runOptions.reporter` is optional. Leave it empty to use the built-in reporter.
-If set, it must point to a JS/TS module exporting a reporter factory (see `docs/reporters.md`).
+`runOptions.reporter` is optional. Leave it empty to use the built-in reporter. If set, it must point to a JS/TS module exporting a reporter factory.
 
-## Runtime Notes
+## Runtime Recipes
 
-- `buildOptions.target` supports `bindings` and `wasi`.
-- For `bindings`, runtime command usually points to `tests/<name>.run.js` wrappers.
-- For `wasi`, install `@assemblyscript/wasi-shim`.
+Each runtime command supports `<file>` (compiled wasm path) and `<name>` (spec base name).
+
+### WASI with built-in Node runner (default)
+
+```json
+{
+  "buildOptions": { "target": "wasi" },
+  "runOptions": {
+    "runtime": {
+      "name": "node-wasi",
+      "run": "node ./bin/wasi-run.js <file>"
+    }
+  }
+}
+```
+
+### WASI with wazero
+
+```json
+{
+  "buildOptions": { "target": "wasi" },
+  "runOptions": {
+    "runtime": {
+      "name": "wazero",
+      "run": "wazero run <file>"
+    }
+  }
+}
+```
+
+### WASI with wasmtime
+
+```json
+{
+  "buildOptions": { "target": "wasi" },
+  "runOptions": {
+    "runtime": {
+      "name": "wasmtime",
+      "run": "wasmtime <file>"
+    }
+  }
+}
+```
+
+### WASI with wasmer
+
+```json
+{
+  "buildOptions": { "target": "wasi" },
+  "runOptions": {
+    "runtime": {
+      "name": "wasmer",
+      "run": "wasmer run <file>"
+    }
+  }
+}
+```
+
+### WASI with wasmedge
+
+```json
+{
+  "buildOptions": { "target": "wasi" },
+  "runOptions": {
+    "runtime": {
+      "name": "wasmedge",
+      "run": "wasmedge <file>"
+    }
+  }
+}
+```
+
+### Bindings with Node
+
+```json
+{
+  "buildOptions": { "target": "bindings" },
+  "runOptions": {
+    "runtime": {
+      "name": "node",
+      "run": "node ./tests/<name>.run.js"
+    }
+  }
+}
+```
+
+### Bindings with Bun
+
+```json
+{
+  "buildOptions": { "target": "bindings" },
+  "runOptions": {
+    "runtime": {
+      "name": "bun",
+      "run": "bun ./tests/<name>.run.js"
+    }
+  }
+}
+```
 
 ## Snapshots
 
 - Snapshot files are written under `snapshotDir` (default: `./.as-test/snapshots/`).
 - `toMatchSnapshot()` uses a deterministic key based on file, suite path, and assertion order.
 - `toMatchSnapshot("name")` appends a stable suffix for multiple snapshots in one test.
-- In read-only mode (`--snapshot`), missing/mismatched snapshots fail the run.
-- In update mode (`--update-snapshots`), missing/mismatched snapshots are written and treated as pass.
+- In read-only mode (`--snapshot`), missing or mismatched snapshots fail the run.
+- In update mode (`--update-snapshots`), missing or mismatched snapshots are written and treated as pass.
 
 ## Coverage
 
 - Coverage instrumentation is collected during test execution.
 - Configure coverage using either:
-  - `"coverage": true|false`
-  - `"coverage": { "enabled": true|false, "includeSpecs": false }`
+  - `"coverage": true | false`
+  - `"coverage": { "enabled": true | false, "includeSpecs": false }`
 - When enabled:
   - Terminal summary prints overall point coverage.
-  - `--show-coverage` prints every coverage point with `line:column` and hit/miss status.
+  - `--show-coverage` prints every coverage point with hit or miss status.
   - If `logs` is not `"none"`, coverage data is written to `logs/coverage.log.json`.
 - By default, `*.spec.ts` files are excluded from coverage (`includeSpecs: false`).
+
+## Custom Reporters
+
+`as-test` supports host-side reporter modules through `runOptions.reporter`.
+
+See reporter extension docs and module contract in `docs/reporters.md`.
+
+## Runtime Notes
+
+- `buildOptions.target` supports `bindings` and `wasi`.
+- For `bindings`, runtime command usually points to `tests/<name>.run.js` wrappers.
+- For `wasi`, `as-test` can run modules with `node ./bin/wasi-run.js <file>`.
+- External WASI runtimes work as long as they support stdin/stdout for WIPC frames.
+- WASI builds still require `@assemblyscript/wasi-shim` for compile configuration.
 
 ## CI
 
 See `.github/workflows/as-test.yml` for a working CI example.
 
-## Custom Reporters
+## Contributing
 
-Reporter extension docs and module contract:
-
-- `docs/reporters.md`
+Issues and pull requests are welcome: [GitHub Issues](https://github.com/JairusSW/as-test/issues).
 
 ## License
 
-MIT. See `LICENSE`.
+This project is distributed under the MIT license.
+
+You can view the full license here: [LICENSE](./LICENSE).
+
+## Contact
+
+- **GitHub:** [JairusSW/as-test](https://github.com/JairusSW/as-test)
+- **Issues:** [Open an issue](https://github.com/JairusSW/as-test/issues)
+- **Email:** [me@jairus.dev](mailto:me@jairus.dev)
