@@ -400,20 +400,6 @@ Each runtime command supports `<file>` (compiled wasm path) and `<name>` (spec b
 }
 ```
 
-### Bindings with Bun
-
-```json
-{
-  "buildOptions": { "target": "bindings" },
-  "runOptions": {
-    "runtime": {
-      "name": "bun",
-      "run": "bun ./tests/<name>.run.js"
-    }
-  }
-}
-```
-
 ## Snapshots
 
 - Snapshot files are written under `snapshotDir` (default: `./.as-test/snapshots/`).
