@@ -51,18 +51,23 @@ export function loadConfig(CONFIG_PATH: string, warn: boolean = false): Config {
       new Config(),
       raw,
     ) as Config;
+    const runOptionsRaw =
+      (raw.runOptions as Record<string, unknown> | undefined) ?? {};
     config.buildOptions = Object.assign(
       new BuildOptions(),
       (raw.buildOptions as Record<string, unknown> | undefined) ?? {},
     );
     config.runOptions = Object.assign(
       new RunOptions(),
-      (raw.runOptions as Record<string, unknown> | undefined) ?? {},
+      runOptionsRaw,
     );
 
-    const runtimeRaw = (raw.runOptions as Record<string, unknown> | undefined)
-      ?.runtime as Record<string, unknown> | undefined;
+    const runtimeRaw = runOptionsRaw.runtime as Record<string, unknown> | undefined;
     const runtime = new Runtime();
+    const legacyRun =
+      typeof runOptionsRaw.run == "string" && runOptionsRaw.run.length
+        ? runOptionsRaw.run
+        : "";
 
     const cmd =
       runtimeRaw && typeof runtimeRaw.cmd == "string" && runtimeRaw.cmd.length
@@ -71,6 +76,8 @@ export function loadConfig(CONFIG_PATH: string, warn: boolean = false): Config {
             typeof runtimeRaw.run == "string" &&
             runtimeRaw.run.length
           ? runtimeRaw.run
+          : legacyRun
+            ? legacyRun
           : runtime.cmd;
     runtime.cmd = cmd;
     config.runOptions.runtime = runtime;

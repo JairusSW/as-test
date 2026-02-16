@@ -24,5 +24,3 @@ describe("Should sleep", () => {
     expect(Date.now() - start).toBeGreaterOrEqualTo(1000);
   });
 });
-
-run();

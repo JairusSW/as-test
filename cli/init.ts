@@ -58,8 +58,8 @@ export async function init(rawArgs: string[]) {
     printPlan(root, target, example);
 
     if (!options.yes) {
-      const cont = (await ask("Continue? [y/n] ", rl)).toLowerCase().trim();
-      if (!["y", "yes"].includes(cont)) {
+      const cont = (await ask("Continue? [Y/n] ", rl)).toLowerCase().trim();
+      if (["y", "yes"].includes(cont)) {
         console.log("Exiting.");
         return;
       }
@@ -291,6 +291,10 @@ function applyInit(
     scripts.test = "as-test test";
   }
 
+  if (!pkg.type) {
+    pkg.type = "module";
+  }
+
   if (!pkg.devDependencies || typeof pkg.devDependencies != "object") {
     pkg.devDependencies = {};
   }
@@ -377,7 +381,7 @@ function printSummary(summary: ApplySummary): void {
       console.log(`  = ${item}`);
     }
   }
-  console.log("\nNext: run " + chalk.bold("as-test test") + "\n");
+  console.log("\nNow, install dependencies and run " + chalk.bold("as-test test") + "\n");
 }
 
 function ask(question: string, face: Interface | null): Promise<string> {

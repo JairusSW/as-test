@@ -37,6 +37,7 @@ if (!args.length) {
     updateSnapshots: flags.includes("--update-snapshots"),
     clean: flags.includes("--clean"),
     showCoverage: flags.includes("--show-coverage"),
+    verbose: flags.includes("--verbose"),
   };
   if (command === "build") {
     build(configPath).catch((error) => {
@@ -92,25 +93,25 @@ function info(): void {
   console.log(
     "  " +
       chalk.bold.blueBright("run") +
-      "       " +
-      chalk.dim("(uses configured input glob)") +
+      "     " +
+      chalk.dim("<./**/*.spec.ts>") +
       "       " +
       "Run unit tests with selected runtime",
   );
   console.log(
     "  " +
       chalk.bold.blueBright("build") +
-      "     " +
-      chalk.dim("(uses configured input glob)") +
+      "   " +
+      chalk.dim("<./**/*.spec.ts>") +
       "       " +
       "Build unit tests and compile",
   );
   console.log(
     "  " +
       chalk.bold.blueBright("test") +
-      "      " +
-      chalk.dim("[<name>|<path-or-glob>]") +
-      "       " +
+      "    " +
+      chalk.dim("<name>|<path-or-glob>") +
+      "  " +
       "Build and run unit tests with selected runtime" +
       "\n",
   );
@@ -118,7 +119,9 @@ function info(): void {
   console.log(
     "  " +
       chalk.bold.magentaBright("init") +
-      "       " +
+      "    " +
+      chalk.dim("<./dir>") +
+      "                " +
       "Initialize an empty testing template",
   );
   console.log("");
@@ -126,52 +129,40 @@ function info(): void {
   console.log(chalk.bold("Flags:"));
 
   console.log(
-    "  " +
-      chalk.dim("build/run/test") +
       "   " +
       chalk.bold.blue("--config <path>") +
-      "       " +
+      "               " +
       "Use a specific config file",
   );
   console.log(
-    "  " +
-      chalk.dim("run/test") +
       "   " +
       chalk.bold.blue("--snapshot") +
-      "             " +
+      "                    " +
       "Snapshot assertions (enabled by default)",
   );
   console.log(
-    "  " +
-      chalk.dim("run/test") +
       "   " +
       chalk.bold.blue("--update-snapshots") +
-      "     " +
+      "            " +
       "Create/update snapshot files on mismatch",
   );
   console.log(
-    "  " +
-      chalk.dim("run/test") +
       "   " +
       chalk.bold.blue("--no-snapshot") +
-      "          " +
+      "                 " +
       "Disable snapshot assertions for this run",
   );
   console.log(
-    "  " +
-      chalk.dim("run/test") +
-      "   " +
-      chalk.bold.blue("--clean") +
-      "                " +
-      "Minimal output (summary-first)",
-  );
-  console.log(
-    "  " +
-      chalk.dim("run/test") +
       "   " +
       chalk.bold.blue("--show-coverage") +
-      "        " +
+      "               " +
       "Print all coverage points with line:column refs",
+  );
+  console.log(
+      "   " +
+      chalk.bold.blue("--verbose") +
+      "                     " +
+      "Print each suite start/end line",
   );
   console.log("");
 
@@ -185,10 +176,10 @@ function info(): void {
     "View the repo:                   " +
       chalk.magenta("https://github.com/JairusSW/as-test"),
   );
-  console.log(
-    "View the docs:                   " +
-      chalk.blue("https://docs.jairus.dev/as-test"),
-  );
+  // console.log(
+  //   "View the docs:                   " +
+  //     chalk.blue("https://docs.jairus.dev/as-test"),
+  // );
 }
 
 function resolveConfigPath(rawArgs: string[]): string | undefined {
@@ -257,6 +248,7 @@ async function runTestSequential(
     updateSnapshots: boolean;
     clean: boolean;
     showCoverage: boolean;
+    verbose: boolean;
   },
   configPath: string | undefined,
   selectors: string[],
@@ -276,6 +268,7 @@ async function runTestSequential(
   reporter.onRunStart?.({
     runtimeName: reporterSession.runtimeName,
     clean: runFlags.clean,
+    verbose: runFlags.verbose,
     snapshotEnabled,
     updateSnapshots: runFlags.updateSnapshots,
   });
@@ -395,6 +388,21 @@ function aggregateRunResults(results: RunResult[]): {
     percent: 100,
     files: [],
   };
+  const uniqueCoveragePoints = new Map<
+    string,
+    {
+      hash: string;
+      file: string;
+      line: number;
+      column: number;
+      type: string;
+      executed: boolean;
+    }
+  >();
+  let fallbackCoverageTotal = 0;
+  let fallbackCoverageCovered = 0;
+  let fallbackCoverageUncovered = 0;
+  const fallbackCoverageFiles: CoverageSummary["files"] = [];
   const reports: unknown[] = [];
 
   for (const result of results) {
@@ -418,13 +426,70 @@ function aggregateRunResults(results: RunResult[]): {
     coverageSummary.enabled = coverageSummary.enabled || result.coverageSummary.enabled;
     coverageSummary.showPoints =
       coverageSummary.showPoints || result.coverageSummary.showPoints;
-    coverageSummary.total += result.coverageSummary.total;
-    coverageSummary.covered += result.coverageSummary.covered;
-    coverageSummary.uncovered += result.coverageSummary.uncovered;
-    coverageSummary.files.push(...result.coverageSummary.files);
+    for (const fileCoverage of result.coverageSummary.files) {
+      if (fileCoverage.points.length > 0) {
+        for (const point of fileCoverage.points) {
+          const key = `${point.file}::${point.hash}`;
+          const existing = uniqueCoveragePoints.get(key);
+          if (!existing) {
+            uniqueCoveragePoints.set(key, { ...point });
+          } else if (point.executed) {
+            existing.executed = true;
+          }
+        }
+      } else {
+        fallbackCoverageTotal += fileCoverage.total;
+        fallbackCoverageCovered += fileCoverage.covered;
+        fallbackCoverageUncovered += fileCoverage.uncovered;
+        fallbackCoverageFiles.push(fileCoverage);
+      }
+    }
 
     reports.push(...result.reports);
   }
+
+  if (uniqueCoveragePoints.size > 0) {
+    const byFile = new Map<string, CoverageSummary["files"][number]["points"]>();
+    for (const point of uniqueCoveragePoints.values()) {
+      if (!byFile.has(point.file)) byFile.set(point.file, []);
+      byFile.get(point.file)!.push(point);
+    }
+    const sortedFiles = [...byFile.keys()].sort((a, b) => a.localeCompare(b));
+    for (const file of sortedFiles) {
+      const points = byFile.get(file)!;
+      points.sort((a, b) => {
+        if (a.line !== b.line) return a.line - b.line;
+        if (a.column !== b.column) return a.column - b.column;
+        if (a.type !== b.type) return a.type.localeCompare(b.type);
+        return a.hash.localeCompare(b.hash);
+      });
+      let covered = 0;
+      for (const point of points) {
+        coverageSummary.total++;
+        if (point.executed) {
+          coverageSummary.covered++;
+          covered++;
+        } else {
+          coverageSummary.uncovered++;
+        }
+      }
+      const total = points.length;
+      coverageSummary.files.push({
+        file,
+        total,
+        covered,
+        uncovered: total - covered,
+        percent: total ? (covered * 100) / total : 100,
+        points,
+      });
+    }
+  } else {
+    coverageSummary.total = fallbackCoverageTotal;
+    coverageSummary.covered = fallbackCoverageCovered;
+    coverageSummary.uncovered = fallbackCoverageUncovered;
+    coverageSummary.files = fallbackCoverageFiles;
+  }
+
   coverageSummary.percent = coverageSummary.total
     ? (coverageSummary.covered * 100) / coverageSummary.total
     : 100;

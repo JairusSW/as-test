@@ -108,6 +108,7 @@ type RunFlags = {
   updateSnapshots?: boolean;
   clean?: boolean;
   showCoverage?: boolean;
+  verbose?: boolean;
 };
 
 type RunExecutionOptions = {
@@ -275,6 +276,7 @@ export async function run(
     reporter.onRunStart?.({
       runtimeName: runtimeNameFromCommand(runtimeCommand),
       clean: cleanOutput,
+      verbose: Boolean(flags.verbose),
       snapshotEnabled,
       updateSnapshots,
     });
@@ -318,7 +320,6 @@ export async function run(
     } else {
       cmd = cmd.replace("<file>", outFile);
     }
-
     const snapshotStore = new SnapshotStore(file, config.snapshotDir);
     const report = await runProcess(
       cmd,
@@ -407,7 +408,20 @@ export async function run(
   };
 }
 
-function resolveRuntimeCommand(runtimeRun: string, target: string): string {
+function resolveRuntimeCommand(
+  runtimeRun: string,
+  target: string,
+  emitWarnings: boolean = true,
+): string {
+  const normalized = resolveLegacyWasiRuntime(runtimeRun, target, emitWarnings);
+  return fallbackToDefaultRuntime(normalized, target, emitWarnings);
+}
+
+function resolveLegacyWasiRuntime(
+  runtimeRun: string,
+  target: string,
+  emitWarnings: boolean,
+): string {
   if (target != "wasi") return runtimeRun;
   const preferredPath = "./.as-test/runners/default.wasi.js";
   const legacyPaths = ["./bin/wasi-run.js", "./.as-test/wasi/wasi.run.js"];
@@ -428,11 +442,13 @@ function resolveRuntimeCommand(runtimeRun: string, target: string): string {
 
     const resolvedPreferredPath = path.join(process.cwd(), preferredPath);
     if (existsSync(resolvedPreferredPath)) {
-      process.stderr.write(
-        chalk.dim(
-          `legacy WASI runtime path detected (${legacyPath}); using ${preferredPath}\n`,
-        ),
-      );
+      if (emitWarnings) {
+        process.stderr.write(
+          chalk.dim(
+            `legacy WASI runtime path detected (${legacyPath}); using ${preferredPath}\n`,
+          ),
+        );
+      }
       return runtimeRun.replace(legacyPath, preferredPath);
     }
 
@@ -442,6 +458,115 @@ function resolveRuntimeCommand(runtimeRun: string, target: string): string {
   }
 
   return runtimeRun;
+}
+
+function fallbackToDefaultRuntime(
+  runtimeRun: string,
+  target: string,
+  emitWarnings: boolean,
+): string {
+  const scriptPath = extractRuntimeScriptPath(runtimeRun);
+  if (!scriptPath) return runtimeRun;
+
+  const resolvedScriptPath = path.isAbsolute(scriptPath)
+    ? scriptPath
+    : path.join(process.cwd(), scriptPath);
+  if (existsSync(resolvedScriptPath)) return runtimeRun;
+
+  const fallback = getDefaultRuntimeFallback(target);
+  if (!fallback) return runtimeRun;
+
+  const resolvedFallbackPath = path.join(process.cwd(), fallback.scriptPath);
+  if (!existsSync(resolvedFallbackPath)) {
+    if (scriptPath == fallback.scriptPath) {
+      throw new Error(
+        `could not locate runtime script at ${fallback.scriptPath}. Run "ast init --target ${target} --force --yes" to scaffold the local runner.`,
+      );
+    }
+    throw new Error(
+      `could not locate runtime script at ${scriptPath}. Default runner ${fallback.scriptPath} is also missing. Run "ast init --target ${target} --force --yes" to scaffold it.`,
+    );
+  }
+
+  if (emitWarnings) {
+    process.stderr.write(
+      chalk.dim(
+        `runtime script not found (${scriptPath}); using ${fallback.scriptPath}\n`,
+      ),
+    );
+  }
+  return fallback.command;
+}
+
+function getDefaultRuntimeFallback(
+  target: string,
+): { command: string; scriptPath: string } | null {
+  if (target == "wasi") {
+    return {
+      command: "node ./.as-test/runners/default.wasi.js <file>",
+      scriptPath: "./.as-test/runners/default.wasi.js",
+    };
+  }
+  if (target == "bindings") {
+    return {
+      command: "node ./.as-test/runners/default.run.js <file>",
+      scriptPath: "./.as-test/runners/default.run.js",
+    };
+  }
+  return null;
+}
+
+function extractRuntimeScriptPath(runtimeRun: string): string | null {
+  const tokens = runtimeRun.trim().split(/\s+/).filter((token) => token.length > 0);
+  if (tokens.length < 2) return null;
+
+  const execToken = path.basename(tokens[0]!).toLowerCase();
+  if (!isScriptHostRuntime(execToken)) return null;
+
+  for (let i = 1; i < tokens.length; i++) {
+    const token = tokens[i]!;
+    if (token == "--") {
+      const next = tokens[i + 1];
+      if (next && isLikelyRuntimeScriptPath(next)) return next;
+      return null;
+    }
+    if (token.startsWith("-")) continue;
+    if (isLikelyRuntimeScriptPath(token)) return token;
+    return null;
+  }
+  return null;
+}
+
+function isScriptHostRuntime(execToken: string): boolean {
+  return (
+    execToken == "node" ||
+    execToken == "node.exe" ||
+    execToken == "node.cmd" ||
+    execToken == "bun" ||
+    execToken == "bun.exe" ||
+    execToken == "bun.cmd" ||
+    execToken == "deno" ||
+    execToken == "deno.exe" ||
+    execToken == "deno.cmd" ||
+    execToken == "tsx" ||
+    execToken == "tsx.cmd" ||
+    execToken == "ts-node" ||
+    execToken == "ts-node.cmd"
+  );
+}
+
+function isLikelyRuntimeScriptPath(token: string): boolean {
+  if (!token.length) return false;
+  if (token == "<file>" || token == "<name>") return false;
+  if (token.includes("://")) return false;
+  if (token.startsWith("-")) return false;
+  if (token.startsWith("./")) return true;
+  if (token.startsWith("../")) return true;
+  if (token.startsWith("/")) return true;
+  if (token.startsWith(".\\")) return true;
+  if (token.startsWith("..\\")) return true;
+  if (/^[A-Za-z]:[\\/]/.test(token)) return true;
+  return /\.(mjs|cjs|js|ts)$/.test(token);
 }
 
 function getConfiguredRuntimeCmd(config: {
@@ -631,7 +756,10 @@ function collectCoverageSummary(
       else summary.uncovered++;
     }
 
-    for (const [file, points] of byFile.entries()) {
+    const sortedFiles = [...byFile.keys()].sort((a, b) => a.localeCompare(b));
+    for (const file of sortedFiles) {
+      const points = byFile.get(file)!;
+      points.sort(compareCoveragePoints);
       let covered = 0;
       for (const point of points) {
         if (point.executed) covered++;
@@ -717,6 +845,30 @@ function resolveCoverageOptions(raw: unknown): CoverageOptions {
     enabled: false,
     includeSpecs: false,
   };
+}
+
+function compareCoveragePoints(
+  a: {
+    hash: string;
+    file: string;
+    line: number;
+    column: number;
+    type: string;
+    executed: boolean;
+  },
+  b: {
+    hash: string;
+    file: string;
+    line: number;
+    column: number;
+    type: string;
+    executed: boolean;
+  },
+): number {
+  if (a.line !== b.line) return a.line - b.line;
+  if (a.column !== b.column) return a.column - b.column;
+  if (a.type !== b.type) return a.type.localeCompare(b.type);
+  return a.hash.localeCompare(b.hash);
 }
 
 async function runProcess(
@@ -986,6 +1138,7 @@ export async function createRunReporter(
   const runtimeCommand = resolveRuntimeCommand(
     getConfiguredRuntimeCmd(config),
     config.buildOptions.target,
+    false,
   );
   return {
     reporter,

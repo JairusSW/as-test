@@ -35,18 +35,23 @@ export function loadConfig(CONFIG_PATH, warn = false) {
     else {
         const raw = JSON.parse(readFileSync(CONFIG_PATH).toString());
         const config = Object.assign(new Config(), raw);
+        const runOptionsRaw = raw.runOptions ?? {};
         config.buildOptions = Object.assign(new BuildOptions(), raw.buildOptions ?? {});
-        config.runOptions = Object.assign(new RunOptions(), raw.runOptions ?? {});
-        const runtimeRaw = raw.runOptions
-            ?.runtime;
+        config.runOptions = Object.assign(new RunOptions(), runOptionsRaw);
+        const runtimeRaw = runOptionsRaw.runtime;
         const runtime = new Runtime();
+        const legacyRun = typeof runOptionsRaw.run == "string" && runOptionsRaw.run.length
+            ? runOptionsRaw.run
+            : "";
         const cmd = runtimeRaw && typeof runtimeRaw.cmd == "string" && runtimeRaw.cmd.length
             ? runtimeRaw.cmd
             : runtimeRaw &&
                 typeof runtimeRaw.run == "string" &&
                 runtimeRaw.run.length
                 ? runtimeRaw.run
-                : runtime.cmd;
+                : legacyRun
+                    ? legacyRun
+                    : runtime.cmd;
         runtime.cmd = cmd;
         config.runOptions.runtime = runtime;
         return config;

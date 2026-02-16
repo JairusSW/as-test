@@ -67,6 +67,7 @@ export type CoverageSummary = {
 export type RunStartEvent = {
   runtimeName: string;
   clean: boolean;
+  verbose: boolean;
   snapshotEnabled: boolean;
   updateSnapshots: boolean;
 };

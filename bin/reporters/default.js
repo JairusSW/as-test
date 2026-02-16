@@ -9,8 +9,10 @@ class DefaultReporter {
         this.context = context;
         this.currentFile = null;
         this.openSuites = [];
+        this.verboseSuites = [];
         this.renderedLines = 0;
         this.fileHasWarning = false;
+        this.verboseMode = false;
     }
     canRewriteLine() {
         return Boolean(this.context.stdout.isTTY);
@@ -52,6 +54,36 @@ class DefaultReporter {
         }
         this.drawLiveBlock(lines);
     }
+    renderVerboseState(fileEnd) {
+        if (!this.canRewriteLine() || !this.currentFile)
+            return;
+        const lines = [
+            fileEnd
+                ? this.renderFileResult(fileEnd)
+                : `${this.badgeRunning()} ${this.currentFile}`,
+        ];
+        for (const suite of this.verboseSuites) {
+            const badge = suite.verdict == "running"
+                ? this.badgeRunning()
+                : this.badgeFromVerdict(suite.verdict);
+            lines.push(`${"  ".repeat(suite.depth + 1)}${badge} ${suite.description}`);
+        }
+        this.drawLiveBlock(lines);
+    }
+    setVerboseSuiteVerdict(depth, description, verdict) {
+        for (let i = this.verboseSuites.length - 1; i >= 0; i--) {
+            const suite = this.verboseSuites[i];
+            if (suite.depth == depth &&
+                (!description.length || suite.description == description) &&
+                suite.verdict == "running") {
+                if (description.length)
+                    suite.description = description;
+                suite.verdict = verdict;
+                return;
+            }
+        }
+        this.verboseSuites.push({ depth, description, verdict });
+    }
     collapseToDepth(depth) {
         while (this.openSuites.length > depth) {
             this.openSuites.pop();
@@ -82,6 +114,7 @@ class DefaultReporter {
         return `${chalk.bgBlackBright.white(" SKIP ")} ${event.file}${time}`;
     }
     onRunStart(event) {
+        this.verboseMode = Boolean(event.verbose);
         if (event.clean)
             return;
         if (event.snapshotEnabled) {
@@ -92,24 +125,51 @@ class DefaultReporter {
     onFileStart(event) {
         this.currentFile = event.file;
         this.openSuites = [];
+        this.verboseSuites = [];
         this.fileHasWarning = false;
-        if (!this.canRewriteLine()) {
+        if (this.verboseMode && this.canRewriteLine()) {
+            this.renderVerboseState();
+            return;
+        }
+        if (this.verboseMode || !this.canRewriteLine()) {
             this.context.stdout.write(`${this.badgeRunning()} ${event.file}\n`);
             return;
         }
         this.renderLiveState();
     }
     onFileEnd(event) {
+        if (this.verboseMode && this.canRewriteLine()) {
+            this.renderVerboseState(event);
+            this.context.stdout.write("\n");
+            this.renderedLines = 0;
+            this.currentFile = null;
+            this.openSuites = [];
+            this.verboseSuites = [];
+            this.fileHasWarning = false;
+            return;
+        }
         const result = this.renderFileResult(event);
         this.clearRenderedBlock();
         this.context.stdout.write(`${result}\n`);
         this.currentFile = null;
         this.openSuites = [];
+        this.verboseSuites = [];
         this.fileHasWarning = false;
     }
     onSuiteStart(event) {
         const depth = Math.max(event.depth, 0);
-        if (!this.canRewriteLine()) {
+        if (this.verboseMode && this.canRewriteLine()) {
+            if (this.currentFile !== event.file)
+                return;
+            this.verboseSuites.push({
+                depth,
+                description: event.description,
+                verdict: "running",
+            });
+            this.renderVerboseState();
+            return;
+        }
+        if (this.verboseMode || !this.canRewriteLine()) {
             this.context.stdout.write(`${"  ".repeat(depth + 1)}${this.badgeRunning()} ${event.description}\n`);
             return;
         }
@@ -122,7 +182,14 @@ class DefaultReporter {
     onSuiteEnd(event) {
         const depth = Math.max(event.depth, 0);
         const verdict = String(event.verdict ?? "none");
-        if (!this.canRewriteLine()) {
+        if (this.verboseMode && this.canRewriteLine()) {
+            if (this.currentFile !== event.file)
+                return;
+            this.setVerboseSuiteVerdict(depth, event.description, verdict);
+            this.renderVerboseState();
+            return;
+        }
+        if (this.verboseMode || !this.canRewriteLine()) {
             this.context.stdout.write(`${"  ".repeat(depth + 1)}${this.badgeFromVerdict(verdict)} ${event.description}\n`);
             return;
         }
@@ -151,7 +218,12 @@ class DefaultReporter {
         }
         this.clearRenderedBlock();
         this.context.stdout.write(warnLine);
-        this.renderLiveState();
+        if (this.verboseMode) {
+            this.renderVerboseState();
+        }
+        else {
+            this.renderLiveState();
+        }
     }
     onRunComplete(event) {
         this.clearRenderedBlock();

@@ -22,8 +22,8 @@ export async function init(rawArgs) {
             (await askChoice("Select example mode", EXAMPLE_MODES, rl, "minimal"));
         printPlan(root, target, example);
         if (!options.yes) {
-            const cont = (await ask("Continue? [y/n] ", rl)).toLowerCase().trim();
-            if (!["y", "yes"].includes(cont)) {
+            const cont = (await ask("Continue? [Y/n] ", rl)).toLowerCase().trim();
+            if (["y", "yes"].includes(cont)) {
                 console.log("Exiting.");
                 return;
             }
@@ -206,6 +206,9 @@ function applyInit(root, target, example, force) {
     if (!scripts.test) {
         scripts.test = "as-test test";
     }
+    if (!pkg.type) {
+        pkg.type = "module";
+    }
     if (!pkg.devDependencies || typeof pkg.devDependencies != "object") {
         pkg.devDependencies = {};
     }
@@ -279,7 +282,7 @@ function printSummary(summary) {
             console.log(`  = ${item}`);
         }
     }
-    console.log("\nNext: run " + chalk.bold("as-test test") + "\n");
+    console.log("\nNow, install dependencies and run " + chalk.bold("as-test test") + "\n");
 }
 function ask(question, face) {
     if (!face) {

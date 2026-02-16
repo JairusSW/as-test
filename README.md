@@ -1,32 +1,31 @@
-# as-test
+<h1 align="center"><pre>╔═╗ ╔═╗    ╔═╗ ╔═╗ ╔═╗ ╔═╗
+╠═╣ ╚═╗ ══  ║  ╠═  ╚═╗  ║ 
+╩ ╩ ╚═╝     ╩  ╚═╝ ╚═╝  ╩ </pre></h1>
 
-`as-test` is a test framework for AssemblyScript with a familiar `describe/test/expect` API.
+<details>
+<summary>Table of Contents</summary>
 
-It compiles `.spec.ts` files to WebAssembly, runs them with your configured runtime, and reports per-file progress with a final aggregated summary.
-
-## Table of Contents
-
-- [Setup](#setup)
+- [Installation](#installation)
 - [Writing Tests](#writing-tests)
-- [Running Tests](#running-tests)
 - [Snapshots](#snapshots)
 - [Coverage](#coverage)
-- [Configuration](#configuration)
-- [Custom Reporter](#custom-reporter)
+- [Custom Reporters](#custom-reporters)
 - [Assertions](#assertions)
-- [Troubleshooting](#troubleshooting)
-- [Contributing](#contributing)
 - [License](#license)
+- [Contact](#contact)
 
-## Setup
+</details>
 
-### 1. Install dependencies
+## Installation
 
+The installation script will set everything up for you:
 ```bash
-npx as-test init
-npx as-test init ./path-to-install
 npx as-test init --dir ./path-to-install
-npx as-test test
+```
+
+Alternatively, you can install it manually:
+```bash
+npm install as-test --save-dev
 ```
 
 ## Writing Tests
@@ -45,31 +44,7 @@ describe("math", () => {
     expect(3.14159).toBeCloseTo(3.14, 2);
   });
 });
-
-run();
 ```
-
-`run()` can be omitted in entry specs; `as-test` injects it automatically when needed.
-
-## Running Tests
-
-CLI aliases:
-
-- `as-test`
-- `ast`
-
-### Command behavior
-
-- `ast build`
-  - builds all files from configured input glob(s)
-  - prints nothing on success
-  - prints error-only output on failures
-- `ast run`
-  - runs all files from configured input glob(s)
-- `ast test`
-  - resolves selected spec files
-  - executes **sequentially per file** as `build #1 -> run #1 -> build #2 -> run #2 ...`
-  - prints one final summary after all files complete
 
 ### Test file selection (`ast test`)
 
@@ -114,7 +89,7 @@ No test files matched: ...
 - `--update-snapshots`: write snapshot updates
 - `--no-snapshot`: disable snapshot assertions for the run
 - `--show-coverage`: print uncovered coverage points
-- `--clean`: cleaner output mode
+- `--verbose`: keep expanded suite/test lines and update running `....` statuses in place
 
 ## Snapshots
 
@@ -198,7 +173,7 @@ Key fields:
 - `coverageDir`: coverage output dir or `"none"`
 - `snapshotDir`: snapshot storage dir
 - `buildOptions.target`: `wasi` or `bindings`
-- `runOptions.runtime.cmd`: runtime command, supports `<file>` and `<name>`
+- `runOptions.runtime.cmd`: runtime command, supports `<file>` and `<name>`; if its script path is missing, as-test falls back to the default runner for the selected target
 - `runOptions.reporter`: optional custom reporter module path
 
 ## Custom Reporter
@@ -265,23 +240,17 @@ Available matchers:
 - `toThrow()` (with `try-as`)
 - `toMatchSnapshot(name?)`
 
-## Troubleshooting
-
-- `could not find json-as`:
-  - install `json-as` as a dev dependency
-- `could not find @assemblyscript/wasi-shim`:
-  - install `@assemblyscript/wasi-shim` when using `wasi`
-- `No test files matched: ...`:
-  - verify `input` globs or selector arguments
-- `Failed to build file.spec.ts with ...`:
-  - check compile error output from AssemblyScript in stderr
-
-## Contributing
-
-Issues and PRs are welcome:
-
-- https://github.com/JairusSW/as-test/issues
-
 ## License
 
-MIT, see [LICENSE](./LICENSE).
+This project is distributed under an open source license. Work on this project is done by passion, but if you want to support it financially, you can do so by making a donation to the project's [GitHub Sponsors](https://github.com/sponsors/JairusSW) page.
+
+You can view the full license using the following link: [License](./LICENSE)
+
+## Contact
+
+Please send all issues to [GitHub Issues](https://github.com/JairusSW/as-test/issues) and to converse, please send me an email at [me@jairus.dev](mailto:me@jairus.dev)
+
+- **Email:** Send me inquiries, questions, or requests at [me@jairus.dev](mailto:me@jairus.dev)
+- **GitHub:** Visit the official GitHub repository [Here](https://github.com/JairusSW/as-test)
+- **Website:** Visit my official website at [jairus.dev](https://jairus.dev/)
+- **Discord:** Contact me at [My Discord](https://discord.com/users/600700584038760448) or on the [AssemblyScript Discord Server](https://discord.gg/assemblyscript/)

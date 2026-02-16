@@ -21,8 +21,10 @@ export const createReporter: ReporterFactory = (
 class DefaultReporter implements TestReporter {
   private currentFile: string | null = null;
   private openSuites: { depth: number; description: string }[] = [];
+  private verboseSuites: { depth: number; description: string; verdict: string }[] = [];
   private renderedLines = 0;
   private fileHasWarning = false;
+  private verboseMode = false;
 
   constructor(private readonly context: ReporterContext) {}
 
@@ -69,6 +71,43 @@ class DefaultReporter implements TestReporter {
     this.drawLiveBlock(lines);
   }
 
+  private renderVerboseState(fileEnd?: ProgressEvent): void {
+    if (!this.canRewriteLine() || !this.currentFile) return;
+    const lines = [
+      fileEnd
+        ? this.renderFileResult(fileEnd)
+        : `${this.badgeRunning()} ${this.currentFile}`,
+    ];
+    for (const suite of this.verboseSuites) {
+      const badge =
+        suite.verdict == "running"
+          ? this.badgeRunning()
+          : this.badgeFromVerdict(suite.verdict);
+      lines.push(`${"  ".repeat(suite.depth + 1)}${badge} ${suite.description}`);
+    }
+    this.drawLiveBlock(lines);
+  }
+
+  private setVerboseSuiteVerdict(
+    depth: number,
+    description: string,
+    verdict: string,
+  ): void {
+    for (let i = this.verboseSuites.length - 1; i >= 0; i--) {
+      const suite = this.verboseSuites[i]!;
+      if (
+        suite.depth == depth &&
+        (!description.length || suite.description == description) &&
+        suite.verdict == "running"
+      ) {
+        if (description.length) suite.description = description;
+        suite.verdict = verdict;
+        return;
+      }
+    }
+    this.verboseSuites.push({ depth, description, verdict });
+  }
+
   private collapseToDepth(depth: number): void {
     while (this.openSuites.length > depth) {
       this.openSuites.pop();
@@ -108,9 +147,11 @@ class DefaultReporter implements TestReporter {
   onRunStart(event: {
     runtimeName: string;
     clean: boolean;
+    verbose: boolean;
     snapshotEnabled: boolean;
     updateSnapshots: boolean;
   }): void {
+    this.verboseMode = Boolean(event.verbose);
     if (event.clean) return;
     if (event.snapshotEnabled) {
       this.context.stdout.write(
@@ -123,8 +164,13 @@ class DefaultReporter implements TestReporter {
   onFileStart(event: ProgressEvent): void {
     this.currentFile = event.file;
     this.openSuites = [];
+    this.verboseSuites = [];
     this.fileHasWarning = false;
-    if (!this.canRewriteLine()) {
+    if (this.verboseMode && this.canRewriteLine()) {
+      this.renderVerboseState();
+      return;
+    }
+    if (this.verboseMode || !this.canRewriteLine()) {
       this.context.stdout.write(`${this.badgeRunning()} ${event.file}\n`);
       return;
     }
@@ -132,17 +178,39 @@ class DefaultReporter implements TestReporter {
   }
 
   onFileEnd(event: ProgressEvent): void {
+    if (this.verboseMode && this.canRewriteLine()) {
+      this.renderVerboseState(event);
+      this.context.stdout.write("\n");
+      this.renderedLines = 0;
+      this.currentFile = null;
+      this.openSuites = [];
+      this.verboseSuites = [];
+      this.fileHasWarning = false;
+      return;
+    }
+
     const result = this.renderFileResult(event);
     this.clearRenderedBlock();
     this.context.stdout.write(`${result}\n`);
     this.currentFile = null;
     this.openSuites = [];
+    this.verboseSuites = [];
     this.fileHasWarning = false;
   }
 
   onSuiteStart(event: ProgressEvent): void {
     const depth = Math.max(event.depth, 0);
-    if (!this.canRewriteLine()) {
+    if (this.verboseMode && this.canRewriteLine()) {
+      if (this.currentFile !== event.file) return;
+      this.verboseSuites.push({
+        depth,
+        description: event.description,
+        verdict: "running",
+      });
+      this.renderVerboseState();
+      return;
+    }
+    if (this.verboseMode || !this.canRewriteLine()) {
       this.context.stdout.write(
         `${"  ".repeat(depth + 1)}${this.badgeRunning()} ${event.description}\n`,
       );
@@ -157,7 +225,13 @@ class DefaultReporter implements TestReporter {
   onSuiteEnd(event: ProgressEvent): void {
     const depth = Math.max(event.depth, 0);
     const verdict = String(event.verdict ?? "none");
-    if (!this.canRewriteLine()) {
+    if (this.verboseMode && this.canRewriteLine()) {
+      if (this.currentFile !== event.file) return;
+      this.setVerboseSuiteVerdict(depth, event.description, verdict);
+      this.renderVerboseState();
+      return;
+    }
+    if (this.verboseMode || !this.canRewriteLine()) {
       this.context.stdout.write(
         `${"  ".repeat(depth + 1)}${this.badgeFromVerdict(verdict)} ${event.description}\n`,
       );
@@ -188,7 +262,11 @@ class DefaultReporter implements TestReporter {
     }
     this.clearRenderedBlock();
     this.context.stdout.write(warnLine);
-    this.renderLiveState();
+    if (this.verboseMode) {
+      this.renderVerboseState();
+    } else {
+      this.renderLiveState();
+    }
   }
 
   onRunComplete(event: RunCompleteEvent): void {
