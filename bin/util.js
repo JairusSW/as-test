@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "fs";
-import { Config } from "./types.js";
+import { BuildOptions, Config, RunOptions, Runtime } from "./types.js";
 import chalk from "chalk";
 import { delimiter, dirname, join } from "path";
 import { fileURLToPath } from "url";
@@ -33,7 +33,23 @@ export function loadConfig(CONFIG_PATH, warn = false) {
         return new Config();
     }
     else {
-        return Object.assign(new Config(), JSON.parse(readFileSync(CONFIG_PATH).toString()));
+        const raw = JSON.parse(readFileSync(CONFIG_PATH).toString());
+        const config = Object.assign(new Config(), raw);
+        config.buildOptions = Object.assign(new BuildOptions(), raw.buildOptions ?? {});
+        config.runOptions = Object.assign(new RunOptions(), raw.runOptions ?? {});
+        const runtimeRaw = raw.runOptions
+            ?.runtime;
+        const runtime = new Runtime();
+        const cmd = runtimeRaw && typeof runtimeRaw.cmd == "string" && runtimeRaw.cmd.length
+            ? runtimeRaw.cmd
+            : runtimeRaw &&
+                typeof runtimeRaw.run == "string" &&
+                runtimeRaw.run.length
+                ? runtimeRaw.run
+                : runtime.cmd;
+        runtime.cmd = cmd;
+        config.runOptions.runtime = runtime;
+        return config;
     }
 }
 export function getCliVersion() {
