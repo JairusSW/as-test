@@ -13,3 +13,4 @@ as-tral
 *.wat
 *.lockb
 .claude/
+.npm-cache/

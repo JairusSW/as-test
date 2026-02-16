@@ -17,6 +17,7 @@
 - [Coverage](#coverage)
 - [Custom Reporters](#custom-reporters)
 - [Runtime Notes](#runtime-notes)
+- [Release Process](#release-process)
 - [CI](#ci)
 - [Contributing](#contributing)
 - [License](#license)
@@ -34,6 +35,18 @@ For bindings-based runs, result reporting is host-driven over WIPC. The guest ru
 
 ```bash
 npm install --save-dev as-test json-as
+```
+
+Optional: install `try-as` to use `Exception.prototype.toThrow` helpers.
+
+```bash
+npm install --save-dev try-as
+```
+
+Then import it directly in specs that need it:
+
+```ts
+import "try-as";
 ```
 
 Initialize a starter layout:
@@ -75,7 +88,15 @@ npx as-test test
 ### Hooks and Shared Setup
 
 ```ts
-import { describe, test, expect, beforeAll, afterAll, beforeEach, run } from "as-test";
+import {
+  describe,
+  test,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+  run,
+} from "as-test";
 
 let calls = 0;
 
@@ -253,9 +274,10 @@ Available matchers:
 - `toMatch(substring)`
 - `toHaveLength(length)`
 - `toContain(item)`
+- `toThrow()` (requires `try-as`; warns and no-ops if unavailable)
 - `toMatchSnapshot(name?)`
 
-Detailed matcher notes and examples: `docs/assertions.md`.
+Matcher behavior details are documented in this section and covered by tests in `assembly/__tests__/expectation.spec.ts`.
 
 ## CLI
 
@@ -291,7 +313,6 @@ Example:
   "input": ["./assembly/__tests__/*.spec.ts"],
   "outDir": "./.as-test/build",
   "logs": "./.as-test/logs",
-  "snapshotDir": "./.as-test/snapshots",
   "config": "none",
   "coverage": false,
   "buildOptions": {
@@ -417,14 +438,14 @@ Each runtime command supports `<file>` (compiled wasm path) and `<name>` (spec b
 - When enabled:
   - Terminal summary prints overall point coverage.
   - `--show-coverage` prints every coverage point with hit or miss status.
-  - If `logs` is not `"none"`, coverage data is written to `logs/coverage.log.json`.
+  - If `coverageDir` is not `"none"`, coverage data is written to `coverageDir/coverage.log.json`.
 - By default, `*.spec.ts` files are excluded from coverage (`includeSpecs: false`).
 
 ## Custom Reporters
 
 `as-test` supports host-side reporter modules through `runOptions.reporter`.
 
-See reporter extension docs and module contract in `docs/reporters.md`.
+The reporter module contract is documented in this section.
 
 ## Runtime Notes
 
@@ -433,6 +454,16 @@ See reporter extension docs and module contract in `docs/reporters.md`.
 - For `wasi`, `as-test` can run modules with `node ./bin/wasi-run.js <file>`.
 - External WASI runtimes work as long as they support stdin/stdout for WIPC frames.
 - WASI builds still require `@assemblyscript/wasi-shim` for compile configuration.
+
+## Release Process
+
+Major and minor releases should follow this checklist.
+
+Before publishing, run:
+
+```bash
+npm run release:check
+```
 
 ## CI
 

@@ -2,8 +2,11 @@
 
 ## Unreleased
 
+## 2026-02-16 - v0.5.0
+
 ### Bug Fixes
 
+- fix: `toThrow()` now warns once and self-disables when `try-as` is unavailable
 - fix: `.not` modifier now correctly inverts assertion verdicts
 - fix: `toBeInteger()` / `toBeFloat()` expected type labels were swapped and are now corrected
 - fix: `beforeEach` / `afterEach` now execute once per test case instead of once per matcher call
@@ -12,6 +15,7 @@
 
 ### New Features
 
+- feat: add optional `try-as` dependency so `Exception.prototype.toThrow` can be enabled via direct `try-as` import
 - feat: add `toBeTruthy()` and `toBeFalsy()` assertions
 - feat: add `toBeCloseTo()` assertion for floating-point comparison with configurable precision
 - feat: add `toMatch()` assertion for string substring matching
@@ -34,13 +38,21 @@
 - fix: exclude `*.spec.ts`, `node_modules`, and as-test runtime files from coverage by default
 - refactor: remove generic `plugins` config usage and use top-level `coverage` config only
 - refactor: default generated outputs to `./.as-test/` (`build`, `logs`, and snapshots via `snapshotDir`)
+- refactor: write coverage artifacts to configurable `coverageDir` instead of `logs`
+- refactor: auto-enable `try-as` transform/build define when dependency is installed
+- refactor: add log transform to serialize class instances by auto-injecting `@json` and stringification fallbacks
+- refactor: harden CLI version lookup to resolve package metadata outside repository root
 
 ### Documentation
 
 - docs: rewrite `README.md` to match current CLI/runtime behavior and usage
-- docs: add matcher reference at `docs/assertions.md`
-- docs: document snapshot workflow and WIPC host-reporting behavior
-- docs: add custom reporter authoring guide at `docs/reporters.md`
+- docs: document matcher, reporter, and release guidance directly in `README.md`
+
+### Tooling
+
+- chore: add ESLint 9 flat config with AssemblyScript parser patching support
+- chore: add package `files` whitelist and `release:check` script for publish validation
+- chore: ignore local npm cache directory (`.npm-cache/`)
 
 ## 2025-05-28 - v0.4.4
 

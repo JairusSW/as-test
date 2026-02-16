@@ -1,7 +1,7 @@
 {
   "name": "as-test",
   "version": "0.4.4",
-  "description": "Testing framework for AssemblyScript. Compatible with WASI or Bindings ",
+  "description": "Testing framework for AssemblyScript. Compatible with WASI or Bindings",
   "types": "assembly/index.ts",
   "author": "Jairus Tanaka",
   "contributors": [],
@@ -13,17 +13,21 @@
     "build:cli": "tsc -p cli",
     "build:run": "tsc -p run",
     "prettier": "prettier -w .",
-    "prepublish": "npm run build:cli && npm run build:transform && npm run test"
+    "release:check": "npm run build:cli && npm run build:transform && npm run test && npm pack --dry-run --cache /tmp/as-test-npm-cache",
+    "prepublishOnly": "npm run build:cli && npm run build:transform && npm run test"
   },
   "devDependencies": {
     "@assemblyscript/wasi-shim": "^0.1.0",
+    "@eslint/js": "^10.0.1",
     "@types/node": "^25.2.3",
     "as-sleep": "^0.0.2",
     "as-test": "./",
     "assemblyscript": "^0.28.9",
     "assemblyscript-prettier": "^3.0.1",
     "json-as": "^1.2.5",
-    "typescript": "^5.9.3"
+    "prettier": "3.6.2",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.55.0"
   },
   "dependencies": {
     "as-console": "^7.0.0",
@@ -37,6 +41,9 @@
   },
   "peerDependencies": {
     "json-as": "^1.2.5"
+  },
+  "optionalDependencies": {
+    "try-as": "^0.2.5"
   },
   "repository": {
     "type": "git",
@@ -57,6 +64,21 @@
   "publishConfig": {
     "@JairusSW:registry": "https://npm.pkg.github.com"
   },
+  "files": [
+    "assembly/**/*.ts",
+    "!assembly/__tests__/**",
+    "!assembly/tsconfig.json",
+    "bin/**/*.js",
+    "templates/**/*.js",
+    "transform/lib/**/*.js",
+    "transform/lib/**/*.js.map",
+    "transform/package.json",
+    "CHANGELOG.md",
+    "README.md",
+    "LICENSE",
+    "as-test.config.schema.json",
+    "index.ts"
+  ],
   "bin": {
     "as-test": "./bin/index.js",
     "ast": "./bin/index.js"
