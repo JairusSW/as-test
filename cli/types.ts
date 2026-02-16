@@ -31,6 +31,5 @@ export class RunOptions {
 }
 
 export class Runtime {
-  name: string = "node-wasi";
-  run: string = "node ./bin/wasi-run.js <file>";
+  cmd: string = "node ./.as-test/runners/default.wasi.js <file>";
 }

@@ -1,61 +1,35 @@
-<h1 align="center"><pre>╔═╗ ╔═╗    ╔═╗ ╔═╗ ╔═╗ ╔═╗
-╠═╣ ╚═╗ ══  ║  ╠═  ╚═╗  ║ 
-╩ ╩ ╚═╝     ╩  ╚═╝ ╚═╝  ╩ </pre></h1>
+# as-test
 
-<details>
-<summary>Table of Contents</summary>
+`as-test` is a test framework for AssemblyScript with a familiar `describe/test/expect` API.
 
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Examples](#examples)
-- [API](#api)
-- [Assertions](#assertions)
-- [CLI](#cli)
-- [Configuration](#configuration)
-- [Runtime Recipes](#runtime-recipes)
+It compiles `.spec.ts` files to WebAssembly, runs them with your configured runtime, and reports per-file progress with a final aggregated summary.
+
+## Table of Contents
+
+- [Setup](#setup)
+- [Writing Tests](#writing-tests)
+- [Running Tests](#running-tests)
 - [Snapshots](#snapshots)
 - [Coverage](#coverage)
-- [Custom Reporters](#custom-reporters)
-- [Runtime Notes](#runtime-notes)
-- [Release Process](#release-process)
-- [CI](#ci)
+- [Configuration](#configuration)
+- [Custom Reporter](#custom-reporter)
+- [Assertions](#assertions)
+- [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 - [License](#license)
-- [Contact](#contact)
 
-</details>
+## Setup
 
-`as-test` is a lightweight test framework for AssemblyScript.
-
-It provides a familiar `describe/test/expect` API, compiles test files to WebAssembly, runs them with your configured runtime, and prints a concise terminal report.
-
-For bindings-based runs, result reporting is host-driven over WIPC. The guest runtime emits only WIPC frames and panic/abort output.
-
-## Installation
-
-```bash
-npm install --save-dev as-test json-as
-```
-
-Optional: install `try-as` to use `Exception.prototype.toThrow` helpers.
-
-```bash
-npm install --save-dev try-as
-```
-
-Then import it directly in specs that need it:
-
-```ts
-import "try-as";
-```
-
-Initialize a starter layout:
+### 1. Install dependencies
 
 ```bash
 npx as-test init
+npx as-test init ./path-to-install
+npx as-test init --dir ./path-to-install
+npx as-test test
 ```
 
-## Quick Start
+## Writing Tests
 
 Create `assembly/__tests__/math.spec.ts`:
 
@@ -67,146 +41,169 @@ describe("math", () => {
     expect(1 + 2).toBe(3);
   });
 
-  test("approx", () => {
+  test("close to", () => {
     expect(3.14159).toBeCloseTo(3.14, 2);
   });
 });
 
-run({ log: false });
-```
-
-Run tests:
-
-```bash
-npx as-test test
-```
-
-`run()` is optional. If a spec defines suites and omits `run()`, `as-test` auto-injects it at compile time.
-
-## Examples
-
-### Hooks and Shared Setup
-
-```ts
-import {
-  describe,
-  test,
-  expect,
-  beforeAll,
-  afterAll,
-  beforeEach,
-  run,
-} from "as-test";
-
-let calls = 0;
-
-beforeAll(() => {
-  calls = 0;
-});
-
-afterAll(() => {
-  // one-time teardown
-});
-
-beforeEach(() => {
-  calls++;
-});
-
-describe("counter", () => {
-  test("increments before each test", () => {
-    expect(calls).toBeGreaterOrEqualTo(1);
-  });
-
-  test("runs once per test", () => {
-    expect(calls).toBe(2);
-  });
-});
-
 run();
 ```
 
-### Snapshot Assertions
+`run()` can be omitted in entry specs; `as-test` injects it automatically when needed.
 
-```ts
-import { describe, test, expect, run } from "as-test";
+## Running Tests
 
-describe("user payload", () => {
-  test("matches default key snapshot", () => {
-    expect('{"id":1,"name":"jairus"}').toMatchSnapshot();
-  });
+CLI aliases:
 
-  test("matches named snapshot", () => {
-    expect('{"id":2,"name":"tari"}').toMatchSnapshot("user-2");
-  });
-});
+- `as-test`
+- `ast`
 
-run();
-```
+### Command behavior
 
-Run in read-only mode:
+- `ast build`
+  - builds all files from configured input glob(s)
+  - prints nothing on success
+  - prints error-only output on failures
+- `ast run`
+  - runs all files from configured input glob(s)
+- `ast test`
+  - resolves selected spec files
+  - executes **sequentially per file** as `build #1 -> run #1 -> build #2 -> run #2 ...`
+  - prints one final summary after all files complete
+
+### Test file selection (`ast test`)
+
+No selectors:
 
 ```bash
-npx as-test run --snapshot
+ast test
 ```
 
-Create or update snapshots:
+Uses configured input patterns from `as-test.config.json`.
+
+By name:
 
 ```bash
-npx as-test run --update-snapshots
+ast test sleep
 ```
 
-### Custom Assertion Messages
+Resolves to `<configured-input-dir>/sleep.spec.ts`.
 
-```ts
-import { describe, test, expect, run } from "as-test";
+By explicit path or glob:
 
-describe("price checks", () => {
-  test("tax-inclusive total", () => {
-    const subtotal = 100;
-    const total = subtotal * 1.07;
-    expect(total, "total should include 7% tax").toBe(107);
-  });
-});
-
-run();
+```bash
+ast test ./assembly/__tests__/sleep.spec.ts
+ast test ./assembly/__tests__/*.spec.ts
 ```
 
-### Coverage Configuration
+Multiple selectors:
+
+```bash
+ast test sleep array ./assembly/__tests__/snapshot.spec.ts
+```
+
+If nothing matches, `ast test` exits non-zero with:
+
+```text
+No test files matched: ...
+```
+
+### Useful flags
+
+- `--config <path>`: use another config file
+- `--update-snapshots`: write snapshot updates
+- `--no-snapshot`: disable snapshot assertions for the run
+- `--show-coverage`: print uncovered coverage points
+- `--clean`: cleaner output mode
+
+## Snapshots
+
+Snapshot assertions are enabled by default.
+
+- Read-only mode (default): missing/mismatched snapshots fail
+- Update mode: `--update-snapshots` writes missing/mismatched snapshots
+
+Commands:
+
+```bash
+ast test --update-snapshots
+ast run --update-snapshots
+ast test --no-snapshot
+```
+
+Snapshot files are stored in `snapshotDir` (default `./.as-test/snapshots`).
+
+## Coverage
+
+Coverage is controlled by `coverage` in config.
+Coverage reporting includes source files ending in `.ts` or `.as` only.
+
+- Boolean form:
+  - `true` / `false`
+- Object form:
+  - `{ "enabled": true, "includeSpecs": false }`
+
+Default behavior includes non-spec files and excludes `*.spec.ts` files.
+
+Show point-level misses:
+
+```bash
+ast test --show-coverage
+```
+
+Coverage artifacts:
+
+- `ast run` writes `coverage.log.json` to `coverageDir` (if enabled and not `"none"`)
+- `ast test` writes per-file coverage artifacts (`coverage.<file>.log.json`)
+
+Log artifacts:
+
+- `ast run` writes `test.log.json` to `logs` (if `logs` is not `"none"`)
+- `ast test` writes per-file logs (`test.<file>.log.json`)
+
+## Configuration
+
+Default file: `as-test.config.json`
+
+Example:
 
 ```json
 {
-  "coverage": {
-    "enabled": true,
-    "includeSpecs": false
-  },
-  "logs": "./.as-test/logs"
-}
-```
-
-Show every coverage point in terminal:
-
-```bash
-npx as-test run --show-coverage
-```
-
-### Using WASI Runtime
-
-```json
-{
+  "$schema": "./as-test.config.schema.json",
+  "input": ["./assembly/__tests__/*.spec.ts"],
+  "outDir": "./.as-test/build",
+  "logs": "./.as-test/logs",
+  "coverageDir": "./.as-test/coverage",
+  "snapshotDir": "./.as-test/snapshots",
+  "config": "none",
+  "coverage": true,
   "buildOptions": {
-    "target": "wasi",
-    "args": []
+    "args": [],
+    "target": "wasi"
   },
   "runOptions": {
     "runtime": {
-      "name": "node-wasi",
-      "run": "node ./bin/wasi-run.js <file>"
-    }
+      "cmd": "node ./.as-test/runners/default.wasi.js <file>"
+    },
+    "reporter": ""
   }
 }
 ```
 
-### Using a Custom Reporter
+Key fields:
+
+- `input`: glob list of spec files
+- `outDir`: compiled wasm output dir
+- `logs`: log output dir or `"none"`
+- `coverageDir`: coverage output dir or `"none"`
+- `snapshotDir`: snapshot storage dir
+- `buildOptions.target`: `wasi` or `bindings`
+- `runOptions.runtime.cmd`: runtime command, supports `<file>` and `<name>`
+- `runOptions.reporter`: optional custom reporter module path
+
+## Custom Reporter
+
+Set reporter path in config:
 
 ```json
 {
@@ -216,42 +213,31 @@ npx as-test run --show-coverage
 }
 ```
 
+Reporter module should export `createReporter` (named or default):
+
 ```js
-// tests/my-reporter.js
-export function createReporter() {
+export function createReporter(context) {
   return {
-    onFileEnd(event) {
-      const verdict = (event.verdict ?? "none").toUpperCase();
-      process.stdout.write(`${verdict} ${event.file}\n`);
-    },
+    onRunStart(event) {},
+    onFileStart(event) {},
+    onFileEnd(event) {},
+    onSuiteStart(event) {},
+    onSuiteEnd(event) {},
+    onAssertionFail(event) {},
+    onSnapshotMissing(event) {},
+    onRunComplete(event) {},
   };
 }
 ```
 
-## API
-
-- Suite builders:
-  - `describe(name, fn)`
-  - `test(name, fn)`
-  - `it(name, fn)`
-- Assertions:
-  - `expect(value)`
-  - `expect(value, message)` for custom failure context
-  - Negation: `expect(value).not.<matcher>()`
-- Execution:
-  - `run(options?)` remains available for explicit control
-  - If omitted, `as-test` auto-injects `run()` for entry specs with tests
-- Hooks:
-  - `beforeAll(fn)`
-  - `afterAll(fn)`
-  - `beforeEach(fn)`
-  - `afterEach(fn)`
-- Logging:
-  - `log(value)` (pretty terminal-aware logging)
-
-`beforeEach` and `afterEach` run once per test case (`test`/`it`), not once per assertion.
-
 ## Assertions
+
+Skip helpers:
+
+- `xdescribe(name, fn)`
+- `xtest(name, fn)`
+- `xit(name, fn)`
+- `xexpect(value)`
 
 Available matchers:
 
@@ -272,215 +258,30 @@ Available matchers:
 - `toBeFalsy()`
 - `toBeCloseTo(expected, precision = 2)`
 - `toMatch(substring)`
+- `toStartWith(prefix)`
+- `toEndWith(suffix)`
 - `toHaveLength(length)`
 - `toContain(item)`
-- `toThrow()` (requires `try-as`; warns and no-ops if unavailable)
+- `toThrow()` (with `try-as`)
 - `toMatchSnapshot(name?)`
 
-Matcher behavior details are documented in this section and covered by tests in `assembly/__tests__/expectation.spec.ts`.
+## Troubleshooting
 
-## CLI
-
-Commands:
-
-- `as-test build`: compile test specs to artifacts in `outDir`
-- `as-test run`: execute compiled tests with configured runtime
-- `as-test test`: build, then run
-- `as-test init`: scaffold test setup
-
-Snapshot and coverage flags:
-
-- `as-test run --snapshot`: enable snapshot assertions in read-only mode
-- `as-test run --update-snapshots`: create or update snapshot files
-- `as-test test --snapshot`: build and run with snapshots enabled
-- `as-test test --update-snapshots`: build, run, and write snapshot updates
-- `as-test run --show-coverage`: print all coverage points with `line:column`
-
-Version:
-
-- `as-test --version`
-- `as-test -v`
-
-## Configuration
-
-Default config file: `as-test.config.json` (generated artifacts default to `./.as-test/*`).
-
-Example:
-
-```json
-{
-  "$schema": "./as-test.config.schema.json",
-  "input": ["./assembly/__tests__/*.spec.ts"],
-  "outDir": "./.as-test/build",
-  "logs": "./.as-test/logs",
-  "config": "none",
-  "coverage": false,
-  "buildOptions": {
-    "args": [],
-    "target": "wasi"
-  },
-  "runOptions": {
-    "runtime": {
-      "name": "node-wasi",
-      "run": "node ./bin/wasi-run.js <file>"
-    },
-    "reporter": ""
-  }
-}
-```
-
-`$schema` enables editor autocomplete and validation for `as-test.config.json`.
-
-`runOptions.reporter` is optional. Leave it empty to use the built-in reporter. If set, it must point to a JS/TS module exporting a reporter factory.
-
-## Runtime Recipes
-
-Each runtime command supports `<file>` (compiled wasm path) and `<name>` (spec base name).
-
-### WASI with built-in Node runner (default)
-
-```json
-{
-  "buildOptions": { "target": "wasi" },
-  "runOptions": {
-    "runtime": {
-      "name": "node-wasi",
-      "run": "node ./bin/wasi-run.js <file>"
-    }
-  }
-}
-```
-
-### WASI with wazero
-
-```json
-{
-  "buildOptions": { "target": "wasi" },
-  "runOptions": {
-    "runtime": {
-      "name": "wazero",
-      "run": "wazero run <file>"
-    }
-  }
-}
-```
-
-### WASI with wasmtime
-
-```json
-{
-  "buildOptions": { "target": "wasi" },
-  "runOptions": {
-    "runtime": {
-      "name": "wasmtime",
-      "run": "wasmtime <file>"
-    }
-  }
-}
-```
-
-### WASI with wasmer
-
-```json
-{
-  "buildOptions": { "target": "wasi" },
-  "runOptions": {
-    "runtime": {
-      "name": "wasmer",
-      "run": "wasmer run <file>"
-    }
-  }
-}
-```
-
-### WASI with wasmedge
-
-```json
-{
-  "buildOptions": { "target": "wasi" },
-  "runOptions": {
-    "runtime": {
-      "name": "wasmedge",
-      "run": "wasmedge <file>"
-    }
-  }
-}
-```
-
-### Bindings with Node
-
-```json
-{
-  "buildOptions": { "target": "bindings" },
-  "runOptions": {
-    "runtime": {
-      "name": "node",
-      "run": "node ./tests/<name>.run.js"
-    }
-  }
-}
-```
-
-## Snapshots
-
-- Snapshot files are written under `snapshotDir` (default: `./.as-test/snapshots/`).
-- `toMatchSnapshot()` uses a deterministic key based on file, suite path, and assertion order.
-- `toMatchSnapshot("name")` appends a stable suffix for multiple snapshots in one test.
-- In read-only mode (`--snapshot`), missing or mismatched snapshots fail the run.
-- In update mode (`--update-snapshots`), missing or mismatched snapshots are written and treated as pass.
-
-## Coverage
-
-- Coverage instrumentation is collected during test execution.
-- Configure coverage using either:
-  - `"coverage": true | false`
-  - `"coverage": { "enabled": true | false, "includeSpecs": false }`
-- When enabled:
-  - Terminal summary prints overall point coverage.
-  - `--show-coverage` prints every coverage point with hit or miss status.
-  - If `coverageDir` is not `"none"`, coverage data is written to `coverageDir/coverage.log.json`.
-- By default, `*.spec.ts` files are excluded from coverage (`includeSpecs: false`).
-
-## Custom Reporters
-
-`as-test` supports host-side reporter modules through `runOptions.reporter`.
-
-The reporter module contract is documented in this section.
-
-## Runtime Notes
-
-- `buildOptions.target` supports `bindings` and `wasi`.
-- For `bindings`, runtime command usually points to `tests/<name>.run.js` wrappers.
-- For `wasi`, `as-test` can run modules with `node ./bin/wasi-run.js <file>`.
-- External WASI runtimes work as long as they support stdin/stdout for WIPC frames.
-- WASI builds still require `@assemblyscript/wasi-shim` for compile configuration.
-
-## Release Process
-
-Major and minor releases should follow this checklist.
-
-Before publishing, run:
-
-```bash
-npm run release:check
-```
-
-## CI
-
-See `.github/workflows/as-test.yml` for a working CI example.
+- `could not find json-as`:
+  - install `json-as` as a dev dependency
+- `could not find @assemblyscript/wasi-shim`:
+  - install `@assemblyscript/wasi-shim` when using `wasi`
+- `No test files matched: ...`:
+  - verify `input` globs or selector arguments
+- `Failed to build file.spec.ts with ...`:
+  - check compile error output from AssemblyScript in stderr
 
 ## Contributing
 
-Issues and pull requests are welcome: [GitHub Issues](https://github.com/JairusSW/as-test/issues).
+Issues and PRs are welcome:
+
+- https://github.com/JairusSW/as-test/issues
 
 ## License
 
-This project is distributed under the MIT license.
-
-You can view the full license here: [LICENSE](./LICENSE).
-
-## Contact
-
-- **GitHub:** [JairusSW/as-test](https://github.com/JairusSW/as-test)
-- **Issues:** [Open an issue](https://github.com/JairusSW/as-test/issues)
-- **Email:** [me@jairus.dev](mailto:me@jairus.dev)
+MIT, see [LICENSE](./LICENSE).

@@ -1,27 +1,27 @@
-import { describe, expect, log, run, test } from "..";
+import { describe, expect, it, log, run, test } from "..";
 import { sleep } from "as-sleep/assembly";
 describe("Should sleep", () => {
-  test("1ms", () => {
+  it("1ms", () => {
     const start = Date.now();
     sleep(1);
     expect(Date.now() - start).toBeGreaterOrEqualTo(1);
   });
-  test("10ms", () => {
+  it("10ms", () => {
     const start = Date.now();
     sleep(10);
     expect(Date.now() - start).toBeGreaterOrEqualTo(10);
   });
-  test("1s", () => {
+  it("100ms", () => {
     const start = Date.now();
-    sleep(1000);
-    expect(Date.now() - start).toBeGreaterOrEqualTo(1000);
+    sleep(100);
+    expect(Date.now() - start).toBeGreaterOrEqualTo(100);
   });
-  test("5s", () => {
+  it("1s", () => {
     const start = Date.now();
     log("Sleeping...");
-    sleep(5000);
+    sleep(1000);
     log("Done!");
-    expect(Date.now() - start).toBeGreaterOrEqualTo(5000);
+    expect(Date.now() - start).toBeGreaterOrEqualTo(1000);
   });
 });
 

@@ -2,10 +2,12 @@
 
 import chalk from "chalk";
 import { build } from "./build.js";
-import { run } from "./run.js";
+import { createRunReporter, run, RunResult } from "./run.js";
 import { init } from "./init.js";
-import { getCliVersion } from "./util.js";
+import { getCliVersion, loadConfig } from "./util.js";
 import * as path from "path";
+import { glob } from "glob";
+import { CoverageSummary, RunStats } from "./reporters/types.js";
 
 const _args = process.argv.slice(2);
 const flags: string[] = [];
@@ -29,6 +31,7 @@ if (!args.length) {
   }
 } else if (COMMANDS.includes(args[0]!)) {
   const command = args.shift();
+  const commandArgs = resolveCommandArgs(_args, command ?? "");
   const runFlags = {
     snapshot: !flags.includes("--no-snapshot"),
     updateSnapshots: flags.includes("--update-snapshots"),
@@ -36,15 +39,23 @@ if (!args.length) {
     showCoverage: flags.includes("--show-coverage"),
   };
   if (command === "build") {
-    build(configPath);
+    build(configPath).catch((error) => {
+      printCliError(error);
+      process.exit(1);
+    });
   } else if (command === "run") {
     run(runFlags, configPath);
   } else if (command === "test") {
-    build(configPath).then(() => {
-      run(runFlags, configPath);
+    runTestSequential(runFlags, configPath, commandArgs).catch((error) => {
+      printCliError(error);
+      process.exit(1);
     });
   } else if (command === "init") {
-    init(args);
+    const commandTokens = resolveCommandTokens(_args, command ?? "");
+    init(commandTokens).catch((error) => {
+      printCliError(error);
+      process.exit(1);
+    });
   }
 } else {
   console.log(
@@ -82,7 +93,7 @@ function info(): void {
     "  " +
       chalk.bold.blueBright("run") +
       "       " +
-      chalk.dim("<my-test.spec.ts>") +
+      chalk.dim("(uses configured input glob)") +
       "       " +
       "Run unit tests with selected runtime",
   );
@@ -90,7 +101,7 @@ function info(): void {
     "  " +
       chalk.bold.blueBright("build") +
       "     " +
-      chalk.dim("<my-test.spec.ts>") +
+      chalk.dim("(uses configured input glob)") +
       "       " +
       "Build unit tests and compile",
   );
@@ -98,7 +109,7 @@ function info(): void {
     "  " +
       chalk.bold.blueBright("test") +
       "      " +
-      chalk.dim("<my-test.spec.ts>") +
+      chalk.dim("[<name>|<path-or-glob>]") +
       "       " +
       "Build and run unit tests with selected runtime" +
       "\n",
@@ -199,4 +210,229 @@ function resolveConfigPath(rawArgs: string[]): string | undefined {
     }
   }
   return undefined;
+}
+
+function resolveCommandArgs(rawArgs: string[], command: string): string[] {
+  const values: string[] = [];
+  let seenCommand = false;
+
+  for (let i = 0; i < rawArgs.length; i++) {
+    const arg = rawArgs[i]!;
+    if (!seenCommand) {
+      if (arg == command) seenCommand = true;
+      continue;
+    }
+    if (arg == "--config") {
+      i++;
+      continue;
+    }
+    if (arg.startsWith("--config=")) {
+      continue;
+    }
+    if (arg.startsWith("-")) {
+      continue;
+    }
+    values.push(arg);
+  }
+  return values;
+}
+
+function resolveCommandTokens(rawArgs: string[], command: string): string[] {
+  const values: string[] = [];
+  let seenCommand = false;
+  for (let i = 0; i < rawArgs.length; i++) {
+    const arg = rawArgs[i]!;
+    if (!seenCommand) {
+      if (arg == command) seenCommand = true;
+      continue;
+    }
+    values.push(arg);
+  }
+  return values;
+}
+
+async function runTestSequential(
+  runFlags: {
+    snapshot: boolean;
+    updateSnapshots: boolean;
+    clean: boolean;
+    showCoverage: boolean;
+  },
+  configPath: string | undefined,
+  selectors: string[],
+): Promise<void> {
+  const files = await resolveSelectedFiles(configPath, selectors);
+  if (!files.length) {
+    const scope =
+      selectors.length > 0
+        ? selectors.join(", ")
+        : "configured input patterns";
+    throw new Error(`No test files matched: ${scope}`);
+  }
+
+  const reporterSession = await createRunReporter(configPath);
+  const reporter = reporterSession.reporter;
+  const snapshotEnabled = runFlags.snapshot !== false;
+  reporter.onRunStart?.({
+    runtimeName: reporterSession.runtimeName,
+    clean: runFlags.clean,
+    snapshotEnabled,
+    updateSnapshots: runFlags.updateSnapshots,
+  });
+
+  const results: RunResult[] = [];
+  let failed = false;
+  for (const file of files) {
+    await build(configPath, [file]);
+    const artifactKey = path.basename(file).replace(/[^a-zA-Z0-9._-]/g, "_");
+    const result = await run(runFlags, configPath, [file], false, {
+      reporter,
+      emitRunStart: false,
+      emitRunComplete: false,
+      logFileName: `test.${artifactKey}.log.json`,
+      coverageFileName: `coverage.${artifactKey}.log.json`,
+    });
+    results.push(result);
+    if (result?.failed) failed = true;
+  }
+
+  const summary = aggregateRunResults(results);
+  reporter.onRunComplete?.({
+    clean: runFlags.clean,
+    snapshotEnabled,
+    showCoverage: runFlags.showCoverage,
+    snapshotSummary: summary.snapshotSummary,
+    coverageSummary: summary.coverageSummary,
+    stats: summary.stats,
+    reports: summary.reports,
+  });
+  process.exit(failed ? 1 : 0);
+}
+
+async function resolveSelectedFiles(
+  configPath: string | undefined,
+  selectors: string[],
+): Promise<string[]> {
+  const resolvedConfigPath =
+    configPath ?? path.join(process.cwd(), "./as-test.config.json");
+  const config = loadConfig(resolvedConfigPath, true);
+  const patterns = resolveInputPatterns(config.input, selectors);
+  const matches = await glob(patterns);
+  const specs = matches.filter((file) => file.endsWith(".spec.ts"));
+  return [...new Set(specs)];
+}
+
+function resolveInputPatterns(
+  configured: string[] | string,
+  selectors: string[],
+): string[] {
+  const configuredInputs = Array.isArray(configured) ? configured : [configured];
+  if (!selectors.length) return configuredInputs;
+
+  const patterns = new Set<string>();
+  for (const selector of selectors) {
+    if (!selector) continue;
+    if (isBareSuiteSelector(selector)) {
+      const base = stripSuiteSuffix(selector);
+      for (const configuredInput of configuredInputs) {
+        patterns.add(path.join(path.dirname(configuredInput), `${base}.spec.ts`));
+      }
+      continue;
+    }
+    patterns.add(selector);
+  }
+  return [...patterns];
+}
+
+function isBareSuiteSelector(selector: string): boolean {
+  return (
+    !selector.includes("/") &&
+    !selector.includes("\\") &&
+    !/[*?[\]{}]/.test(selector)
+  );
+}
+
+function stripSuiteSuffix(selector: string): string {
+  return selector.replace(/\.spec\.ts$/, "").replace(/\.ts$/, "");
+}
+
+function aggregateRunResults(results: RunResult[]): {
+  stats: RunStats;
+  snapshotSummary: {
+    matched: number;
+    created: number;
+    updated: number;
+    failed: number;
+  };
+  coverageSummary: CoverageSummary;
+  reports: unknown[];
+} {
+  const stats: RunStats = {
+    passedFiles: 0,
+    failedFiles: 0,
+    skippedFiles: 0,
+    passedSuites: 0,
+    failedSuites: 0,
+    skippedSuites: 0,
+    passedTests: 0,
+    failedTests: 0,
+    skippedTests: 0,
+    time: 0,
+    failedEntries: [],
+  };
+  const snapshotSummary = {
+    matched: 0,
+    created: 0,
+    updated: 0,
+    failed: 0,
+  };
+  const coverageSummary: CoverageSummary = {
+    enabled: false,
+    showPoints: false,
+    total: 0,
+    covered: 0,
+    uncovered: 0,
+    percent: 100,
+    files: [],
+  };
+  const reports: unknown[] = [];
+
+  for (const result of results) {
+    stats.passedFiles += result.stats.passedFiles;
+    stats.failedFiles += result.stats.failedFiles;
+    stats.skippedFiles += result.stats.skippedFiles;
+    stats.passedSuites += result.stats.passedSuites;
+    stats.failedSuites += result.stats.failedSuites;
+    stats.skippedSuites += result.stats.skippedSuites;
+    stats.passedTests += result.stats.passedTests;
+    stats.failedTests += result.stats.failedTests;
+    stats.skippedTests += result.stats.skippedTests;
+    stats.time += result.stats.time;
+    stats.failedEntries.push(...result.stats.failedEntries);
+
+    snapshotSummary.matched += result.snapshotSummary.matched;
+    snapshotSummary.created += result.snapshotSummary.created;
+    snapshotSummary.updated += result.snapshotSummary.updated;
+    snapshotSummary.failed += result.snapshotSummary.failed;
+
+    coverageSummary.enabled = coverageSummary.enabled || result.coverageSummary.enabled;
+    coverageSummary.showPoints =
+      coverageSummary.showPoints || result.coverageSummary.showPoints;
+    coverageSummary.total += result.coverageSummary.total;
+    coverageSummary.covered += result.coverageSummary.covered;
+    coverageSummary.uncovered += result.coverageSummary.uncovered;
+    coverageSummary.files.push(...result.coverageSummary.files);
+
+    reports.push(...result.reports);
+  }
+  coverageSummary.percent = coverageSummary.total
+    ? (coverageSummary.covered * 100) / coverageSummary.total
+    : 100;
+
+  return { stats, snapshotSummary, coverageSummary, reports };
+}
+
+function printCliError(error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  process.stderr.write(message + "\n");
 }

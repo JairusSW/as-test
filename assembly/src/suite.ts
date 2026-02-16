@@ -58,11 +58,30 @@ export class Suite {
     depth++;
     this.time.start = performance.now();
     sendSuiteStart(this.file, this.depth, this.kind, this.description);
+    const isSkippedCase =
+      this.kind == "xdescribe" ||
+      this.kind == "xtest" ||
+      this.kind == "xit";
     const isTestCase =
       this.kind == "test" ||
       this.kind == "it" ||
       this.kind == "xtest" ||
       this.kind == "xit";
+
+    if (isSkippedCase) {
+      this.time.end = performance.now();
+      this.verdict = "skip";
+      // @ts-ignore
+      depth--;
+      sendSuiteEnd(
+        this.file,
+        this.depth,
+        this.kind,
+        this.description,
+        this.verdict,
+      );
+      return;
+    }
 
     // @ts-ignore
     if (isTestCase && before_each_callback) before_each_callback();
@@ -73,30 +92,39 @@ export class Suite {
     // @ts-ignore
     depth--;
 
-    let suiteNone = true;
+    let hasFail = false;
+    let hasOk = false;
+    let hasSkip = false;
     for (let i = 0; i < this.suites.length; i++) {
       const suite = unchecked(this.suites[i]);
       suite.run();
       if (suite.verdict == "fail") {
-        this.verdict = "fail";
-        suiteNone = false;
+        hasFail = true;
       } else if (suite.verdict == "ok") {
-        suiteNone = false;
+        hasOk = true;
+      } else if (suite.verdict == "skip") {
+        hasSkip = true;
       }
     }
     for (let i = 0; i < this.tests.length; i++) {
       const test = unchecked(this.tests[i]);
       if (test.verdict == "fail") {
-        this.verdict = "fail";
-        suiteNone = false;
+        hasFail = true;
       } else if (test.verdict == "ok") {
-        suiteNone = false;
+        hasOk = true;
+      } else if (test.verdict == "skip") {
+        hasSkip = true;
       }
     }
 
-    if (this.verdict == "fail") {
-    } else if (!suiteNone || this.tests.length) {
+    if (hasFail) {
+      this.verdict = "fail";
+    } else if (hasOk) {
       this.verdict = "ok";
+    } else if (hasSkip) {
+      this.verdict = "skip";
+    } else {
+      this.verdict = "none";
     }
     sendSuiteEnd(
       this.file,

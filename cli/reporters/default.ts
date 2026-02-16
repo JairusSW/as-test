@@ -19,7 +19,91 @@ export const createReporter: ReporterFactory = (
 };
 
 class DefaultReporter implements TestReporter {
+  private currentFile: string | null = null;
+  private openSuites: { depth: number; description: string }[] = [];
+  private renderedLines = 0;
+  private fileHasWarning = false;
+
   constructor(private readonly context: ReporterContext) {}
+
+  private canRewriteLine(): boolean {
+    return Boolean((this.context.stdout as { isTTY?: boolean }).isTTY);
+  }
+
+  private badgeRunning(): string {
+    return chalk.bgBlackBright.white(" .... ");
+  }
+
+  private badgeFromVerdict(verdict: string): string {
+    if (verdict == "ok") return chalk.bgGreenBright.black(" PASS ");
+    if (verdict == "fail") return chalk.bgRed.white(" FAIL ");
+    return chalk.bgBlackBright.white(" SKIP ");
+  }
+
+  private clearRenderedBlock(): void {
+    if (!this.renderedLines || !this.canRewriteLine()) return;
+    for (let i = 0; i < this.renderedLines; i++) {
+      this.context.stdout.write("\r\x1b[2K");
+      if (i < this.renderedLines - 1) {
+        this.context.stdout.write("\x1b[1A");
+      }
+    }
+    this.renderedLines = 0;
+  }
+
+  private drawLiveBlock(lines: string[]): void {
+    this.clearRenderedBlock();
+    if (!lines.length) return;
+    this.context.stdout.write(lines.join("\n"));
+    this.renderedLines = lines.length;
+  }
+
+  private renderLiveState(): void {
+    if (!this.canRewriteLine() || !this.currentFile) return;
+    const lines = [`${this.badgeRunning()} ${this.currentFile}`];
+    for (const suite of this.openSuites) {
+      lines.push(
+        `${"  ".repeat(suite.depth + 1)}${this.badgeRunning()} ${suite.description}`,
+      );
+    }
+    this.drawLiveBlock(lines);
+  }
+
+  private collapseToDepth(depth: number): void {
+    while (this.openSuites.length > depth) {
+      this.openSuites.pop();
+    }
+  }
+
+  private renderSuiteCompleteFrame(
+    depth: number,
+    description: string,
+    verdict: string,
+  ): void {
+    if (!this.canRewriteLine() || !this.currentFile) return;
+    const lines = [`${this.badgeRunning()} ${this.currentFile}`];
+    for (let i = 0; i < depth; i++) {
+      const suite = this.openSuites[i];
+      if (!suite) continue;
+      lines.push(
+        `${"  ".repeat(suite.depth + 1)}${this.badgeRunning()} ${suite.description}`,
+      );
+    }
+    lines.push(
+      `${"  ".repeat(depth + 1)}${this.badgeFromVerdict(verdict)} ${description}`,
+    );
+    this.drawLiveBlock(lines);
+  }
+
+  private renderFileResult(event: ProgressEvent): string {
+    const verdict = event.verdict ?? "none";
+    const time = event.time ? ` ${chalk.dim(event.time)}` : "";
+    if (verdict == "fail") return `${chalk.bgRed.white(" FAIL ")} ${event.file}${time}`;
+    if (this.fileHasWarning)
+      return `${chalk.bgYellow.black(" WARN ")} ${event.file}${time}`;
+    if (verdict == "ok") return `${chalk.bgGreenBright.black(" PASS ")} ${event.file}${time}`;
+    return `${chalk.bgBlackBright.white(" SKIP ")} ${event.file}${time}`;
+  }
 
   onRunStart(event: {
     runtimeName: string;
@@ -28,9 +112,6 @@ class DefaultReporter implements TestReporter {
     updateSnapshots: boolean;
   }): void {
     if (event.clean) return;
-    this.context.stdout.write(
-      chalk.dim("Running tests using " + event.runtimeName + "") + "\n",
-    );
     if (event.snapshotEnabled) {
       this.context.stdout.write(
         chalk.bgBlue(" SNAPSHOT ") +
@@ -39,38 +120,79 @@ class DefaultReporter implements TestReporter {
     }
   }
 
-  onFileStart(_event: ProgressEvent): void {}
-
-  onFileEnd(event: ProgressEvent): void {
-    const verdict = event.verdict ?? "none";
-    if (verdict == "ok") {
-      this.context.stdout.write(
-        `${chalk.bgGreenBright(" PASS ")} ${event.file} ${chalk.dim(event.time ?? "")}\n`,
-      );
-    } else if (verdict == "fail") {
-      this.context.stdout.write(
-        `${chalk.bgRed(" FAIL ")} ${event.file} ${chalk.dim(event.time ?? "")}\n`,
-      );
-    } else {
-      this.context.stdout.write(
-        `${chalk.bgBlackBright(" SKIP ")} ${event.file} ${chalk.dim(event.time ?? "")}\n`,
-      );
+  onFileStart(event: ProgressEvent): void {
+    this.currentFile = event.file;
+    this.openSuites = [];
+    this.fileHasWarning = false;
+    if (!this.canRewriteLine()) {
+      this.context.stdout.write(`${this.badgeRunning()} ${event.file}\n`);
+      return;
     }
+    this.renderLiveState();
   }
 
-  onSuiteStart(_event: ProgressEvent): void {}
+  onFileEnd(event: ProgressEvent): void {
+    const result = this.renderFileResult(event);
+    this.clearRenderedBlock();
+    this.context.stdout.write(`${result}\n`);
+    this.currentFile = null;
+    this.openSuites = [];
+    this.fileHasWarning = false;
+  }
 
-  onSuiteEnd(_event: ProgressEvent): void {}
+  onSuiteStart(event: ProgressEvent): void {
+    const depth = Math.max(event.depth, 0);
+    if (!this.canRewriteLine()) {
+      this.context.stdout.write(
+        `${"  ".repeat(depth + 1)}${this.badgeRunning()} ${event.description}\n`,
+      );
+      return;
+    }
+    if (this.currentFile !== event.file) return;
+    this.collapseToDepth(depth);
+    this.openSuites.push({ depth, description: event.description });
+    this.renderLiveState();
+  }
+
+  onSuiteEnd(event: ProgressEvent): void {
+    const depth = Math.max(event.depth, 0);
+    const verdict = String(event.verdict ?? "none");
+    if (!this.canRewriteLine()) {
+      this.context.stdout.write(
+        `${"  ".repeat(depth + 1)}${this.badgeFromVerdict(verdict)} ${event.description}\n`,
+      );
+      return;
+    }
+    if (this.currentFile !== event.file) return;
+    this.collapseToDepth(depth + 1);
+    const current = this.openSuites[depth];
+    const description = event.description || current?.description || "suite";
+    if (!current) {
+      this.openSuites.push({ depth, description });
+    } else {
+      current.description = description;
+    }
+    this.renderSuiteCompleteFrame(depth, description, verdict);
+    this.collapseToDepth(depth);
+    this.renderLiveState();
+  }
 
   onAssertionFail(_event: RealtimeFailureEvent): void {}
 
   onSnapshotMissing(event: SnapshotMissingEvent): void {
-    this.context.stdout.write(
-      `${chalk.bgYellow.black(" WARN ")} missing snapshot for ${chalk.dim(event.key)}. Re-run with ${chalk.bold("--update-snapshots")} to create it.\n`,
-    );
+    this.fileHasWarning = true;
+    const warnLine = `${chalk.bgYellow.black(" WARN ")} missing snapshot for ${chalk.dim(event.key)}. Re-run with ${chalk.bold("--update-snapshots")} to create it.\n`;
+    if (!this.canRewriteLine() || !this.currentFile) {
+      this.context.stdout.write(warnLine);
+      return;
+    }
+    this.clearRenderedBlock();
+    this.context.stdout.write(warnLine);
+    this.renderLiveState();
   }
 
   onRunComplete(event: RunCompleteEvent): void {
+    this.clearRenderedBlock();
     if (!event.clean) {
       renderFailedSuites(event.stats.failedEntries);
     }
@@ -171,41 +293,66 @@ function renderSnapshotSummary(snapshotSummary: SnapshotSummary): void {
 function renderTotals(stats: {
   failedFiles: number;
   passedFiles: number;
+  skippedFiles: number;
   failedSuites: number;
   passedSuites: number;
+  skippedSuites: number;
   failedTests: number;
   passedTests: number;
+  skippedTests: number;
   time: number;
 }): void {
   console.log("");
   process.stdout.write(chalk.bold("Files:  "));
-  if (stats.failedFiles) {
-    process.stdout.write(chalk.bold.red(stats.failedFiles + " failed"));
-  } else {
-    process.stdout.write(chalk.bold.greenBright("0 failed"));
-  }
   process.stdout.write(
-    ", " + (stats.failedFiles + stats.passedFiles) + " total\n",
+    stats.failedFiles
+      ? chalk.bold.red(stats.failedFiles + " failed")
+      : chalk.bold.greenBright("0 failed"),
+  );
+  process.stdout.write(
+    ", " +
+      (stats.skippedFiles
+        ? chalk.gray(stats.skippedFiles + " skipped")
+        : chalk.gray("0 skipped")),
+  );
+  process.stdout.write(
+    ", " +
+      (stats.failedFiles + stats.passedFiles + stats.skippedFiles) +
+      " total\n",
   );
 
   process.stdout.write(chalk.bold("Suites: "));
-  if (stats.failedSuites) {
-    process.stdout.write(chalk.bold.red(stats.failedSuites + " failed"));
-  } else {
-    process.stdout.write(chalk.bold.greenBright("0 failed"));
-  }
   process.stdout.write(
-    ", " + (stats.failedSuites + stats.passedSuites) + " total\n",
+    stats.failedSuites
+      ? chalk.bold.red(stats.failedSuites + " failed")
+      : chalk.bold.greenBright("0 failed"),
+  );
+  process.stdout.write(
+    ", " +
+      (stats.skippedSuites
+        ? chalk.gray(stats.skippedSuites + " skipped")
+        : chalk.gray("0 skipped")),
+  );
+  process.stdout.write(
+    ", " +
+      (stats.failedSuites + stats.passedSuites + stats.skippedSuites) +
+      " total\n",
   );
 
   process.stdout.write(chalk.bold("Tests:  "));
-  if (stats.failedTests) {
-    process.stdout.write(chalk.bold.red(stats.failedTests + " failed"));
-  } else {
-    process.stdout.write(chalk.bold.greenBright("0 failed"));
-  }
   process.stdout.write(
-    ", " + (stats.failedTests + stats.passedTests) + " total\n",
+    stats.failedTests
+      ? chalk.bold.red(stats.failedTests + " failed")
+      : chalk.bold.greenBright("0 failed"),
+  );
+  process.stdout.write(
+    ", " +
+      (stats.skippedTests
+        ? chalk.gray(stats.skippedTests + " skipped")
+        : chalk.gray("0 skipped")),
+  );
+  process.stdout.write(
+    ", " + (stats.failedTests + stats.passedTests + stats.skippedTests) + " total\n",
   );
 
   process.stdout.write(chalk.bold("Time:   ") + formatTime(stats.time) + "\n");

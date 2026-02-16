@@ -110,19 +110,14 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "name": {
-              "type": "string",
-              "default": "node-wasi"
-            },
-            "run": {
+            "cmd": {
               "type": "string",
               "description": "Runtime command; supports placeholders like <file> and <name>.",
-              "default": "node ./bin/wasi-run.js <file>"
+              "default": "node ./.as-test/runners/default.wasi.js <file>"
             }
           },
           "default": {
-            "name": "node-wasi",
-            "run": "node ./bin/wasi-run.js <file>"
+            "cmd": "node ./.as-test/runners/default.wasi.js <file>"
           }
         },
         "reporter": {
@@ -133,8 +128,7 @@
       },
       "default": {
         "runtime": {
-          "name": "node-wasi",
-          "run": "node ./bin/wasi-run.js <file>"
+          "cmd": "node ./.as-test/runners/default.wasi.js <file>"
         },
         "reporter": ""
       }

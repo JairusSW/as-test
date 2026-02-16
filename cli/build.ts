@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "fs";
+import { existsSync } from "fs";
 import { Config } from "./types.js";
 import { glob } from "glob";
 import chalk from "chalk";
@@ -7,55 +7,77 @@ import * as path from "path";
 import { getPkgRunner, loadConfig } from "./util.js";
 
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
-const PKG_PATH = path.join(process.cwd(), "./package.json");
-export async function build(configPath: string = DEFAULT_CONFIG_PATH) {
-  const config = loadConfig(configPath, true);
-
-  const ASCONFIG_PATH = path.join(process.cwd(), config.config);
-  if (config.config && config.config !== "none" && !existsSync(ASCONFIG_PATH)) {
-    console.log(
-      `${chalk.bgMagentaBright(" WARN ")}${chalk.dim(":")} Could not locate asconfig.json file! If you do not want to provide a config, set "config": "none"`,
-    );
-  }
+export async function build(
+  configPath: string = DEFAULT_CONFIG_PATH,
+  selectors: string[] = [],
+) {
+  const config = loadConfig(configPath, false);
 
   ensureDeps(config);
 
   const pkgRunner = getPkgRunner();
-  const inputFiles = await glob(config.input);
+  const inputPatterns = resolveInputPatterns(config.input, selectors);
+  const inputFiles = await glob(inputPatterns);
 
   const buildArgs = getBuildArgs(config);
-
   for (const file of inputFiles) {
     let cmd = `${pkgRunner} asc ${file}${buildArgs}`;
     const outFile = `${config.outDir}/${file.slice(file.lastIndexOf("/") + 1).replace(".ts", ".wasm")}`;
     if (config.outDir) {
       cmd += " -o " + outFile;
     }
-    buildFile(cmd);
+    try {
+      buildFile(cmd);
+    } catch (error) {
+      throw new Error(
+        `Failed to build ${path.basename(file)} with ${getBuildStderr(error)}`,
+      );
+    }
   }
 }
 
-function ensureDeps(config: Config): void {
-  const pkg = JSON.parse(readFileSync(PKG_PATH).toString()) as {
-    dependencies?: Record<string, string>;
-    devDependencies?: Record<string, string>;
-    peerDependencies?: Record<string, string>;
-  };
+function resolveInputPatterns(
+  configured: string[] | string,
+  selectors: string[],
+): string[] {
+  const configuredInputs = Array.isArray(configured) ? configured : [configured];
+  if (!selectors.length) return configuredInputs;
 
+  const patterns = new Set<string>();
+  for (const selector of selectors) {
+    if (!selector) continue;
+    if (isBareSuiteSelector(selector)) {
+      const base = stripSuiteSuffix(selector);
+      for (const configuredInput of configuredInputs) {
+        patterns.add(path.join(path.dirname(configuredInput), `${base}.spec.ts`));
+      }
+      continue;
+    }
+    patterns.add(selector);
+  }
+  return [...patterns];
+}
+
+function isBareSuiteSelector(selector: string): boolean {
+  return (
+    !selector.includes("/") &&
+    !selector.includes("\\") &&
+    !/[*?[\]{}]/.test(selector)
+  );
+}
+
+function stripSuiteSuffix(selector: string): string {
+  return selector.replace(/\.spec\.ts$/, "").replace(/\.ts$/, "");
+}
+
+
+function ensureDeps(config: Config): void {
   if (config.buildOptions.target == "wasi") {
     if (!existsSync("./node_modules/@assemblyscript/wasi-shim/asconfig.json")) {
       console.log(
         `${chalk.bgRed(" ERROR ")}${chalk.dim(":")} could not find @assemblyscript/wasi-shim! Add it to your dependencies to run with WASI!`,
       );
       process.exit(1);
-    }
-    if (
-      !hasDep(pkg, "@assemblyscript/wasi-shim") &&
-      existsSync("./node_modules/@assemblyscript/wasi-shim/asconfig.json")
-    ) {
-      console.log(
-        `${chalk.bold.bgMagentaBright(" WARN ")}${chalk.dim(":")} @assemblyscript/wasi-shim is not included in project dependencies!"`,
-      );
     }
   }
 
@@ -68,7 +90,24 @@ function ensureDeps(config: Config): void {
 }
 
 function buildFile(command: string): void {
-  execSync(command, { stdio: "inherit" });
+  execSync(command, {
+    stdio: ["ignore", "pipe", "pipe"],
+    encoding: "utf8",
+  });
+}
+
+function getBuildStderr(error: unknown): string {
+  const err = error as { stderr?: unknown; message?: unknown };
+  const stderr = err?.stderr;
+  if (typeof stderr == "string") {
+    const trimmed = stderr.trim();
+    if (trimmed.length) return trimmed;
+  } else if (stderr instanceof Buffer) {
+    const trimmed = stderr.toString("utf8").trim();
+    if (trimmed.length) return trimmed;
+  }
+  const message = typeof err?.message == "string" ? err.message.trim() : "";
+  return message || "unknown error";
 }
 
 function getBuildArgs(config: Config): string {
@@ -115,21 +154,6 @@ function hasTryAsRuntime(): boolean {
   return (
     existsSync(path.join(process.cwd(), "node_modules/try-as")) ||
     existsSync(path.join(process.cwd(), "node_modules/try-as/package.json"))
-  );
-}
-
-function hasDep(
-  pkg: {
-    dependencies?: Record<string, string>;
-    devDependencies?: Record<string, string>;
-    peerDependencies?: Record<string, string>;
-  },
-  dep: string,
-): boolean {
-  return Boolean(
-    pkg.dependencies?.[dep] ||
-      pkg.devDependencies?.[dep] ||
-      pkg.peerDependencies?.[dep],
   );
 }
 

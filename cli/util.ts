@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "fs";
-import { Config } from "./types.js";
+import { BuildOptions, Config, RunOptions, Runtime } from "./types.js";
 import chalk from "chalk";
 import { delimiter, dirname, join } from "path";
 import { fileURLToPath } from "url";
@@ -43,10 +43,38 @@ export function loadConfig(CONFIG_PATH: string, warn: boolean = false): Config {
       );
     return new Config();
   } else {
-    return Object.assign(
+    const raw = JSON.parse(readFileSync(CONFIG_PATH).toString()) as Record<
+      string,
+      unknown
+    >;
+    const config = Object.assign(
       new Config(),
-      JSON.parse(readFileSync(CONFIG_PATH).toString()),
+      raw,
     ) as Config;
+    config.buildOptions = Object.assign(
+      new BuildOptions(),
+      (raw.buildOptions as Record<string, unknown> | undefined) ?? {},
+    );
+    config.runOptions = Object.assign(
+      new RunOptions(),
+      (raw.runOptions as Record<string, unknown> | undefined) ?? {},
+    );
+
+    const runtimeRaw = (raw.runOptions as Record<string, unknown> | undefined)
+      ?.runtime as Record<string, unknown> | undefined;
+    const runtime = new Runtime();
+
+    const cmd =
+      runtimeRaw && typeof runtimeRaw.cmd == "string" && runtimeRaw.cmd.length
+        ? runtimeRaw.cmd
+        : runtimeRaw &&
+            typeof runtimeRaw.run == "string" &&
+            runtimeRaw.run.length
+          ? runtimeRaw.run
+          : runtime.cmd;
+    runtime.cmd = cmd;
+    config.runOptions.runtime = runtime;
+    return config;
   }
 }
 

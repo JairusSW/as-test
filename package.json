@@ -7,8 +7,7 @@
   "contributors": [],
   "license": "MIT",
   "scripts": {
-    "test": "node ./bin/index.js run",
-    "pretest": "node ./bin/index.js build",
+    "test": "node ./bin/index.js test",
     "build:transform": "tsc -p ./transform",
     "build:cli": "tsc -p cli",
     "build:run": "tsc -p run",

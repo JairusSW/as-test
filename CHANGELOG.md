@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+### New Features
+
+- feat: add string boundary matchers `toStartWith()` and `toEndWith()`
+- feat: add skip helpers `xdescribe()`, `xtest()`, `xit()`, and `xexpect()`
+- feat: include skipped totals for files, suites, and tests in final summaries
+- feat: add per-file sequential `test` execution (`build #n -> run #n`) with one aggregated final summary
+- feat: allow `ast test <name>` selector resolution against configured spec directories
+- feat: allow `init` positional directory (`as-test init ./path`) in addition to `--dir`
+
+### Bug Fixes
+
+- fix: `ast test` now fails when no `.spec.ts` files match selectors/config input
+- fix: `build` now stays silent on success and prints concise stderr-only failure output
+- fix: remove runtime build hook APIs from reporter lifecycle and keep reporter surface run-focused
+- fix: suppress noisy Node WASI experimental warning lines during test execution
+- fix: ensure coverage reports include only source files with `.ts` or `.as` extensions
+- fix: ignore `node_modules` and AssemblyScript stdlib files in coverage summaries
+- fix: skip writing coverage artifact files when no covered source files remain after filtering
+
+### Refactors
+
+- refactor: replace `runOptions.runtime.name/run` with `runOptions.runtime.cmd`
+- refactor: normalize legacy `runtime.run` configs to `runtime.cmd` on load for backward compatibility
+- refactor: default WASI runtime to local runner `./.as-test/runners/default.wasi.js`
+- refactor: make generated local WASI runner ESM-only and remove shebangs from generated runners
+- refactor: expand `init` scaffold flow (`minimal/full/none`, target-aware runner/dependency setup, force-aware managed files)
+
+### Documentation
+
+- docs: refresh README to reflect current setup, runtime config, selectors, skip helpers, and coverage behavior
+
+### Tooling
+
+- chore: update CI test invocation to remove `AS_TEST_IGNORE_CORE_FILES` override
+
 ## 2026-02-16 - v0.5.0
 
 ### Bug Fixes

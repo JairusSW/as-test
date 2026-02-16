@@ -30,6 +30,10 @@ export class Expectation<T> extends Tests {
   // @ts-ignore
   private _not: boolean = false;
 
+  @omit
+  // @ts-ignore
+  private _skip: boolean = false;
+
 
   @omit
   private _message: string = "";
@@ -61,12 +65,26 @@ export class Expectation<T> extends Tests {
     return this;
   }
 
+  skip(): Expectation<T> {
+    this._skip = true;
+    return this;
+  }
+
   private _resolve(
     passed: bool,
     instr: string,
     left: string,
     right: string,
   ): void {
+    if (this._skip) {
+      this.verdict = "skip";
+      this.instr = instr;
+      this.left.set(left);
+      this.right.set(right);
+      this.message = "";
+      this._not = false;
+      return;
+    }
     const isFail = this._not ? passed : !passed;
     this.verdict = isFail ? "fail" : "ok";
     this.instr = instr;
@@ -293,6 +311,29 @@ export class Expectation<T> extends Tests {
     const passed = this._left.indexOf(value) >= 0;
     // @ts-ignore
     this._resolve(passed, "toMatch", q(this._left as string), q(value));
+  }
+
+  /**
+   * Tests if a string starts with the provided prefix.
+   */
+  toStartWith(value: string): void {
+    if (!isString<T>()) ERROR("toStartWith() can only be used on string types!");
+    // @ts-ignore
+    const left = this._left as string;
+    const passed = left.indexOf(value) == 0;
+    this._resolve(passed, "toStartWith", q(left), q(value));
+  }
+
+  /**
+   * Tests if a string ends with the provided suffix.
+   */
+  toEndWith(value: string): void {
+    if (!isString<T>()) ERROR("toEndWith() can only be used on string types!");
+    // @ts-ignore
+    const left = this._left as string;
+    const idx = left.lastIndexOf(value);
+    const passed = idx >= 0 && idx + value.length == left.length;
+    this._resolve(passed, "toEndWith", q(left), q(value));
   }
 
   /**

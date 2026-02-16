@@ -9,9 +9,5 @@
     "args": [],
     "target": "wasi"
   },
-  "runOptions": {
-    "runtime": {
-      "run": "wasmtime run <file>"
-    }
-  }
+  "runOptions": {}
 }

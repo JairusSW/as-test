@@ -51,21 +51,7 @@ let __test_options!: RunOptions;
  * ```
  */
 export function describe(description: string, callback: () => void): void {
-  const suite = new Suite(description, callback, "describe");
-
-  if (depth >= 0) {
-    const _suite = suites[depth];
-    if (_suite.depth == depth) {
-      _suite.addSuite(suite);
-    } else {
-      suite.depth = ++depth;
-      suites.push(suite);
-    }
-  } else {
-    suite.file = FILE;
-    entrySuites.push(suite);
-    suites.push(suite);
-  }
+  registerSuite(description, callback, "describe");
 }
 
 /**
@@ -83,21 +69,7 @@ export function describe(description: string, callback: () => void): void {
  * ```
  */
 export function test(description: string, callback: () => void): void {
-  const suite = new Suite(description, callback, "test");
-
-  if (depth >= 0) {
-    const _suite = suites[depth];
-    if (_suite.depth == depth) {
-      _suite.addSuite(suite);
-    } else {
-      suite.depth = ++depth;
-      suites.push(suite);
-    }
-  } else {
-    suite.file = FILE;
-    entrySuites.push(suite);
-    suites.push(suite);
-  }
+  registerSuite(description, callback, "test");
 }
 
 /**
@@ -115,21 +87,28 @@ export function test(description: string, callback: () => void): void {
  * ```
  */
 export function it(description: string, callback: () => void): void {
-  const suite = new Suite(description, callback, "it");
+  registerSuite(description, callback, "it");
+}
 
-  if (depth >= 0) {
-    const _suite = suites[depth];
-    if (_suite.depth == depth) {
-      _suite.addSuite(suite);
-    } else {
-      suite.depth = ++depth;
-      suites.push(suite);
-    }
-  } else {
-    suite.file = FILE;
-    entrySuites.push(suite);
-    suites.push(suite);
-  }
+/**
+ * Creates a skipped test group.
+ */
+export function xdescribe(description: string, callback: () => void): void {
+  registerSuite(description, callback, "xdescribe");
+}
+
+/**
+ * Creates a skipped test case.
+ */
+export function xtest(description: string, callback: () => void): void {
+  registerSuite(description, callback, "xtest");
+}
+
+/**
+ * Creates a skipped test case alias.
+ */
+export function xit(description: string, callback: () => void): void {
+  registerSuite(description, callback, "xit");
 }
 
 /**
@@ -162,6 +141,17 @@ export function expect<T>(
   }
 
   return test;
+}
+
+/**
+ * Creates a skipped expectation.
+ */
+export function xexpect<T>(
+  value: T,
+  message: string = "",
+  location: string = "",
+): Expectation<T> {
+  return expect<T>(value, message, location).skip();
 }
 
 /**
@@ -300,6 +290,8 @@ export function run(options: RunOptions = new RunOptions()): void {
       fileVerdict = "fail";
     } else if (fileVerdict != "fail" && suite.verdict == "ok") {
       fileVerdict = "ok";
+    } else if (fileVerdict == "none" && suite.verdict == "skip") {
+      fileVerdict = "skip";
     }
 
     suites = [];
@@ -312,6 +304,28 @@ export function run(options: RunOptions = new RunOptions()): void {
   report.suites = entrySuites;
   report.coverage = collectCoverage();
   sendReport(JSON.stringify(report));
+}
+
+function registerSuite(
+  description: string,
+  callback: () => void,
+  kind: string,
+): void {
+  const suite = new Suite(description, callback, kind);
+  if (depth >= 0) {
+    const _suite = suites[depth];
+    if (_suite.depth == depth) {
+      _suite.addSuite(suite);
+      return;
+    }
+    suite.depth = ++depth;
+    suites.push(suite);
+    return;
+  }
+
+  suite.file = FILE;
+  entrySuites.push(suite);
+  suites.push(suite);
 }
 
 

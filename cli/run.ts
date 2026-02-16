@@ -110,6 +110,31 @@ type RunFlags = {
   showCoverage?: boolean;
 };
 
+type RunExecutionOptions = {
+  reporter?: TestReporter;
+  emitRunStart?: boolean;
+  emitRunComplete?: boolean;
+  logFileName?: string;
+  coverageFileName?: string;
+};
+
+export type RunResult = {
+  failed: boolean;
+  stats: RunStats;
+  snapshotSummary: {
+    matched: number;
+    created: number;
+    updated: number;
+    failed: number;
+  };
+  coverageSummary: CoverageSummary;
+  reports: {
+    file: string;
+    suites: any[];
+    coverage: FileCoverage;
+  }[];
+};
+
 type FileCoverage = {
   total: number;
   covered: number;
@@ -207,11 +232,15 @@ class SnapshotStore {
 export async function run(
   flags: RunFlags = {},
   configPath: string = DEFAULT_CONFIG_PATH,
+  selectors: string[] = [],
+  shouldExit: boolean = true,
+  options: RunExecutionOptions = {},
 ) {
   const resolvedConfigPath = configPath ?? DEFAULT_CONFIG_PATH;
   const reports: any[] = [];
   const config = loadConfig(resolvedConfigPath);
-  const inputFiles = await glob(config.input);
+  const inputPatterns = resolveInputPatterns(config.input, selectors);
+  const inputFiles = await glob(inputPatterns);
   const snapshotEnabled = flags.snapshot !== false;
   const updateSnapshots = Boolean(flags.updateSnapshots);
   const cleanOutput = Boolean(flags.clean);
@@ -219,31 +248,37 @@ export async function run(
   const coverage = resolveCoverageOptions(config.coverage);
   const coverageEnabled = coverage.enabled;
   const coverageDir = config.coverageDir ?? "./.as-test/coverage";
-  const reporter = await loadReporter(
-    config.runOptions.reporter,
-    resolvedConfigPath,
-    {
+  const runtimeCommand = resolveRuntimeCommand(
+    getConfiguredRuntimeCmd(config),
+    config.buildOptions.target,
+  );
+  const reporter =
+    options.reporter ??
+    (await loadReporter(config.runOptions.reporter, resolvedConfigPath, {
       stdout: process.stdout,
       stderr: process.stderr,
-    },
-  );
+    }));
 
-  const command = config.runOptions.runtime.run.split(" ")[0];
+  const command = runtimeCommand.split(" ")[0];
   const execPath = getExec(command);
 
   if (!execPath) {
-    console.log(
-      `${chalk.bgRed(" ERROR ")}${chalk.dim(":")} could not locate ${command} in PATH variable!`,
-    );
-    process.exit(1);
+    const message = `${chalk.bgRed(" ERROR ")}${chalk.dim(":")} could not locate ${command} in PATH variable!`;
+    if (shouldExit) {
+      console.log(message);
+      process.exit(1);
+    }
+    throw new Error(message);
   }
 
-  reporter.onRunStart?.({
-    runtimeName: config.runOptions.runtime.name,
-    clean: cleanOutput,
-    snapshotEnabled,
-    updateSnapshots,
-  });
+  if (options.emitRunStart !== false) {
+    reporter.onRunStart?.({
+      runtimeName: runtimeNameFromCommand(runtimeCommand),
+      clean: cleanOutput,
+      snapshotEnabled,
+      updateSnapshots,
+    });
+  }
   if (showCoverage && !coverageEnabled) {
     process.stderr.write(
       chalk.dim(
@@ -270,7 +305,7 @@ export async function run(
       .slice(file.lastIndexOf("/") + 1)
       .replace(".ts", "")
       .replace(".spec", "");
-    let cmd = config.runOptions.runtime.run.replace(command, execPath);
+    let cmd = runtimeCommand.replace(command, execPath);
     cmd = cmd.replace("<name>", fileBase);
     if (config.buildOptions.target == "bindings" && !cmd.includes("<file>")) {
       cmd = cmd.replace(
@@ -309,9 +344,17 @@ export async function run(
     if (!existsSync(path.join(process.cwd(), config.logs))) {
       mkdirSync(path.join(process.cwd(), config.logs), { recursive: true });
     }
+    const logReports = reports.map((report) => ({
+      file: report.file,
+      suites: report.suites,
+    }));
     writeFileSync(
-      path.join(process.cwd(), config.logs, "test.log.json"),
-      JSON.stringify(reports, null, 2),
+      path.join(
+        process.cwd(),
+        config.logs,
+        options.logFileName ?? "test.log.json",
+      ),
+      JSON.stringify(logReports, null, 2),
     );
   }
   const stats = collectRunStats(reports.map((report) => report.suites));
@@ -321,28 +364,134 @@ export async function run(
     showCoverage,
     coverage,
   );
-  if (coverageEnabled && coverageDir && coverageDir != "none") {
+  if (
+    coverageEnabled &&
+    coverageDir &&
+    coverageDir != "none" &&
+    coverageSummary.files.length > 0
+  ) {
     const resolvedCoverageDir = path.join(process.cwd(), coverageDir);
     if (!existsSync(resolvedCoverageDir)) {
       mkdirSync(resolvedCoverageDir, { recursive: true });
     }
     writeFileSync(
-      path.join(resolvedCoverageDir, "coverage.log.json"),
+      path.join(
+        resolvedCoverageDir,
+        options.coverageFileName ?? "coverage.log.json",
+      ),
       JSON.stringify(coverageSummary, null, 2),
     );
   }
-  reporter.onRunComplete?.({
-    clean: cleanOutput,
-    snapshotEnabled,
-    showCoverage,
+  if (options.emitRunComplete !== false) {
+    reporter.onRunComplete?.({
+      clean: cleanOutput,
+      snapshotEnabled,
+      showCoverage,
+      snapshotSummary,
+      coverageSummary,
+      stats,
+      reports,
+    });
+  }
+
+  const failed = Boolean(stats.failedFiles || snapshotSummary.failed);
+  if (shouldExit) {
+    process.exit(failed ? 1 : 0);
+  }
+  return {
+    failed,
+    stats,
     snapshotSummary,
     coverageSummary,
-    stats,
     reports,
-  });
+  };
+}
 
-  if (stats.failedFiles || snapshotSummary.failed) process.exit(1);
-  process.exit(0);
+function resolveRuntimeCommand(runtimeRun: string, target: string): string {
+  if (target != "wasi") return runtimeRun;
+  const preferredPath = "./.as-test/runners/default.wasi.js";
+  const legacyPaths = ["./bin/wasi-run.js", "./.as-test/wasi/wasi.run.js"];
+
+  if (runtimeRun.includes(preferredPath)) {
+    const resolvedPreferredPath = path.join(process.cwd(), preferredPath);
+    if (existsSync(resolvedPreferredPath)) return runtimeRun;
+    throw new Error(
+      `could not locate WASI runner at ${preferredPath}. Run "ast init --target wasi --force --yes" to scaffold the local runner.`,
+    );
+  }
+
+  for (const legacyPath of legacyPaths) {
+    if (!runtimeRun.includes(legacyPath)) continue;
+
+    const resolvedLegacyPath = path.join(process.cwd(), legacyPath);
+    if (existsSync(resolvedLegacyPath)) return runtimeRun;
+
+    const resolvedPreferredPath = path.join(process.cwd(), preferredPath);
+    if (existsSync(resolvedPreferredPath)) {
+      process.stderr.write(
+        chalk.dim(
+          `legacy WASI runtime path detected (${legacyPath}); using ${preferredPath}\n`,
+        ),
+      );
+      return runtimeRun.replace(legacyPath, preferredPath);
+    }
+
+    throw new Error(
+      `could not locate WASI runner. Expected ${legacyPath} or ${preferredPath}. Run "ast init --target wasi --force --yes" to scaffold the local runner.`,
+    );
+  }
+
+  return runtimeRun;
+}
+
+function getConfiguredRuntimeCmd(config: {
+  runOptions: { runtime: { cmd?: string; run?: string } };
+}): string {
+  const runtime = config.runOptions.runtime;
+  if (runtime.cmd && runtime.cmd.length) return runtime.cmd;
+  if (runtime.run && runtime.run.length) return runtime.run;
+  throw new Error(
+    `runtime command is missing. Set "runOptions.runtime.cmd" in as-test.config.json`,
+  );
+}
+
+function runtimeNameFromCommand(command: string): string {
+  const token = command.trim().split(/\s+/)[0];
+  return token && token.length ? token : "runtime";
+}
+
+function resolveInputPatterns(
+  configured: string[] | string,
+  selectors: string[],
+): string[] {
+  const configuredInputs = Array.isArray(configured) ? configured : [configured];
+  if (!selectors.length) return configuredInputs;
+
+  const patterns = new Set<string>();
+  for (const selector of selectors) {
+    if (!selector) continue;
+    if (isBareSuiteSelector(selector)) {
+      const base = stripSuiteSuffix(selector);
+      for (const configuredInput of configuredInputs) {
+        patterns.add(path.join(path.dirname(configuredInput), `${base}.spec.ts`));
+      }
+      continue;
+    }
+    patterns.add(selector);
+  }
+  return [...patterns];
+}
+
+function isBareSuiteSelector(selector: string): boolean {
+  return (
+    !selector.includes("/") &&
+    !selector.includes("\\") &&
+    !/[*?[\]{}]/.test(selector)
+  );
+}
+
+function stripSuiteSuffix(selector: string): string {
+  return selector.replace(/\.spec\.ts$/, "").replace(/\.ts$/, "");
 }
 
 function normalizeReport(raw: unknown): {
@@ -446,6 +595,7 @@ function collectCoverageSummary(
       executed: boolean;
     }
   >();
+  const hasDetailedPoints = reports.some((report) => report.coverage.points.length > 0);
 
   for (const report of reports) {
     for (const point of report.coverage.points) {
@@ -487,6 +637,7 @@ function collectCoverageSummary(
         if (point.executed) covered++;
       }
       const total = points.length;
+      if (!total) continue;
       const uncovered = total - covered;
       summary.files.push({
         file,
@@ -497,9 +648,11 @@ function collectCoverageSummary(
         points,
       });
     }
-  } else {
+  } else if (!hasDetailedPoints) {
     // Compatibility fallback for reports without detailed point payloads.
     for (const report of reports) {
+      if (isIgnoredCoverageFile(report.file, coverage)) continue;
+      if (report.coverage.total <= 0) continue;
       summary.total += report.coverage.total;
       summary.covered += report.coverage.covered;
       summary.uncovered += report.coverage.uncovered;
@@ -525,27 +678,24 @@ function isIgnoredCoverageFile(
   coverage: CoverageOptions,
 ): boolean {
   const normalized = file.replace(/\\/g, "/");
+  if (!isAllowedCoverageSourceFile(normalized)) return true;
   if (normalized.startsWith("node_modules/")) return true;
   if (normalized.includes("/node_modules/")) return true;
+  if (isAssemblyScriptStdlibFile(normalized)) return true;
   if (!coverage.includeSpecs && normalized.endsWith(".spec.ts")) return true;
-  if (normalized.includes("/as-test/assembly/")) {
-    if (!normalized.includes("/as-test/assembly/__tests__/")) return true;
-  }
-  if (normalized.startsWith("assembly/")) {
-    if (!normalized.startsWith("assembly/__tests__/")) return true;
-  }
-  if (normalized.includes("/assembly/")) {
-    if (!normalized.includes("/assembly/__tests__/")) {
-      if (
-        normalized.endsWith("/assembly/index.ts") ||
-        normalized.endsWith("/assembly/coverage.ts") ||
-        normalized.includes("/assembly/src/") ||
-        normalized.includes("/assembly/util/")
-      ) {
-        return true;
-      }
-    }
-  }
+  return false;
+}
+
+function isAllowedCoverageSourceFile(file: string): boolean {
+  const lower = file.toLowerCase();
+  return lower.endsWith(".ts") || lower.endsWith(".as");
+}
+
+function isAssemblyScriptStdlibFile(file: string): boolean {
+  if (file.startsWith("~lib/")) return true;
+  if (file.includes("/~lib/")) return true;
+  if (file.startsWith("assemblyscript/std/")) return true;
+  if (file.includes("/assemblyscript/std/")) return true;
   return false;
 }
 
@@ -582,9 +732,23 @@ async function runProcess(
   });
   let report: any = null;
   let parseError: string | null = null;
+  let stderrBuffer = "";
+  let suppressTraceWarningLine = false;
 
   child.stderr.on("data", (chunk) => {
-    process.stderr.write(chunk);
+    stderrBuffer += chunk.toString("utf8");
+    let newline = stderrBuffer.indexOf("\n");
+    while (newline >= 0) {
+      const line = stderrBuffer.slice(0, newline + 1);
+      stderrBuffer = stderrBuffer.slice(newline + 1);
+      if (shouldSuppressWasiWarningLine(line, suppressTraceWarningLine)) {
+        suppressTraceWarningLine = true;
+      } else {
+        suppressTraceWarningLine = false;
+        process.stderr.write(line);
+      }
+      newline = stderrBuffer.indexOf("\n");
+    }
   });
 
   class TestChannel extends Channel {
@@ -679,6 +843,11 @@ async function runProcess(
   const code = await new Promise<number>((resolve) => {
     child.on("close", (exitCode) => resolve(exitCode ?? 1));
   });
+  if (stderrBuffer.length) {
+    if (!shouldSuppressWasiWarningLine(stderrBuffer, suppressTraceWarningLine)) {
+      process.stderr.write(stderrBuffer);
+    }
+  }
 
   if (parseError) {
     throw new Error(`could not parse report payload: ${parseError}`);
@@ -693,14 +862,30 @@ async function runProcess(
   return report;
 }
 
+function shouldSuppressWasiWarningLine(
+  line: string,
+  suppressTraceWarningLine: boolean,
+): boolean {
+  if (line.includes("ExperimentalWarning: WASI is an experimental feature")) {
+    return true;
+  }
+  if (suppressTraceWarningLine && line.includes("--trace-warnings")) {
+    return true;
+  }
+  return false;
+}
+
 function collectRunStats(reports: unknown[]): RunStats {
   const stats: RunStats = {
     passedFiles: 0,
     failedFiles: 0,
+    skippedFiles: 0,
     passedSuites: 0,
     failedSuites: 0,
+    skippedSuites: 0,
     passedTests: 0,
     failedTests: 0,
+    skippedTests: 0,
     time: 0.0,
     failedEntries: [],
   };
@@ -713,20 +898,22 @@ function collectRunStats(reports: unknown[]): RunStats {
 
 function readFileReport(stats: RunStats, fileReport: unknown): void {
   const suites = Array.isArray(fileReport) ? (fileReport as unknown[]) : [];
-  let fileFailed = false;
+  let fileVerdict: Verdict = "none";
   for (const suite of suites) {
-    const suiteFailed = readSuite(stats, suite);
-    if (suiteFailed) fileFailed = true;
+    fileVerdict = mergeVerdict(fileVerdict, readSuite(stats, suite));
   }
-  if (fileFailed) stats.failedFiles++;
-  else stats.passedFiles++;
+  if (fileVerdict == "fail") {
+    stats.failedFiles++;
+  } else if (fileVerdict == "ok") {
+    stats.passedFiles++;
+  } else {
+    stats.skippedFiles++;
+  }
 }
 
-function readSuite(stats: RunStats, suite: unknown): boolean {
+function readSuite(stats: RunStats, suite: unknown): Verdict {
   const suiteAny = suite as Record<string, unknown>;
-  let suiteFailed = String(suiteAny.verdict ?? "none") == "fail";
-  if (suiteFailed) stats.failedSuites++;
-  else stats.passedSuites++;
+  let verdict = normalizeVerdict(suiteAny.verdict);
 
   const time = suiteAny.time as Record<string, unknown> | undefined;
   const start = Number(time?.start ?? 0);
@@ -737,23 +924,74 @@ function readSuite(stats: RunStats, suite: unknown): boolean {
     ? (suiteAny.suites as unknown[])
     : [];
   for (const subSuite of subSuites) {
-    if (readSuite(stats, subSuite)) suiteFailed = true;
+    verdict = mergeVerdict(verdict, readSuite(stats, subSuite));
   }
 
   const tests = Array.isArray(suiteAny.tests)
     ? (suiteAny.tests as Record<string, unknown>[])
     : [];
   for (const test of tests) {
-    if (String(test.verdict ?? "none") == "fail") {
-      suiteFailed = true;
+    const testVerdict = normalizeVerdict(test.verdict);
+    verdict = mergeVerdict(verdict, testVerdict);
+    if (testVerdict == "fail") {
       stats.failedTests++;
-    } else {
+    } else if (testVerdict == "ok") {
       stats.passedTests++;
+    } else {
+      stats.skippedTests++;
     }
   }
 
-  if (suiteFailed) stats.failedEntries.push(suite);
-  return suiteFailed;
+  if (verdict == "fail") {
+    stats.failedSuites++;
+    stats.failedEntries.push(suite);
+  } else if (verdict == "ok") {
+    stats.passedSuites++;
+  } else {
+    stats.skippedSuites++;
+  }
+  return verdict;
+}
+
+type Verdict = "fail" | "ok" | "skip" | "none";
+
+function normalizeVerdict(value: unknown): Verdict {
+  const verdict = String(value ?? "none");
+  if (verdict == "fail") return "fail";
+  if (verdict == "ok") return "ok";
+  if (verdict == "skip") return "skip";
+  return "none";
+}
+
+function mergeVerdict(current: Verdict, next: Verdict): Verdict {
+  if (current == "fail" || next == "fail") return "fail";
+  if (current == "ok" || next == "ok") return "ok";
+  if (current == "skip" || next == "skip") return "skip";
+  return "none";
+}
+
+export async function createRunReporter(
+  configPath: string = DEFAULT_CONFIG_PATH,
+): Promise<{
+  reporter: TestReporter;
+  runtimeName: string;
+  resolvedConfigPath: string;
+}> {
+  const resolvedConfigPath = configPath ?? DEFAULT_CONFIG_PATH;
+  const config = loadConfig(resolvedConfigPath);
+  const reporter = await loadReporter(config.runOptions.reporter, resolvedConfigPath, {
+    stdout: process.stdout,
+    stderr: process.stderr,
+  });
+  const runtimeCommand = resolveRuntimeCommand(
+    getConfiguredRuntimeCmd(config),
+    config.buildOptions.target,
+  );
+  return {
+    reporter,
+    runtimeName: runtimeNameFromCommand(runtimeCommand),
+    resolvedConfigPath,
+  };
 }
 
 async function loadReporter(

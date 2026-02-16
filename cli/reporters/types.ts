@@ -29,10 +29,13 @@ export type SnapshotMissingEvent = {
 export type RunStats = {
   passedFiles: number;
   failedFiles: number;
+  skippedFiles: number;
   passedSuites: number;
   failedSuites: number;
+  skippedSuites: number;
   passedTests: number;
   failedTests: number;
+  skippedTests: number;
   time: number;
   failedEntries: unknown[];
 };
