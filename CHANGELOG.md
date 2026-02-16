@@ -1,5 +1,11 @@
 # Change Log
 
+## 2026-02-16 - v0.5.1
+
+### Miscellaneous
+
+- fix: init script exited when selecting 'y'
+
 ## 2026-02-16 - v0.5.0
 
 ### CLI & Runtime

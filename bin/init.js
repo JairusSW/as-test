@@ -23,7 +23,7 @@ export async function init(rawArgs) {
         printPlan(root, target, example);
         if (!options.yes) {
             const cont = (await ask("Continue? [Y/n] ", rl)).toLowerCase().trim();
-            if (["y", "yes"].includes(cont)) {
+            if (["n", "no"].includes(cont)) {
                 console.log("Exiting.");
                 return;
             }
