@@ -32,16 +32,16 @@ function patchNodeIo() {
   patched = true;
 
   const originalWrite = process.stdout.write.bind(process.stdout);
-  // eslint-disable-next-line no-param-reassign
-  process.stdout.write = ((chunk, ...args) => {
+   
+  process.stdout.write = (chunk, ...args) => {
     if (chunk instanceof ArrayBuffer) {
       writeRaw(chunk);
       return true;
     }
     return originalWrite(chunk, ...args);
-  });
+  };
 
-  // eslint-disable-next-line no-param-reassign
+   
   process.stdin.read = (size) => readExact(Number(size ?? 0));
 }
 

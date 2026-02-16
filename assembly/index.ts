@@ -177,15 +177,25 @@ export function expect<T>(
  * @param {T} data - The data to format and print
  */
 export function log<T>(data: T): void {
-  if (!__test_options.log) return;
-  const formatted = stringify(data);
-  if (formatted) {
-    const lines = formatted.split("\n");
-    for (let i = 0; i < lines.length; i++) {
-      const line = unchecked(lines[i]);
-      if (current_suite) {
-        current_suite!.addLog(new Log(line));
-      }
+  if (!__as_test_log_is_enabled()) return;
+  __as_test_log_serialized(__as_test_log_default<T>(data));
+}
+
+export function __as_test_log_default<T>(data: T): string {
+  return stringify(data);
+}
+
+export function __as_test_log_is_enabled(): bool {
+  return __test_options.log;
+}
+
+export function __as_test_log_serialized(formatted: string): void {
+  if (!formatted) return;
+  const lines = formatted.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = unchecked(lines[i]);
+    if (current_suite) {
+      current_suite!.addLog(new Log(line));
     }
   }
 }
@@ -304,6 +314,7 @@ export function run(options: RunOptions = new RunOptions()): void {
   sendReport(JSON.stringify(report));
 }
 
+
 @json
 class CoverageReport {
   total: i32 = 0;
@@ -312,6 +323,7 @@ class CoverageReport {
   percent: f64 = 100.0;
   points: CoveragePointReport[] = [];
 }
+
 
 @json
 class CoveragePointReport {
@@ -322,6 +334,7 @@ class CoveragePointReport {
   type: string = "";
   executed: bool = false;
 }
+
 
 @json
 class FileReport {

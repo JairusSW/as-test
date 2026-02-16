@@ -61,10 +61,7 @@ export function sendAssertionFailure(
 }
 
 export function sendFileStart(file: string): void {
-  sendJson(
-    MessageType.CALL,
-    `{"kind":"event:file-start","file":${q(file)}}`,
-  );
+  sendJson(MessageType.CALL, `{"kind":"event:file-start","file":${q(file)}}`);
 }
 
 export function sendFileEnd(file: string, verdict: string, time: string): void {
@@ -122,6 +119,10 @@ export function snapshotAssert(key: string, actual: string): SnapshotReply {
 
 export function sendReport(report: string): void {
   sendFrame(MessageType.DATA, String.UTF8.encode(report));
+}
+
+export function sendWarning(message: string): void {
+  writeStdout(String.UTF8.encode("[WARN] " + message + "\n"));
 }
 
 function sendJson(type: MessageType, body: string): void {

@@ -7,15 +7,15 @@ import { getPkgRunner, loadConfig } from "./util.js";
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 const PKG_PATH = path.join(process.cwd(), "./package.json");
 export async function build(configPath = DEFAULT_CONFIG_PATH) {
-    let config = loadConfig(configPath, true);
+    const config = loadConfig(configPath, true);
     const ASCONFIG_PATH = path.join(process.cwd(), config.config);
     if (config.config && config.config !== "none" && !existsSync(ASCONFIG_PATH)) {
         console.log(`${chalk.bgMagentaBright(" WARN ")}${chalk.dim(":")} Could not locate asconfig.json file! If you do not want to provide a config, set "config": "none"`);
     }
     ensureDeps(config);
-    let pkgRunner = getPkgRunner();
+    const pkgRunner = getPkgRunner();
     const inputFiles = await glob(config.input);
-    let buildArgs = getBuildArgs(config);
+    const buildArgs = getBuildArgs(config);
     for (const file of inputFiles) {
         let cmd = `${pkgRunner} asc ${file}${buildArgs}`;
         const outFile = `${config.outDir}/${file.slice(file.lastIndexOf("/") + 1).replace(".ts", ".wasm")}`;
@@ -49,8 +49,14 @@ function getBuildArgs(config) {
     let buildArgs = "";
     buildArgs += " --transform as-test/transform";
     buildArgs += " --transform json-as/transform";
+    if (hasTryAsRuntime()) {
+        buildArgs += " --transform try-as/transform";
+    }
     if (config.config && config.config !== "none") {
         buildArgs += " --config " + config.config;
+    }
+    if (hasTryAsRuntime()) {
+        buildArgs += " --use AS_TEST_TRY_AS=1";
     }
     // Should also strip any bindings-enabling from asconfig
     if (config.buildOptions.target == "bindings") {
@@ -72,8 +78,14 @@ function getBuildArgs(config) {
     }
     return buildArgs;
 }
+function hasTryAsRuntime() {
+    return (existsSync(path.join(process.cwd(), "node_modules/try-as")) ||
+        existsSync(path.join(process.cwd(), "node_modules/try-as/package.json")));
+}
 function hasDep(pkg, dep) {
-    return Boolean(pkg.dependencies?.[dep] || pkg.devDependencies?.[dep] || pkg.peerDependencies?.[dep]);
+    return Boolean(pkg.dependencies?.[dep] ||
+        pkg.devDependencies?.[dep] ||
+        pkg.peerDependencies?.[dep]);
 }
 function hasJsonAsTransform() {
     return (existsSync(path.join(process.cwd(), "node_modules/json-as/transform.js")) ||

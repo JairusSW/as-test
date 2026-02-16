@@ -10,6 +10,7 @@ import {
 import { CoverageTransform } from "./coverage.js";
 import { MockTransform } from "./mock.js";
 import { LocationTransform } from "./location.js";
+import { LogTransform } from "./log.js";
 import { isStdlib } from "./util.js";
 
 export default class Transformer extends Transform {
@@ -19,6 +20,7 @@ export default class Transformer extends Transform {
     const mock = new MockTransform();
     const coverage = new CoverageTransform();
     const location = new LocationTransform();
+    const log = new LogTransform(parser);
 
     // Sort the sources so that user scripts are visited last
     const sources = parser.sources
@@ -61,6 +63,7 @@ export default class Transformer extends Transform {
       mock.visit(source);
       coverage.visit(source);
       location.visit(source);
+      log.visit(source);
       if (shouldInjectRunCall) {
         const runImportPath = detectRunImportPath(source.text);
         let runCall = "run();";
@@ -150,9 +153,7 @@ function looksLikeAsTestImport(specifiers: string): boolean {
 }
 
 function stripComments(sourceText: string): string {
-  return sourceText
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/\/\/.*$/gm, "");
+  return sourceText.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 }
 
 function escapeRegex(value: string): string {

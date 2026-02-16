@@ -1,7 +1,13 @@
 import { visualize } from "../util/helpers";
 import { Tests } from "./tests";
 import { JSON } from "json-as";
-import { sendAssertionFailure, snapshotAssert } from "../util/wipc";
+import {
+  sendAssertionFailure,
+  sendWarning,
+  snapshotAssert,
+} from "../util/wipc";
+
+let warnedToThrowDisabled = false;
 
 
 @json
@@ -10,22 +16,28 @@ export class Expectation<T> extends Tests {
   public right: JSON.Raw = JSON.Raw.from("");
   public left: JSON.Raw = JSON.Raw.from("");
 
+
   @omit
   private _left: T;
+
 
   @omit
   // @ts-ignore
   private _right: u64 = 0;
 
+
   @omit
   // @ts-ignore
   private _not: boolean = false;
 
+
   @omit
   private _message: string = "";
 
+
   @omit
   private _snapshotKey: string = "";
+
 
   @omit
   private _location: string = "";
@@ -72,8 +84,8 @@ export class Expectation<T> extends Tests {
    */
   toBeNull(): void {
     const passed =
-      ((isNullable<T>() && changetype<usize>(this._left) == 0) ||
-        (isInteger<T>() && nameof<T>() == "usize" && this._left == 0));
+      (isNullable<T>() && changetype<usize>(this._left) == 0) ||
+      (isInteger<T>() && nameof<T>() == "usize" && this._left == 0);
 
     // @ts-ignore
     store<T>(changetype<usize>(this), null, offsetof<Expectation<T>>("_right"));
@@ -276,8 +288,7 @@ export class Expectation<T> extends Tests {
    * Tests if a string contains substring
    */
   toMatch(value: string): void {
-    if (!isString<T>())
-      ERROR("toMatch() can only be used on string types!");
+    if (!isString<T>()) ERROR("toMatch() can only be used on string types!");
     // @ts-ignore
     const passed = this._left.indexOf(value) >= 0;
     // @ts-ignore
@@ -292,12 +303,7 @@ export class Expectation<T> extends Tests {
     const leftLen = this._left.length as i32;
     // @ts-ignore
     const passed = isArray<T>() && leftLen == value;
-    this._resolve(
-      passed,
-      "toHaveLength",
-      leftLen.toString(),
-      value.toString(),
-    );
+    this._resolve(passed, "toHaveLength", leftLen.toString(), value.toString());
   }
 
   /**
@@ -328,6 +334,32 @@ export class Expectation<T> extends Tests {
   }
 
   /**
+   * Delegates throw assertions to try-as when available.
+   * If try-as is unavailable, this matcher is disabled and warns once.
+   */
+  toThrow(): void {
+    // @ts-ignore
+    if (!isDefined(AS_TEST_TRY_AS)) {
+      if (!warnedToThrowDisabled) {
+        sendWarning(
+          'toThrow() is disabled because try-as is not installed. Install and import "try-as" to enable it.',
+        );
+        warnedToThrowDisabled = true;
+      }
+      this._resolve(true, "toThrow", q("disabled"), q("disabled"));
+      return;
+    }
+
+    // @ts-ignore
+    const passed = __ExceptionState.Failures > 0;
+    if (passed) {
+      // @ts-ignore
+      __ExceptionState.Failures--;
+    }
+    this._resolve(passed, "toThrow", q("throws"), q("throws"));
+  }
+
+  /**
    * Tests for equality
    */
   toBe(equals: T): void {
@@ -335,7 +367,12 @@ export class Expectation<T> extends Tests {
     if (isArray<T>()) {
       // @ts-ignore
       passed = arrayEquals(this._left, equals);
-    } else if (isBoolean<T>() || isString<T>() || isInteger<T>() || isFloat<T>()) {
+    } else if (
+      isBoolean<T>() ||
+      isString<T>() ||
+      isInteger<T>() ||
+      isFloat<T>()
+    ) {
       passed = this._left === equals;
     } else {
       // Fallback for reference/value types where strict equality is not enough.

@@ -1,11 +1,5 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  run,
-  test,
-} from "..";
+import { afterEach, beforeEach, describe, expect, run, test } from "..";
+import "try-as";
 
 let beforeCount = 0;
 let afterCount = 0;
@@ -42,9 +36,18 @@ describe("Expectation helpers", () => {
     expect(10, "math should still work").toBe(10);
   });
 
+  test("toThrow supports direct throw assertions with try-as", () => {
+    expect(new Map<string, string>().get("invalid")).toThrow();
+    expect(1).toBe(1);
+  });
+
+  test("toThrow fails for non-throwing expressions", () => {
+    expect(10).not.toThrow();
+  });
+
   test("beforeEach/afterEach are called once per test", () => {
-    expect(beforeCount).toBe(5);
-    expect(afterCount).toBe(4);
+    expect(beforeCount).toBe(7);
+    expect(afterCount).toBe(6);
   });
 });
 

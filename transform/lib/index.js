@@ -3,12 +3,14 @@ import { Node, Source, Tokenizer, } from "assemblyscript/dist/assemblyscript.js"
 import { CoverageTransform } from "./coverage.js";
 import { MockTransform } from "./mock.js";
 import { LocationTransform } from "./location.js";
+import { LogTransform } from "./log.js";
 import { isStdlib } from "./util.js";
 export default class Transformer extends Transform {
     afterParse(parser) {
         const mock = new MockTransform();
         const coverage = new CoverageTransform();
         const location = new LocationTransform();
+        const log = new LogTransform(parser);
         const sources = parser.sources
             .filter((source) => !isStdlib(source))
             .sort((_a, _b) => {
@@ -35,6 +37,7 @@ export default class Transformer extends Transform {
             mock.visit(source);
             coverage.visit(source);
             location.visit(source);
+            log.visit(source);
             if (shouldInjectRunCall) {
                 const runImportPath = detectRunImportPath(source.text);
                 let runCall = "run();";
@@ -103,9 +106,7 @@ function looksLikeAsTestImport(specifiers) {
     return /\b(?:describe|test|it|expect|beforeAll|afterAll|beforeEach|afterEach|mockFn|mockImport|log|run)\b/.test(specifiers);
 }
 function stripComments(sourceText) {
-    return sourceText
-        .replace(/\/\*[\s\S]*?\*\//g, "")
-        .replace(/\/\/.*$/gm, "");
+    return sourceText.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 }
 function escapeRegex(value) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
