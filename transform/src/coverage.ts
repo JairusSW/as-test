@@ -2,8 +2,11 @@ import {
   Source,
   Statement,
   Token,
+  CallExpression,
   BinaryExpression,
   CommaExpression,
+  IdentifierExpression,
+  PropertyAccessExpression,
   ParenthesizedExpression,
   ParameterNode,
   BlockStatement,
@@ -28,6 +31,13 @@ enum CoverType {
   Block,
 }
 
+const COVERAGE_IGNORED_CALLS = new Set([
+  "beforeAll",
+  "afterAll",
+  "mockFn",
+  "mockImport",
+]);
+
 class CoverPoint {
   public file: string = "";
   public hash: string = "";
@@ -41,6 +51,19 @@ export class CoverageTransform extends Visitor {
   public mustImport: boolean = false;
   public points: Map<string, CoverPoint> = new Map<string, CoverPoint>();
   public globalStatements: Statement[] = [];
+  visitCallExpression(node: CallExpression): void {
+    const callName = getCallName(node);
+    if (callName && COVERAGE_IGNORED_CALLS.has(callName)) {
+      this.visit(node.expression, node);
+      this.visit(node.typeArguments, node);
+      for (const arg of node.args) {
+        if (arg.kind == NodeKind.Function) continue;
+        this.visit(arg, node);
+      }
+      return;
+    }
+    super.visitCallExpression(node);
+  }
   visitBinaryExpression(node: BinaryExpression): void {
     super.visitBinaryExpression(node);
     // @ts-ignore
@@ -76,7 +99,7 @@ export class CoverageTransform extends Visitor {
         );
         replacer.visit(registerStmt);
 
-        let coverExpression = SimpleParser.parseExpression(
+        const coverExpression = SimpleParser.parseExpression(
           `(__COVER("${point.hash}"), $$REPLACE_ME)`,
         ) as ParenthesizedExpression;
         replacer.visit(coverExpression);
@@ -537,6 +560,25 @@ export class CoverageTransform extends Visitor {
     // Ignore all lib and std. Visit everything else.
     if (isStdlib(node)) return;
     super.visitSource(node);
+  }
+}
+
+function getCallName(node: CallExpression): string | null {
+  return getExpressionName(node.expression);
+}
+
+function getExpressionName(node: Node): string | null {
+  switch (node.kind) {
+    case NodeKind.Identifier:
+      return (node as IdentifierExpression).text;
+    case NodeKind.PropertyAccess:
+      return (
+        (node as PropertyAccessExpression).property as IdentifierExpression
+      ).text;
+    case NodeKind.Parenthesized:
+      return getExpressionName((node as ParenthesizedExpression).expression);
+    default:
+      return null;
   }
 }
 

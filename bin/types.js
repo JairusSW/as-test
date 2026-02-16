@@ -4,6 +4,7 @@ export class Config {
         this.input = ["./assembly/__tests__/*.spec.ts"];
         this.outDir = "./.as-test/build";
         this.logs = "./.as-test/logs";
+        this.coverageDir = "./.as-test/coverage";
         this.snapshotDir = "./.as-test/snapshots";
         this.config = "none";
         this.coverage = true;

@@ -3,17 +3,15 @@
   "input": ["./assembly/__tests__/*.spec.ts"],
   "outDir": "./.as-test/build",
   "logs": "./.as-test/logs",
-  "snapshotDir": "./.as-test/snapshots",
   "config": "none",
   "coverage": true,
   "buildOptions": {
     "args": [],
-    "target": "bindings"
+    "target": "wasi"
   },
   "runOptions": {
     "runtime": {
-      "name": "node",
-      "run": "node ./tests/<name>.run.js"
+      "run": "wasmtime run <file>"
     }
   }
 }

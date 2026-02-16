@@ -4,7 +4,7 @@ import { glob } from "glob";
 import { getExec, loadConfig } from "./util.js";
 import * as path from "path";
 import { pathToFileURL } from "url";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { createReporter as createDefaultReporter } from "./reporters/default.js";
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 var MessageType;
@@ -153,6 +153,7 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH) {
     const showCoverage = Boolean(flags.showCoverage);
     const coverage = resolveCoverageOptions(config.coverage);
     const coverageEnabled = coverage.enabled;
+    const coverageDir = config.coverageDir ?? "./.as-test/coverage";
     const reporter = await loadReporter(config.runOptions.reporter, resolvedConfigPath, {
         stdout: process.stdout,
         stderr: process.stderr,
@@ -170,7 +171,7 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH) {
         updateSnapshots,
     });
     if (showCoverage && !coverageEnabled) {
-        process.stderr.write(chalk.dim('coverage point output requested with --show-coverage, but coverage is disabled\n'));
+        process.stderr.write(chalk.dim("coverage point output requested with --show-coverage, but coverage is disabled\n"));
     }
     const snapshotSummary = {
         matched: 0,
@@ -215,13 +216,16 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH) {
             mkdirSync(path.join(process.cwd(), config.logs), { recursive: true });
         }
         writeFileSync(path.join(process.cwd(), config.logs, "test.log.json"), JSON.stringify(reports, null, 2));
-        if (coverageEnabled) {
-            const coverageSummary = collectCoverageSummary(reports, true, showCoverage, coverage);
-            writeFileSync(path.join(process.cwd(), config.logs, "coverage.log.json"), JSON.stringify(coverageSummary, null, 2));
-        }
     }
     const stats = collectRunStats(reports.map((report) => report.suites));
     const coverageSummary = collectCoverageSummary(reports, coverageEnabled, showCoverage, coverage);
+    if (coverageEnabled && coverageDir && coverageDir != "none") {
+        const resolvedCoverageDir = path.join(process.cwd(), coverageDir);
+        if (!existsSync(resolvedCoverageDir)) {
+            mkdirSync(resolvedCoverageDir, { recursive: true });
+        }
+        writeFileSync(path.join(resolvedCoverageDir, "coverage.log.json"), JSON.stringify(coverageSummary, null, 2));
+    }
     reporter.onRunComplete?.({
         clean: cleanOutput,
         snapshotEnabled,
@@ -275,7 +279,9 @@ function normalizeCoverage(value) {
         : total
             ? (covered * 100) / total
             : 100;
-    const pointsRaw = Array.isArray(raw?.points) ? raw?.points : [];
+    const pointsRaw = Array.isArray(raw?.points)
+        ? raw?.points
+        : [];
     const points = pointsRaw
         .map((point) => {
         const p = point;
@@ -368,7 +374,9 @@ function collectCoverageSummary(reports, enabled, showPoints, coverage) {
             });
         }
     }
-    summary.percent = summary.total ? (summary.covered * 100) / summary.total : 100;
+    summary.percent = summary.total
+        ? (summary.covered * 100) / summary.total
+        : 100;
     return summary;
 }
 function isIgnoredCoverageFile(file, coverage) {
@@ -505,7 +513,6 @@ async function runProcess(cmd, snapshots, snapshotEnabled, updateSnapshots, repo
             }
         }
     }
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const _channel = new TestChannel(child.stdout, child.stdin);
     const code = await new Promise((resolve) => {
         child.on("close", (exitCode) => resolve(exitCode ?? 1));
@@ -598,7 +605,9 @@ async function loadReporter(reporterPath, configPath, context) {
         return factory(context);
     }
     catch (error) {
-        throw new Error(`could not load reporter "${reporterPath}": ${String(error)}`);
+        const reporterError = new Error(`could not load reporter "${reporterPath}": ${String(error)}`);
+        reporterError.cause = error;
+        throw reporterError;
     }
 }
 function resolveReporterFactory(mod) {

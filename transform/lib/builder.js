@@ -7,7 +7,7 @@ function assert(isTruish, message = "assertion error") {
 }
 export class ASTBuilder extends Visitor {
     static build(node) {
-        var builder = new ASTBuilder();
+        const builder = new ASTBuilder();
         builder.visitNode(node);
         return builder.finish();
     }
@@ -17,7 +17,7 @@ export class ASTBuilder extends Visitor {
         return this.visit(node);
     }
     visitSource(source) {
-        var statements = source.statements;
+        const statements = source.statements;
         for (let i = 0, k = statements.length; i < k; ++i) {
             this.visitNodeAndTerminate(statements[i]);
         }
@@ -38,8 +38,8 @@ export class ASTBuilder extends Visitor {
     }
     visitTypeName(node) {
         this.visitIdentifierExpression(node.identifier);
-        var sb = this.sb;
-        var current = node.next;
+        const sb = this.sb;
+        let current = node.next;
         while (current) {
             sb.push(".");
             this.visitIdentifierExpression(current.identifier);
@@ -48,10 +48,10 @@ export class ASTBuilder extends Visitor {
     }
     visitNamedTypeNode(node) {
         this.visitTypeName(node.name);
-        var typeArguments = node.typeArguments;
+        const typeArguments = node.typeArguments;
         if (typeArguments) {
-            let numTypeArguments = typeArguments.length;
-            let sb = this.sb;
+            const numTypeArguments = typeArguments.length;
+            const sb = this.sb;
             if (numTypeArguments) {
                 sb.push("<");
                 this.visitTypeNode(typeArguments[0]);
@@ -66,16 +66,16 @@ export class ASTBuilder extends Visitor {
         }
     }
     visitFunctionTypeNode(node) {
-        var isNullable = node.isNullable;
-        var sb = this.sb;
+        const isNullable = node.isNullable;
+        const sb = this.sb;
         sb.push(isNullable ? "((" : "(");
-        var explicitThisType = node.explicitThisType;
+        const explicitThisType = node.explicitThisType;
         if (explicitThisType) {
             sb.push("this: ");
             this.visitTypeNode(explicitThisType);
         }
-        var parameters = node.parameters;
-        var numParameters = parameters.length;
+        const parameters = node.parameters;
+        const numParameters = parameters.length;
         if (numParameters) {
             if (explicitThisType)
                 sb.push(", ");
@@ -85,7 +85,7 @@ export class ASTBuilder extends Visitor {
                 this.serializeParameter(parameters[i]);
             }
         }
-        var returnType = node.returnType;
+        const returnType = node.returnType;
         if (returnType) {
             sb.push(") => ");
             this.visitTypeNode(returnType);
@@ -98,12 +98,12 @@ export class ASTBuilder extends Visitor {
     }
     visitTypeParameter(node) {
         this.visitIdentifierExpression(node.name);
-        var extendsType = node.extendsType;
+        const extendsType = node.extendsType;
         if (extendsType) {
             this.sb.push(" extends ");
             this.visitTypeNode(extendsType);
         }
-        var defaultType = node.defaultType;
+        const defaultType = node.defaultType;
         if (defaultType) {
             this.sb.push("=");
             this.visitTypeNode(defaultType);
@@ -116,10 +116,10 @@ export class ASTBuilder extends Visitor {
             this.sb.push(node.text);
     }
     visitArrayLiteralExpression(node) {
-        var sb = this.sb;
+        const sb = this.sb;
         sb.push("[");
-        var elements = node.elementExpressions;
-        var numElements = elements.length;
+        const elements = node.elementExpressions;
+        const numElements = elements.length;
         if (numElements) {
             let element = elements[0];
             if (element)
@@ -134,10 +134,10 @@ export class ASTBuilder extends Visitor {
         sb.push("]");
     }
     visitObjectLiteralExpression(node) {
-        var sb = this.sb;
-        var names = node.names;
-        var values = node.values;
-        var numElements = names.length;
+        const sb = this.sb;
+        const names = node.names;
+        const values = node.values;
+        const numElements = names.length;
         assert(numElements == values.length);
         if (numElements) {
             sb.push("{\n");
@@ -148,8 +148,8 @@ export class ASTBuilder extends Visitor {
             for (let i = 1; i < numElements; ++i) {
                 sb.push(",\n");
                 util.indent(sb, this.indentLevel);
-                let name = names[i];
-                let value = values[i];
+                const name = names[i];
+                const value = values[i];
                 if (name == value) {
                     this.visitNode(name);
                 }
@@ -168,7 +168,7 @@ export class ASTBuilder extends Visitor {
         }
     }
     visitAssertionExpression(node) {
-        var sb = this.sb;
+        const sb = this.sb;
         switch (node.assertionKind) {
             case 0: {
                 sb.push("<");
@@ -200,7 +200,7 @@ export class ASTBuilder extends Visitor {
         }
     }
     visitBinaryExpression(node) {
-        var sb = this.sb;
+        const sb = this.sb;
         this.visitNode(node.left);
         sb.push(" ");
         sb.push(operatorTokenToString(node.operator));
@@ -212,9 +212,9 @@ export class ASTBuilder extends Visitor {
         this.visitArguments(node.typeArguments, node.args);
     }
     visitArguments(typeArguments, args) {
-        var sb = this.sb;
+        const sb = this.sb;
         if (typeArguments) {
-            let numTypeArguments = typeArguments.length;
+            const numTypeArguments = typeArguments.length;
             if (numTypeArguments) {
                 sb.push("<");
                 this.visitTypeNode(typeArguments[0]);
@@ -228,7 +228,7 @@ export class ASTBuilder extends Visitor {
         else {
             sb.push("(");
         }
-        var numArgs = args.length;
+        const numArgs = args.length;
         if (numArgs) {
             this.visitNode(args[0]);
             for (let i = 1; i < numArgs; ++i) {
@@ -239,28 +239,28 @@ export class ASTBuilder extends Visitor {
         sb.push(")");
     }
     visitClassExpression(node) {
-        var declaration = node.declaration;
+        const declaration = node.declaration;
         this.visitClassDeclaration(declaration);
     }
     visitCommaExpression(node) {
-        var expressions = node.expressions;
-        var numExpressions = expressions.length;
+        const expressions = node.expressions;
+        const numExpressions = expressions.length;
         this.visitNode(expressions[0]);
-        var sb = this.sb;
+        const sb = this.sb;
         for (let i = 1; i < numExpressions; ++i) {
             sb.push(",");
             this.visitNode(expressions[i]);
         }
     }
     visitElementAccessExpression(node) {
-        var sb = this.sb;
+        const sb = this.sb;
         this.visitNode(node.expression);
         sb.push("[");
         this.visitNode(node.elementExpression);
         sb.push("]");
     }
     visitFunctionExpression(node) {
-        var declaration = node.declaration;
+        const declaration = node.declaration;
         if (!declaration.arrowKind) {
             if (declaration.name.text.length) {
                 this.sb.push("function ");
@@ -322,25 +322,25 @@ export class ASTBuilder extends Visitor {
         this.sb.push(i64_to_string(node.value));
     }
     visitStringLiteral(str) {
-        var sb = this.sb;
+        const sb = this.sb;
         sb.push('"');
         this.visitRawString(str, 34);
         sb.push('"');
     }
     visitRawString(str, quote) {
-        var sb = this.sb;
-        var off = 0;
-        var i = 0;
+        const sb = this.sb;
+        let off = 0;
+        let i = 0;
         for (let k = str.length; i < k;) {
             switch (str.charCodeAt(i)) {
                 case 0: {
                     if (i > off)
-                        sb.push(str.substring(off, (off = i + 1)));
+                        sb.push(str.substring(off, i));
                     sb.push("\\0");
                     off = ++i;
                     break;
                 }
-                case 92: {
+                case 8: {
                     if (i > off)
                         sb.push(str.substring(off, i));
                     off = ++i;
@@ -438,10 +438,10 @@ export class ASTBuilder extends Visitor {
         this.visitStringLiteral(node.value);
     }
     visitTemplateLiteralExpression(node) {
-        var sb = this.sb;
-        var tag = node.tag;
-        var parts = node.parts;
-        var expressions = node.expressions;
+        const sb = this.sb;
+        const tag = node.tag;
+        const parts = node.parts;
+        const expressions = node.expressions;
         if (tag)
             this.visitNode(tag);
         sb.push("`");
@@ -456,7 +456,7 @@ export class ASTBuilder extends Visitor {
         sb.push("`");
     }
     visitRegexpLiteralExpression(node) {
-        var sb = this.sb;
+        const sb = this.sb;
         sb.push("/");
         sb.push(node.pattern);
         sb.push("/");
@@ -468,7 +468,7 @@ export class ASTBuilder extends Visitor {
         this.visitArguments(node.typeArguments, node.args);
     }
     visitParenthesizedExpression(node) {
-        var sb = this.sb;
+        const sb = this.sb;
         sb.push("(");
         this.visitNode(node.expression);
         sb.push(")");
@@ -479,7 +479,7 @@ export class ASTBuilder extends Visitor {
         this.visitIdentifierExpression(node.property);
     }
     visitTernaryExpression(node) {
-        var sb = this.sb;
+        const sb = this.sb;
         this.visitNode(node.condition);
         sb.push(" ? ");
         this.visitNode(node.ifThen);
@@ -510,15 +510,15 @@ export class ASTBuilder extends Visitor {
     }
     visitNodeAndTerminate(node) {
         this.visitNode(node);
-        var sb = this.sb;
+        const sb = this.sb;
         if (!sb.length ||
             node.kind == 47 ||
             node.kind == 38) {
             sb.push(";\n");
         }
         else {
-            let last = sb[sb.length - 1];
-            let lastCharPos = last.length - 1;
+            const last = sb[sb.length - 1];
+            const lastCharPos = last.length - 1;
             if (lastCharPos >= 0 &&
                 (last.charCodeAt(lastCharPos) == 125 ||
                     last.charCodeAt(lastCharPos) == 59)) {
@@ -530,12 +530,12 @@ export class ASTBuilder extends Visitor {
         }
     }
     visitBlockStatement(node) {
-        var sb = this.sb;
-        var statements = node.statements;
-        var numStatements = statements.length;
+        const sb = this.sb;
+        const statements = node.statements;
+        const numStatements = statements.length;
         if (numStatements) {
             sb.push("{\n");
-            let indentLevel = ++this.indentLevel;
+            const indentLevel = ++this.indentLevel;
             for (let i = 0; i < numStatements; ++i) {
                 util.indent(sb, indentLevel);
                 this.visitNodeAndTerminate(statements[i]);
@@ -548,7 +548,7 @@ export class ASTBuilder extends Visitor {
         }
     }
     visitBreakStatement(node) {
-        var label = node.label;
+        const label = node.label;
         if (label) {
             this.sb.push("break ");
             this.visitIdentifierExpression(label);
@@ -558,7 +558,7 @@ export class ASTBuilder extends Visitor {
         }
     }
     visitContinueStatement(node) {
-        var label = node.label;
+        const label = node.label;
         if (label) {
             this.sb.push("continue ");
             this.visitIdentifierExpression(label);
@@ -568,13 +568,13 @@ export class ASTBuilder extends Visitor {
         }
     }
     visitClassDeclaration(node, isDefault = false) {
-        var decorators = node.decorators;
+        const decorators = node.decorators;
         if (decorators) {
             for (let i = 0, k = decorators.length; i < k; ++i) {
                 this.serializeDecorator(decorators[i]);
             }
         }
-        var sb = this.sb;
+        const sb = this.sb;
         if (isDefault) {
             sb.push("export default ");
         }
@@ -590,7 +590,7 @@ export class ASTBuilder extends Visitor {
         else {
             sb.push("class");
         }
-        var typeParameters = node.typeParameters;
+        const typeParameters = node.typeParameters;
         if (typeParameters != null && typeParameters.length > 0) {
             sb.push("<");
             this.visitTypeParameter(typeParameters[0]);
@@ -600,14 +600,14 @@ export class ASTBuilder extends Visitor {
             }
             sb.push(">");
         }
-        var extendsType = node.extendsType;
+        const extendsType = node.extendsType;
         if (extendsType) {
             sb.push(" extends ");
             this.visitTypeNode(extendsType);
         }
-        var implementsTypes = node.implementsTypes;
+        const implementsTypes = node.implementsTypes;
         if (implementsTypes) {
-            let numImplementsTypes = implementsTypes.length;
+            const numImplementsTypes = implementsTypes.length;
             if (numImplementsTypes) {
                 sb.push(" implements ");
                 this.visitTypeNode(implementsTypes[0]);
@@ -617,18 +617,18 @@ export class ASTBuilder extends Visitor {
                 }
             }
         }
-        var indexSignature = node.indexSignature;
-        var members = node.members;
-        var numMembers = members.length;
+        const indexSignature = node.indexSignature;
+        const members = node.members;
+        const numMembers = members.length;
         if (indexSignature !== null || numMembers) {
             sb.push(" {\n");
-            let indentLevel = ++this.indentLevel;
+            const indentLevel = ++this.indentLevel;
             if (indexSignature) {
                 util.indent(sb, indentLevel);
                 this.visitNodeAndTerminate(indexSignature);
             }
             for (let i = 0, k = members.length; i < k; ++i) {
-                let member = members[i];
+                const member = members[i];
                 if (member.kind != 54 ||
                     member.parameterIndex < 0) {
                     util.indent(sb, indentLevel);
@@ -643,7 +643,7 @@ export class ASTBuilder extends Visitor {
         }
     }
     visitDoStatement(node) {
-        var sb = this.sb;
+        const sb = this.sb;
         sb.push("do ");
         this.visitNode(node.body);
         if (node.body.kind == 30) {
@@ -656,10 +656,10 @@ export class ASTBuilder extends Visitor {
         this.visitNode(node.condition);
         sb.push(")");
     }
-    visitEmptyStatement(node) {
+    visitEmptyStatement(_node) {
     }
     visitEnumDeclaration(node, isDefault = false) {
-        var sb = this.sb;
+        const sb = this.sb;
         if (isDefault) {
             sb.push("export default ");
         }
@@ -670,11 +670,11 @@ export class ASTBuilder extends Visitor {
             sb.push("const ");
         sb.push("enum ");
         this.visitIdentifierExpression(node.name);
-        var values = node.values;
-        var numValues = values.length;
+        const values = node.values;
+        const numValues = values.length;
         if (numValues) {
             sb.push(" {\n");
-            let indentLevel = ++this.indentLevel;
+            const indentLevel = ++this.indentLevel;
             util.indent(sb, indentLevel);
             this.visitEnumValueDeclaration(node.values[0]);
             for (let i = 1; i < numValues; ++i) {
@@ -692,14 +692,14 @@ export class ASTBuilder extends Visitor {
     }
     visitEnumValueDeclaration(node) {
         this.visitIdentifierExpression(node.name);
-        var initializer = node.initializer;
+        const initializer = node.initializer;
         if (initializer) {
             this.sb.push(" = ");
             this.visitNode(initializer);
         }
     }
     visitExportImportStatement(node) {
-        var sb = this.sb;
+        const sb = this.sb;
         sb.push("export import ");
         this.visitIdentifierExpression(node.externalName);
         sb.push(" = ");
@@ -713,18 +713,18 @@ export class ASTBuilder extends Visitor {
         }
     }
     visitExportStatement(node) {
-        var sb = this.sb;
+        const sb = this.sb;
         if (node.isDeclare) {
             sb.push("declare ");
         }
-        var members = node.members;
+        const members = node.members;
         if (members == null) {
             sb.push("export *");
         }
         else if (members.length > 0) {
-            let numMembers = members.length;
+            const numMembers = members.length;
             sb.push("export {\n");
-            let indentLevel = ++this.indentLevel;
+            const indentLevel = ++this.indentLevel;
             util.indent(sb, indentLevel);
             this.visitExportMember(members[0]);
             for (let i = 1; i < numMembers; ++i) {
@@ -738,7 +738,7 @@ export class ASTBuilder extends Visitor {
         else {
             sb.push("export {}");
         }
-        var path = node.path;
+        const path = node.path;
         if (path) {
             sb.push(" from ");
             this.visitStringLiteralExpression(path);
@@ -746,7 +746,7 @@ export class ASTBuilder extends Visitor {
         sb.push(";");
     }
     visitExportDefaultStatement(node) {
-        var declaration = node.declaration;
+        const declaration = node.declaration;
         switch (declaration.kind) {
             case 52: {
                 this.visitEnumDeclaration(declaration, true);
@@ -776,7 +776,7 @@ export class ASTBuilder extends Visitor {
         this.visitNode(node.expression);
     }
     visitFieldDeclaration(node) {
-        var decorators = node.decorators;
+        const decorators = node.decorators;
         if (decorators) {
             for (let i = 0, k = decorators.length; i < k; ++i) {
                 this.serializeDecorator(decorators[i]);
@@ -784,29 +784,29 @@ export class ASTBuilder extends Visitor {
         }
         this.serializeAccessModifiers(node);
         this.visitIdentifierExpression(node.name);
-        var sb = this.sb;
+        const sb = this.sb;
         if (node.flags & 16384) {
             sb.push("!");
         }
-        var type = node.type;
+        const type = node.type;
         if (type) {
             sb.push(": ");
             this.visitTypeNode(type);
         }
-        var initializer = node.initializer;
+        const initializer = node.initializer;
         if (initializer) {
             sb.push(" = ");
             this.visitNode(initializer);
         }
     }
     visitForStatement(node) {
-        var sb = this.sb;
+        const sb = this.sb;
         sb.push("for (");
-        var initializer = node.initializer;
+        const initializer = node.initializer;
         if (initializer) {
             this.visitNode(initializer);
         }
-        var condition = node.condition;
+        const condition = node.condition;
         if (condition) {
             sb.push("; ");
             this.visitNode(condition);
@@ -814,7 +814,7 @@ export class ASTBuilder extends Visitor {
         else {
             sb.push(";");
         }
-        var incrementor = node.incrementor;
+        const incrementor = node.incrementor;
         if (incrementor) {
             sb.push("; ");
             this.visitNode(incrementor);
@@ -826,7 +826,7 @@ export class ASTBuilder extends Visitor {
         this.visitNode(node.body);
     }
     visitForOfStatement(node) {
-        var sb = this.sb;
+        const sb = this.sb;
         sb.push("for (");
         this.visitNode(node.variable);
         sb.push(" of ");
@@ -835,8 +835,8 @@ export class ASTBuilder extends Visitor {
         this.visitNode(node.body);
     }
     visitFunctionDeclaration(node, isDefault = false) {
-        var sb = this.sb;
-        var decorators = node.decorators;
+        const sb = this.sb;
+        const decorators = node.decorators;
         if (decorators) {
             for (let i = 0, k = decorators.length; i < k; ++i) {
                 this.serializeDecorator(decorators[i]);
@@ -858,12 +858,12 @@ export class ASTBuilder extends Visitor {
         this.visitFunctionCommon(node);
     }
     visitFunctionCommon(node) {
-        var sb = this.sb;
+        const sb = this.sb;
         this.visitIdentifierExpression(node.name);
-        var signature = node.signature;
-        var typeParameters = node.typeParameters;
+        const signature = node.signature;
+        const typeParameters = node.typeParameters;
         if (typeParameters) {
-            let numTypeParameters = typeParameters.length;
+            const numTypeParameters = typeParameters.length;
             if (numTypeParameters) {
                 sb.push("<");
                 this.visitTypeParameter(typeParameters[0]);
@@ -875,16 +875,16 @@ export class ASTBuilder extends Visitor {
             }
         }
         if (node.arrowKind == 2) {
-            let parameters = signature.parameters;
+            const parameters = signature.parameters;
             assert(parameters.length == 1);
             assert(!signature.explicitThisType);
             this.serializeParameter(parameters[0]);
         }
         else {
             sb.push("(");
-            let parameters = signature.parameters;
-            let numParameters = parameters.length;
-            let explicitThisType = signature.explicitThisType;
+            const parameters = signature.parameters;
+            const numParameters = parameters.length;
+            const explicitThisType = signature.explicitThisType;
             if (explicitThisType) {
                 sb.push("this: ");
                 this.visitTypeNode(explicitThisType);
@@ -899,8 +899,8 @@ export class ASTBuilder extends Visitor {
                 }
             }
         }
-        var body = node.body;
-        var returnType = signature.returnType;
+        const body = node.body;
+        const returnType = signature.returnType;
         if (node.arrowKind) {
             if (body) {
                 if (node.arrowKind == 2) {
@@ -940,16 +940,16 @@ export class ASTBuilder extends Visitor {
         }
     }
     visitIfStatement(node) {
-        var sb = this.sb;
+        const sb = this.sb;
         sb.push("if (");
         this.visitNode(node.condition);
         sb.push(") ");
-        var ifTrue = node.ifTrue;
+        const ifTrue = node.ifTrue;
         this.visitNode(ifTrue);
         if (ifTrue.kind != 30) {
             sb.push(";\n");
         }
-        var ifFalse = node.ifFalse;
+        const ifFalse = node.ifFalse;
         if (ifFalse) {
             if (ifTrue.kind == 30) {
                 sb.push(" else ");
@@ -961,8 +961,8 @@ export class ASTBuilder extends Visitor {
         }
     }
     visitImportDeclaration(node) {
-        var externalName = node.foreignName;
-        var name = node.name;
+        const externalName = node.foreignName;
+        const name = node.name;
         this.visitIdentifierExpression(externalName);
         if (externalName.text != name.text) {
             this.sb.push(" as ");
@@ -970,15 +970,15 @@ export class ASTBuilder extends Visitor {
         }
     }
     visitImportStatement(node) {
-        var sb = this.sb;
+        const sb = this.sb;
         sb.push("import ");
-        var declarations = node.declarations;
-        var namespaceName = node.namespaceName;
+        const declarations = node.declarations;
+        const namespaceName = node.namespaceName;
         if (declarations) {
-            let numDeclarations = declarations.length;
+            const numDeclarations = declarations.length;
             if (numDeclarations) {
                 sb.push("{\n");
-                let indentLevel = ++this.indentLevel;
+                const indentLevel = ++this.indentLevel;
                 util.indent(sb, indentLevel);
                 this.visitImportDeclaration(declarations[0]);
                 for (let i = 1; i < numDeclarations; ++i) {
@@ -1001,20 +1001,20 @@ export class ASTBuilder extends Visitor {
         this.visitStringLiteralExpression(node.path);
     }
     visitIndexSignature(node) {
-        var sb = this.sb;
+        const sb = this.sb;
         sb.push("[key: ");
         this.visitTypeNode(node.keyType);
         sb.push("]: ");
         this.visitTypeNode(node.valueType);
     }
     visitInterfaceDeclaration(node, isDefault = false) {
-        var decorators = node.decorators;
+        const decorators = node.decorators;
         if (decorators) {
             for (let i = 0, k = decorators.length; i < k; ++i) {
                 this.serializeDecorator(decorators[i]);
             }
         }
-        var sb = this.sb;
+        const sb = this.sb;
         if (isDefault) {
             sb.push("export default ");
         }
@@ -1023,7 +1023,7 @@ export class ASTBuilder extends Visitor {
         }
         sb.push("interface ");
         this.visitIdentifierExpression(node.name);
-        var typeParameters = node.typeParameters;
+        const typeParameters = node.typeParameters;
         if (typeParameters != null && typeParameters.length > 0) {
             sb.push("<");
             this.visitTypeParameter(typeParameters[0]);
@@ -1033,14 +1033,14 @@ export class ASTBuilder extends Visitor {
             }
             sb.push(">");
         }
-        var extendsType = node.extendsType;
+        const extendsType = node.extendsType;
         if (extendsType) {
             sb.push(" extends ");
             this.visitTypeNode(extendsType);
         }
         sb.push(" {\n");
-        var indentLevel = ++this.indentLevel;
-        var members = node.members;
+        const indentLevel = ++this.indentLevel;
+        const members = node.members;
         for (let i = 0, k = members.length; i < k; ++i) {
             util.indent(sb, indentLevel);
             this.visitNodeAndTerminate(members[i]);
@@ -1049,7 +1049,7 @@ export class ASTBuilder extends Visitor {
         sb.push("}");
     }
     visitMethodDeclaration(node) {
-        var decorators = node.decorators;
+        const decorators = node.decorators;
         if (decorators) {
             for (let i = 0, k = decorators.length; i < k; ++i) {
                 this.serializeDecorator(decorators[i]);
@@ -1065,13 +1065,13 @@ export class ASTBuilder extends Visitor {
         this.visitFunctionCommon(node);
     }
     visitNamespaceDeclaration(node, isDefault = false) {
-        var decorators = node.decorators;
+        const decorators = node.decorators;
         if (decorators) {
             for (let i = 0, k = decorators.length; i < k; ++i) {
                 this.serializeDecorator(decorators[i]);
             }
         }
-        var sb = this.sb;
+        const sb = this.sb;
         if (isDefault) {
             sb.push("export default ");
         }
@@ -1080,11 +1080,11 @@ export class ASTBuilder extends Visitor {
         }
         sb.push("namespace ");
         this.visitIdentifierExpression(node.name);
-        var members = node.members;
-        var numMembers = members.length;
+        const members = node.members;
+        const numMembers = members.length;
         if (numMembers) {
             sb.push(" {\n");
-            let indentLevel = ++this.indentLevel;
+            const indentLevel = ++this.indentLevel;
             for (let i = 0, k = members.length; i < k; ++i) {
                 util.indent(sb, indentLevel);
                 this.visitNodeAndTerminate(members[i]);
@@ -1097,7 +1097,7 @@ export class ASTBuilder extends Visitor {
         }
     }
     visitReturnStatement(node) {
-        var value = node.value;
+        const value = node.value;
         if (value) {
             this.sb.push("return ");
             this.visitNode(value);
@@ -1106,18 +1106,18 @@ export class ASTBuilder extends Visitor {
             this.sb.push("return");
         }
     }
-    visitTrueExpression(node) {
+    visitTrueExpression(_node) {
         this.sb.push("true");
     }
-    visitFalseExpression(node) {
+    visitFalseExpression(_node) {
         this.sb.push("false");
     }
-    visitNullExpression(node) {
+    visitNullExpression(_node) {
         this.sb.push("null");
     }
     visitSwitchCase(node) {
-        var sb = this.sb;
-        var label = node.label;
+        const sb = this.sb;
+        const label = node.label;
         if (label) {
             sb.push("case ");
             this.visitNode(label);
@@ -1126,10 +1126,10 @@ export class ASTBuilder extends Visitor {
         else {
             sb.push("default:\n");
         }
-        var statements = node.statements;
-        var numStatements = statements.length;
+        const statements = node.statements;
+        const numStatements = statements.length;
         if (numStatements) {
-            let indentLevel = ++this.indentLevel;
+            const indentLevel = ++this.indentLevel;
             util.indent(sb, indentLevel);
             this.visitNodeAndTerminate(statements[0]);
             for (let i = 1; i < numStatements; ++i) {
@@ -1140,12 +1140,12 @@ export class ASTBuilder extends Visitor {
         }
     }
     visitSwitchStatement(node) {
-        var sb = this.sb;
+        const sb = this.sb;
         sb.push("switch (");
         this.visitNode(node.condition);
         sb.push(") {\n");
-        var indentLevel = ++this.indentLevel;
-        var cases = node.cases;
+        const indentLevel = ++this.indentLevel;
+        const cases = node.cases;
         for (let i = 0, k = cases.length; i < k; ++i) {
             util.indent(sb, indentLevel);
             this.visitSwitchCase(cases[i]);
@@ -1159,21 +1159,21 @@ export class ASTBuilder extends Visitor {
         this.visitNode(node.value);
     }
     visitTryStatement(node) {
-        var sb = this.sb;
+        const sb = this.sb;
         sb.push("try {\n");
-        var indentLevel = ++this.indentLevel;
-        var statements = node.bodyStatements;
+        const indentLevel = ++this.indentLevel;
+        const statements = node.bodyStatements;
         for (let i = 0, k = statements.length; i < k; ++i) {
             util.indent(sb, indentLevel);
             this.visitNodeAndTerminate(statements[i]);
         }
-        var catchVariable = node.catchVariable;
+        const catchVariable = node.catchVariable;
         if (catchVariable) {
             util.indent(sb, indentLevel - 1);
             sb.push("} catch (");
             this.visitIdentifierExpression(catchVariable);
             sb.push(") {\n");
-            let catchStatements = node.catchStatements;
+            const catchStatements = node.catchStatements;
             if (catchStatements) {
                 for (let i = 0, k = catchStatements.length; i < k; ++i) {
                     util.indent(sb, indentLevel);
@@ -1181,7 +1181,7 @@ export class ASTBuilder extends Visitor {
                 }
             }
         }
-        var finallyStatements = node.finallyStatements;
+        const finallyStatements = node.finallyStatements;
         if (finallyStatements) {
             util.indent(sb, indentLevel - 1);
             sb.push("} finally {\n");
@@ -1194,19 +1194,19 @@ export class ASTBuilder extends Visitor {
         sb.push("}");
     }
     visitTypeDeclaration(node) {
-        var decorators = node.decorators;
+        const decorators = node.decorators;
         if (decorators) {
             for (let i = 0, k = decorators.length; i < k; ++i) {
                 this.serializeDecorator(decorators[i]);
             }
         }
-        var sb = this.sb;
+        const sb = this.sb;
         this.serializeExternalModifiers(node);
         sb.push("type ");
         this.visitIdentifierExpression(node.name);
-        var typeParameters = node.typeParameters;
+        const typeParameters = node.typeParameters;
         if (typeParameters) {
-            let numTypeParameters = typeParameters.length;
+            const numTypeParameters = typeParameters.length;
             if (numTypeParameters) {
                 sb.push("<");
                 for (let i = 0; i < numTypeParameters; ++i) {
@@ -1220,8 +1220,8 @@ export class ASTBuilder extends Visitor {
     }
     visitVariableDeclaration(node) {
         this.visitIdentifierExpression(node.name);
-        var type = node.type;
-        var sb = this.sb;
+        const type = node.type;
+        const sb = this.sb;
         if (node.flags & 16384) {
             sb.push("!");
         }
@@ -1229,23 +1229,23 @@ export class ASTBuilder extends Visitor {
             sb.push(": ");
             this.visitTypeNode(type);
         }
-        var initializer = node.initializer;
+        const initializer = node.initializer;
         if (initializer) {
             sb.push(" = ");
             this.visitNode(initializer);
         }
     }
     visitVariableStatement(node) {
-        var decorators = node.decorators;
+        const decorators = node.decorators;
         if (decorators) {
             for (let i = 0, k = decorators.length; i < k; ++i) {
                 this.serializeDecorator(decorators[i]);
             }
         }
-        var sb = this.sb;
-        var declarations = node.declarations;
-        var numDeclarations = declarations.length;
-        var firstDeclaration = declarations[0];
+        const sb = this.sb;
+        const declarations = node.declarations;
+        const numDeclarations = declarations.length;
+        const firstDeclaration = declarations[0];
         this.serializeExternalModifiers(firstDeclaration);
         sb.push(firstDeclaration.is(8)
             ? "const "
@@ -1259,10 +1259,10 @@ export class ASTBuilder extends Visitor {
         }
     }
     visitWhileStatement(node) {
-        var sb = this.sb;
+        const sb = this.sb;
         sb.push("while (");
         this.visitNode(node.condition);
-        var statement = node.body;
+        const statement = node.body;
         if (statement.kind == 34) {
             sb.push(")");
         }
@@ -1272,13 +1272,13 @@ export class ASTBuilder extends Visitor {
         }
     }
     serializeDecorator(node) {
-        var sb = this.sb;
+        const sb = this.sb;
         sb.push("@");
         this.visitNode(node.name);
-        var args = node.args;
+        const args = node.args;
         if (args) {
             sb.push("(");
-            let numArgs = args.length;
+            const numArgs = args.length;
             if (numArgs) {
                 this.visitNode(args[0]);
                 for (let i = 1; i < numArgs; ++i) {
@@ -1294,9 +1294,9 @@ export class ASTBuilder extends Visitor {
         util.indent(sb, this.indentLevel);
     }
     serializeParameter(node) {
-        var sb = this.sb;
-        var kind = node.parameterKind;
-        var implicitFieldDeclaration = node.implicitFieldDeclaration;
+        const sb = this.sb;
+        const kind = node.parameterKind;
+        const implicitFieldDeclaration = node.implicitFieldDeclaration;
         if (implicitFieldDeclaration) {
             this.serializeAccessModifiers(implicitFieldDeclaration);
         }
@@ -1304,8 +1304,8 @@ export class ASTBuilder extends Visitor {
             sb.push("...");
         }
         this.visitIdentifierExpression(node.name);
-        var type = node.type;
-        var initializer = node.initializer;
+        const type = node.type;
+        const initializer = node.initializer;
         if (type) {
             if (kind == 1 && !initializer)
                 sb.push("?");
@@ -1320,7 +1320,7 @@ export class ASTBuilder extends Visitor {
         }
     }
     serializeExternalModifiers(node) {
-        var sb = this.sb;
+        const sb = this.sb;
         if (node.is(2)) {
             sb.push("export ");
         }
@@ -1332,7 +1332,7 @@ export class ASTBuilder extends Visitor {
         }
     }
     serializeAccessModifiers(node) {
-        var sb = this.sb;
+        const sb = this.sb;
         if (node.is(256)) {
             sb.push("public ");
         }
@@ -1353,7 +1353,7 @@ export class ASTBuilder extends Visitor {
         }
     }
     finish() {
-        var ret = this.sb.join("");
+        const ret = this.sb.join("");
         this.sb = [];
         return ret;
     }

@@ -3,6 +3,7 @@ export class Config {
   input: string[] = ["./assembly/__tests__/*.spec.ts"];
   outDir: string = "./.as-test/build";
   logs: string = "./.as-test/logs";
+  coverageDir: string = "./.as-test/coverage";
   snapshotDir: string = "./.as-test/snapshots";
   config: string = "none";
   coverage: boolean | CoverageOptions = true;

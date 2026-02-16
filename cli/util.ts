@@ -1,7 +1,8 @@
 import { existsSync, readFileSync } from "fs";
 import { Config } from "./types.js";
 import chalk from "chalk";
-import { delimiter, join } from "path";
+import { delimiter, dirname, join } from "path";
+import { fileURLToPath } from "url";
 
 export function formatTime(ms: number): string {
   if (ms < 0) {
@@ -50,16 +51,22 @@ export function loadConfig(CONFIG_PATH: string, warn: boolean = false): Config {
 }
 
 export function getCliVersion(): string {
-  const pkgPath = join(process.cwd(), "package.json");
-  if (!existsSync(pkgPath)) return "0.0.0";
-  try {
-    const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as {
-      version?: string;
-    };
-    return pkg.version ?? "0.0.0";
-  } catch {
-    return "0.0.0";
+  const candidates = [
+    join(process.cwd(), "package.json"),
+    join(dirname(fileURLToPath(import.meta.url)), "..", "package.json"),
+  ];
+  for (const pkgPath of candidates) {
+    if (!existsSync(pkgPath)) continue;
+    try {
+      const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as {
+        version?: string;
+      };
+      if (pkg.version) return pkg.version;
+    } catch {
+      // ignore invalid package metadata and continue to fallback candidate
+    }
   }
+  return "0.0.0";
 }
 
 export function getPkgRunner(): string {

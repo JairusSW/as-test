@@ -20,6 +20,7 @@ export class Suite {
   public logs: Log[] = [];
   public kind: string;
 
+
   @omit
   public parent: Suite | null = null;
 

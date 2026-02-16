@@ -55,7 +55,7 @@ export class MockTransform extends Visitor {
         this.importFns = [];
         super.visitSource(node);
         for (const node of this.importFns) {
-            let path = "";
+            let path;
             const dec = node.decorators?.find((v) => v.name.text == "external");
             if (!dec) {
                 path = "env." + node.name.text;
@@ -73,7 +73,7 @@ export class MockTransform extends Visitor {
                 path = this.srcCurrent.simplePath + "." + node.name.text;
             if (!this.importMocked.has(path))
                 return;
-            let args = [
+            const args = [
                 Node.createCallExpression(Node.createPropertyAccessExpression(Node.createIdentifierExpression("__mock_import", node.range), Node.createIdentifierExpression("get", node.range), node.range), null, [Node.createStringLiteralExpression(path, node.range)], node.range),
             ];
             for (const param of node.signature.parameters) {

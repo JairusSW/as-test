@@ -228,7 +228,7 @@ function renderCoverageSummary(summary: {
         : chalk.redBright;
   console.log("");
   console.log(
-    `${chalk.bold("Coverage:")} ${color(pct + "%")} ${chalk.dim(`(${summary.covered}/${summary.total} points, ${summary.uncovered} uncovered)${Number(pct)<100.0 ? " run with --show-coverage to see details": ""}`)}`,
+    `${chalk.bold("Coverage:")} ${color(pct + "%")} ${chalk.dim(`(${summary.covered}/${summary.total} points, ${summary.uncovered} uncovered)${Number(pct) < 100.0 ? " run with --show-coverage to see details" : ""}`)}`,
   );
 }
 

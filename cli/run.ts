@@ -4,12 +4,7 @@ import { glob } from "glob";
 import { getExec, loadConfig } from "./util.js";
 import * as path from "path";
 import { pathToFileURL } from "url";
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-} from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import {
   CoverageSummary,
   ReporterContext,
@@ -157,7 +152,10 @@ class SnapshotStore {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     this.filePath = path.join(dir, `${base}.snap.json`);
     this.data = existsSync(this.filePath)
-      ? (JSON.parse(readFileSync(this.filePath, "utf8")) as Record<string, string>)
+      ? (JSON.parse(readFileSync(this.filePath, "utf8")) as Record<
+          string,
+          string
+        >)
       : {};
   }
 
@@ -167,7 +165,8 @@ class SnapshotStore {
     allowSnapshot: boolean,
     updateSnapshots: boolean,
   ): SnapshotReply {
-    if (!allowSnapshot) return { ok: true, expected: actual, warnMissing: false };
+    if (!allowSnapshot)
+      return { ok: true, expected: actual, warnMissing: false };
     if (!(key in this.data)) {
       if (!updateSnapshots) {
         this.failed++;
@@ -219,6 +218,7 @@ export async function run(
   const showCoverage = Boolean(flags.showCoverage);
   const coverage = resolveCoverageOptions(config.coverage);
   const coverageEnabled = coverage.enabled;
+  const coverageDir = config.coverageDir ?? "./.as-test/coverage";
   const reporter = await loadReporter(
     config.runOptions.reporter,
     resolvedConfigPath,
@@ -247,7 +247,7 @@ export async function run(
   if (showCoverage && !coverageEnabled) {
     process.stderr.write(
       chalk.dim(
-        'coverage point output requested with --show-coverage, but coverage is disabled\n',
+        "coverage point output requested with --show-coverage, but coverage is disabled\n",
       ),
     );
   }
@@ -313,18 +313,6 @@ export async function run(
       path.join(process.cwd(), config.logs, "test.log.json"),
       JSON.stringify(reports, null, 2),
     );
-    if (coverageEnabled) {
-      const coverageSummary = collectCoverageSummary(
-        reports,
-        true,
-        showCoverage,
-        coverage,
-      );
-      writeFileSync(
-        path.join(process.cwd(), config.logs, "coverage.log.json"),
-        JSON.stringify(coverageSummary, null, 2),
-      );
-    }
   }
   const stats = collectRunStats(reports.map((report) => report.suites));
   const coverageSummary = collectCoverageSummary(
@@ -333,6 +321,16 @@ export async function run(
     showCoverage,
     coverage,
   );
+  if (coverageEnabled && coverageDir && coverageDir != "none") {
+    const resolvedCoverageDir = path.join(process.cwd(), coverageDir);
+    if (!existsSync(resolvedCoverageDir)) {
+      mkdirSync(resolvedCoverageDir, { recursive: true });
+    }
+    writeFileSync(
+      path.join(resolvedCoverageDir, "coverage.log.json"),
+      JSON.stringify(coverageSummary, null, 2),
+    );
+  }
   reporter.onRunComplete?.({
     clean: cleanOutput,
     snapshotEnabled,
@@ -393,7 +391,9 @@ function normalizeCoverage(value: unknown): FileCoverage {
       : total
         ? (covered * 100) / total
         : 100;
-  const pointsRaw = Array.isArray(raw?.points) ? (raw?.points as unknown[]) : [];
+  const pointsRaw = Array.isArray(raw?.points)
+    ? (raw?.points as unknown[])
+    : [];
   const points = pointsRaw
     .map((point) => {
       const p = point as Record<string, unknown>;
@@ -514,11 +514,16 @@ function collectCoverageSummary(
     }
   }
 
-  summary.percent = summary.total ? (summary.covered * 100) / summary.total : 100;
+  summary.percent = summary.total
+    ? (summary.covered * 100) / summary.total
+    : 100;
   return summary;
 }
 
-function isIgnoredCoverageFile(file: string, coverage: CoverageOptions): boolean {
+function isIgnoredCoverageFile(
+  file: string,
+  coverage: CoverageOptions,
+): boolean {
   const normalized = file.replace(/\\/g, "/");
   if (normalized.startsWith("node_modules/")) return true;
   if (normalized.includes("/node_modules/")) return true;
@@ -669,7 +674,6 @@ async function runProcess(
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const _channel = new TestChannel(child.stdout!, child.stdin!);
 
   const code = await new Promise<number>((resolve) => {
@@ -772,9 +776,11 @@ async function loadReporter(
     const factory = resolveReporterFactory(mod);
     return factory(context);
   } catch (error) {
-    throw new Error(
+    const reporterError = new Error(
       `could not load reporter "${reporterPath}": ${String(error)}`,
-    );
+    ) as Error & { cause?: unknown };
+    reporterError.cause = error;
+    throw reporterError;
   }
 }
 

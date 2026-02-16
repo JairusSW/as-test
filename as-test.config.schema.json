@@ -15,9 +15,7 @@
       "items": {
         "type": "string"
       },
-      "default": [
-        "./assembly/__tests__/*.spec.ts"
-      ]
+      "default": ["./assembly/__tests__/*.spec.ts"]
     },
     "outDir": {
       "type": "string",
@@ -35,6 +33,18 @@
         }
       ],
       "default": "./.as-test/logs"
+    },
+    "coverageDir": {
+      "description": "Directory for coverage artifacts, or \"none\" to disable writing coverage files.",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": "none"
+        }
+      ],
+      "default": "./.as-test/coverage"
     },
     "snapshotDir": {
       "type": "string",
@@ -83,10 +93,7 @@
         },
         "target": {
           "type": "string",
-          "enum": [
-            "wasi",
-            "bindings"
-          ],
+          "enum": ["wasi", "bindings"],
           "default": "wasi"
         }
       },

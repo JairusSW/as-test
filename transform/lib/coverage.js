@@ -8,6 +8,12 @@ var CoverType;
     CoverType[CoverType["Expression"] = 1] = "Expression";
     CoverType[CoverType["Block"] = 2] = "Block";
 })(CoverType || (CoverType = {}));
+const COVERAGE_IGNORED_CALLS = new Set([
+    "beforeAll",
+    "afterAll",
+    "mockFn",
+    "mockImport",
+]);
 class CoverPoint {
     file = "";
     hash = "";
@@ -20,6 +26,20 @@ export class CoverageTransform extends Visitor {
     mustImport = false;
     points = new Map();
     globalStatements = [];
+    visitCallExpression(node) {
+        const callName = getCallName(node);
+        if (callName && COVERAGE_IGNORED_CALLS.has(callName)) {
+            this.visit(node.expression, node);
+            this.visit(node.typeArguments, node);
+            for (const arg of node.args) {
+                if (arg.kind == 14)
+                    continue;
+                this.visit(arg, node);
+            }
+            return;
+        }
+        super.visitCallExpression(node);
+    }
     visitBinaryExpression(node) {
         super.visitBinaryExpression(node);
         if (node.visited)
@@ -47,7 +67,7 @@ export class CoverageTransform extends Visitor {
                         executed: false
                     });`);
                 replacer.visit(registerStmt);
-                let coverExpression = SimpleParser.parseExpression(`(__COVER("${point.hash}"), $$REPLACE_ME)`);
+                const coverExpression = SimpleParser.parseExpression(`(__COVER("${point.hash}"), $$REPLACE_ME)`);
                 replacer.visit(coverExpression);
                 coverExpression.expression.expressions[1] = right;
                 node.right = coverExpression;
@@ -386,6 +406,21 @@ export class CoverageTransform extends Visitor {
         if (isStdlib(node))
             return;
         super.visitSource(node);
+    }
+}
+function getCallName(node) {
+    return getExpressionName(node.expression);
+}
+function getExpressionName(node) {
+    switch (node.kind) {
+        case 6:
+            return node.text;
+        case 21:
+            return node.property.text;
+        case 20:
+            return getExpressionName(node.expression);
+        default:
+            return null;
     }
 }
 function djb2Hash(str) {
