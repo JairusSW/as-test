@@ -1,4 +1,4 @@
-name: Bun/Wasmtime CI
+name: Run Tests
 
 on: [push, pull_request]
 
@@ -20,4 +20,13 @@ jobs:
         run: bun install
 
       - name: Run tests
-        run: bun run test --update-snapshots --tap
+        run: |
+          mkdir -p .as-test
+          set -o pipefail
+          bun run test --update-snapshots --tap | tee .as-test/test-results.tap
+
+      - name: Test Summary
+        uses: test-summary/action@v2
+        if: always()
+        with:
+          paths: ".as-test/test-results.tap"
