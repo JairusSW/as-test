@@ -20,4 +20,4 @@ jobs:
         run: bun install
 
       - name: Run tests
-        run: bun run test --update-snapshots
+        run: bun run test --update-snapshots --tap
