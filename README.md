@@ -214,6 +214,28 @@ Or in config:
 
 In GitHub Actions, failed TAP points emit `::error` annotations with file and line when available.
 
+Example GitHub workflow (Bun + Wasmtime + TAP summary):
+
+```yaml
+name: Run Tests
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jcbhmr/setup-wasmtime@v2
+      - uses: oven-sh/setup-bun@v1
+      - run: bun install
+      - run: bun run test --update-snapshots --tap
+      - uses: test-summary/action@v2
+        if: always()
+        with:
+          paths: ".as-test/reports/*.tap"
+```
+
 Set reporter path in config:
 
 ```json
