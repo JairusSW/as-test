@@ -280,7 +280,7 @@ function emitGitHubAnnotation(context, point) {
     properties.push(`title=${escapeGithubValue("as-test", true)}`);
     const message = point.message?.length ? point.message : "assertion failed";
     const detail = `${message} | test=${point.name}`;
-    context.stderr.write(`::error ${properties.join(",")}::${escapeGithubValue(detail)}\n`);
+    context.stdout.write(`::error ${properties.join(",")}::${escapeGithubValue(detail)}\n`);
 }
 function escapeGithubValue(value, property = false) {
     let output = value
