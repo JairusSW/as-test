@@ -231,11 +231,24 @@ export function afterEach(callback: () => void): void {
  * @param {Function} oldFn - name of function to mock
  * @param {Function} newFn - the function to substitute it with
  */
-export function mockFn(oldFn: Function, newFn: Function): void {}
+export function mockFn<T extends Function, U extends Function>(
+  oldFn: T,
+  newFn: U,
+): void {}
+
+/**
+ * Restore references previously mocked with `mockFn`.
+ * This applies to calls that appear after `unmockFn` in source order.
+ */
+export function unmockFn<T extends Function>(oldFn: T): void {}
 
 export function mockImport<T extends Function>(oldFn: string, newFn: T): void {
   __mock_import.set(oldFn, newFn.index);
   // mocks.set(oldFn, new MockFn(oldFn, newFn).enable());
+}
+
+export function unmockImport(oldFn: string): void {
+  __mock_import.delete(oldFn);
 }
 
 /**

@@ -21,10 +21,7 @@ export class MockTransform extends Visitor {
   public importMocked: Set<string> = new Set<string>();
   visitCallExpression(node: CallExpression): void {
     super.visitCallExpression(node);
-    const name = toString(node.expression)
-      .replaceAll(".", "_")
-      .replaceAll("[", "_")
-      .replaceAll("]", "_");
+    const name = normalizeName(toString(node.expression));
 
     if (this.mocked.has(name + "_mock")) {
       node.expression = Node.createIdentifierExpression(
@@ -35,16 +32,28 @@ export class MockTransform extends Visitor {
     }
 
     if (name == "mockImport") {
-      this.importMocked.add((node.args[0] as StringLiteralExpression).value);
+      const path = node.args[0] as StringLiteralExpression | undefined;
+      if (path) {
+        this.importMocked.add(path.value);
+      }
       return;
     }
+
+    if (name == "unmockFn") {
+      const oldFn = node.args[0];
+      if (!oldFn) return;
+      this.mocked.delete(normalizeName(toString(oldFn)) + "_mock");
+      return;
+    }
+
+    if (name == "unmockImport") {
+      return;
+    }
+
     if (name != "mockFn") return;
     const ov = toString(node.args[0]);
     const cb = node.args[1] as FunctionExpression;
-    const newName = ov
-      .replaceAll(".", "_")
-      .replaceAll("[", "_")
-      .replaceAll("]", "_");
+    const newName = normalizeName(ov);
 
     const newFn = Node.createFunctionDeclaration(
       Node.createIdentifierExpression(newName + "_mock", cb.range),
@@ -99,7 +108,7 @@ export class MockTransform extends Visitor {
           "." +
           (dec.args[0] as StringLiteralExpression).value;
       else path = this.srcCurrent.simplePath + "." + node.name.text;
-      if (!this.importMocked.has(path)) return;
+      if (!this.importMocked.has(path)) continue;
 
       const args: Expression[] = [
         Node.createCallExpression(
@@ -120,11 +129,11 @@ export class MockTransform extends Visitor {
 
       const newFn = Node.createFunctionDeclaration(
         node.name,
-        node.decorators.filter(
+        (node.decorators ?? []).filter(
           (v) => (v.name as IdentifierExpression).text != "external",
         ),
         node.flags - CommonFlags.Ambient - CommonFlags.Declare,
-        null,
+        node.typeParameters,
         node.signature,
         Node.createBlockStatement(
           [
@@ -156,8 +165,16 @@ export class MockTransform extends Visitor {
           break;
         }
       }
-      if (index === -1) return;
+      if (index === -1) continue;
       stmts.splice(index, 1, newFn);
     }
   }
+}
+
+function normalizeName(value: string): string {
+  return value
+    .replaceAll(".", "_")
+    .replaceAll("[", "_")
+    .replaceAll("]", "_")
+    .replace(/[^A-Za-z0-9_]/g, "_");
 }

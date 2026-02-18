@@ -12,7 +12,9 @@ const COVERAGE_IGNORED_CALLS = new Set([
     "beforeAll",
     "afterAll",
     "mockFn",
+    "unmockFn",
     "mockImport",
+    "unmockImport",
 ]);
 class CoverPoint {
     file = "";

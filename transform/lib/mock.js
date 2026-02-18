@@ -9,26 +9,33 @@ export class MockTransform extends Visitor {
     importMocked = new Set();
     visitCallExpression(node) {
         super.visitCallExpression(node);
-        const name = toString(node.expression)
-            .replaceAll(".", "_")
-            .replaceAll("[", "_")
-            .replaceAll("]", "_");
+        const name = normalizeName(toString(node.expression));
         if (this.mocked.has(name + "_mock")) {
             node.expression = Node.createIdentifierExpression(name + "_mock", node.expression.range);
             return;
         }
         if (name == "mockImport") {
-            this.importMocked.add(node.args[0].value);
+            const path = node.args[0];
+            if (path) {
+                this.importMocked.add(path.value);
+            }
+            return;
+        }
+        if (name == "unmockFn") {
+            const oldFn = node.args[0];
+            if (!oldFn)
+                return;
+            this.mocked.delete(normalizeName(toString(oldFn)) + "_mock");
+            return;
+        }
+        if (name == "unmockImport") {
             return;
         }
         if (name != "mockFn")
             return;
         const ov = toString(node.args[0]);
         const cb = node.args[1];
-        const newName = ov
-            .replaceAll(".", "_")
-            .replaceAll("[", "_")
-            .replaceAll("]", "_");
+        const newName = normalizeName(ov);
         const newFn = Node.createFunctionDeclaration(Node.createIdentifierExpression(newName + "_mock", cb.range), cb.declaration.decorators, 0, cb.declaration.typeParameters, cb.declaration.signature, cb.declaration.body, cb.declaration.arrowKind, cb.range);
         const stmts = this.srcCurrent.statements;
         let index = -1;
@@ -72,14 +79,14 @@ export class MockTransform extends Visitor {
             else
                 path = this.srcCurrent.simplePath + "." + node.name.text;
             if (!this.importMocked.has(path))
-                return;
+                continue;
             const args = [
                 Node.createCallExpression(Node.createPropertyAccessExpression(Node.createIdentifierExpression("__mock_import", node.range), Node.createIdentifierExpression("get", node.range), node.range), null, [Node.createStringLiteralExpression(path, node.range)], node.range),
             ];
             for (const param of node.signature.parameters) {
                 args.push(Node.createIdentifierExpression(param.name.text, node.range));
             }
-            const newFn = Node.createFunctionDeclaration(node.name, node.decorators.filter((v) => v.name.text != "external"), node.flags - 32768 - 4, null, node.signature, Node.createBlockStatement([
+            const newFn = Node.createFunctionDeclaration(node.name, (node.decorators ?? []).filter((v) => v.name.text != "external"), node.flags - 32768 - 4, node.typeParameters, node.signature, Node.createBlockStatement([
                 Node.createReturnStatement(Node.createCallExpression(Node.createIdentifierExpression("call_indirect", node.range), null, args, node.range), node.range),
             ], node.range), 0, node.range);
             const stmts = this.srcCurrent.statements;
@@ -93,9 +100,16 @@ export class MockTransform extends Visitor {
                 }
             }
             if (index === -1)
-                return;
+                continue;
             stmts.splice(index, 1, newFn);
         }
     }
+}
+function normalizeName(value) {
+    return value
+        .replaceAll(".", "_")
+        .replaceAll("[", "_")
+        .replaceAll("]", "_")
+        .replace(/[^A-Za-z0-9_]/g, "_");
 }
 //# sourceMappingURL=mock.js.map

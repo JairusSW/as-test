@@ -103,7 +103,7 @@ function detectRunAlias(sourceText) {
     return null;
 }
 function looksLikeAsTestImport(specifiers) {
-    return /\b(?:describe|test|it|expect|beforeAll|afterAll|beforeEach|afterEach|mockFn|mockImport|log|run)\b/.test(specifiers);
+    return /\b(?:describe|test|it|expect|beforeAll|afterAll|beforeEach|afterEach|mockFn|unmockFn|mockImport|unmockImport|log|run)\b/.test(specifiers);
 }
 function stripComments(sourceText) {
     return sourceText.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");

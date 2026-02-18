@@ -8,6 +8,7 @@
 - [Why as-test](#why-as-test)
 - [Installation](#installation)
 - [Writing Tests](#writing-tests)
+- [Mocking](#mocking)
 - [Snapshots](#snapshots)
 - [Coverage](#coverage)
 - [Custom Reporters](#custom-reporters)
@@ -105,6 +106,40 @@ No test files matched: ...
 - `--no-snapshot`: disable snapshot assertions for the run
 - `--show-coverage`: print uncovered coverage points
 - `--verbose`: keep expanded suite/test lines and update running `....` statuses in place
+
+## Mocking
+
+Use these helpers when you need to replace behavior during tests:
+
+- `mockFn(oldFn, newFn)`: rewrites subsequent calls to `oldFn` in the same spec file to use `newFn`
+- `unmockFn(oldFn)`: stops that rewrite for subsequent calls
+- `mockImport("module.field", fn)`: sets the runtime mock for an external import
+- `unmockImport("module.field")`: clears the runtime mock for an external import
+
+Example:
+
+```ts
+import { expect, it, mockFn, mockImport, run, unmockFn, unmockImport } from "as-test";
+import { foo } from "./mock";
+
+mockImport("mock.foo", (): string => "buz");
+mockFn(foo, (): string => "baz " + foo());
+
+it("mocked function", () => {
+  expect(foo()).toBe("baz buz");
+});
+
+unmockFn(foo);
+
+it("function restored", () => {
+  expect(foo()).toBe("buz");
+});
+
+unmockImport("mock.foo");
+mockImport("mock.foo", (): string => "buz");
+
+run();
+```
 
 ## Snapshots
 
