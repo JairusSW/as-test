@@ -200,6 +200,8 @@ ast run --tap
 ast run --reporter tap
 ```
 
+TAP output is also written to `./.as-test/reports/` (`run.tap` or `test.tap`).
+
 Or in config:
 
 ```json

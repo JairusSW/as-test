@@ -6,6 +6,7 @@
 
 - feat: add built-in TAP v13 reporter (`tap`) for `ast run` and `ast test`.
 - feat: add reporter selection flags `--tap` and `--reporter <name|path>`.
+- feat: when TAP reporter is active, write TAP artifacts to `./.as-test/reports/` (`run.tap` / `test.tap`).
 - feat: emit GitHub Actions `::error` annotations for failed TAP assertions (with file/line/col when available).
 - fix: keep TAP stdout clean by routing runtime passthrough output to stderr in TAP mode.
 - fix: ensure reporter flag values are not treated as test selectors in `ast test`.

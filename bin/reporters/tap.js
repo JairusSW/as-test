@@ -1,9 +1,12 @@
+import * as path from "path";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
 export const createReporter = (context) => {
     return new TapReporter(context);
 };
 class TapReporter {
     constructor(context) {
         this.context = context;
+        this.output = "";
     }
     onRunComplete(event) {
         const points = collectTapPoints(event.reports);
@@ -12,60 +15,89 @@ class TapReporter {
             fail: 0,
             skip: 0,
         };
-        this.context.stdout.write("TAP version 13\n");
-        this.context.stdout.write(`1..${points.length}\n`);
+        this.writeLine("TAP version 13");
+        this.writeLine(`1..${points.length}`);
         for (let i = 0; i < points.length; i++) {
             const point = points[i];
             const id = i + 1;
             const name = sanitizeTap(point.name.length ? point.name : `test ${id}`);
             if (point.status == "fail") {
                 totals.fail++;
-                this.context.stdout.write(`not ok ${id} - ${name}\n`);
+                this.writeLine(`not ok ${id} - ${name}`);
                 this.writeFailDetails(point);
                 emitGitHubAnnotation(this.context, point);
                 continue;
             }
             if (point.status == "skip") {
                 totals.skip++;
-                this.context.stdout.write(`ok ${id} - ${name} # SKIP\n`);
+                this.writeLine(`ok ${id} - ${name} # SKIP`);
                 continue;
             }
             totals.pass++;
-            this.context.stdout.write(`ok ${id} - ${name}\n`);
+            this.writeLine(`ok ${id} - ${name}`);
         }
-        this.context.stdout.write(`# tests ${points.length}\n`);
-        this.context.stdout.write(`# pass ${totals.pass}\n`);
+        this.writeLine(`# tests ${points.length}`);
+        this.writeLine(`# pass ${totals.pass}`);
         if (totals.skip) {
-            this.context.stdout.write(`# skip ${totals.skip}\n`);
+            this.writeLine(`# skip ${totals.skip}`);
         }
-        this.context.stdout.write(`# fail ${totals.fail}\n`);
+        this.writeLine(`# fail ${totals.fail}`);
+        this.flushToReportDir();
+    }
+    writeLine(line) {
+        this.output += line + "\n";
+        this.context.stdout.write(line + "\n");
     }
     writeFailDetails(point) {
-        this.context.stdout.write("  ---\n");
-        this.context.stdout.write(`  message: ${JSON.stringify(point.message ?? "assertion failed")}\n`);
+        this.writeLine("  ---");
+        this.writeLine(`  message: ${JSON.stringify(point.message ?? "assertion failed")}`);
         if (point.file) {
-            this.context.stdout.write(`  file: ${JSON.stringify(point.file)}\n`);
+            this.writeLine(`  file: ${JSON.stringify(point.file)}`);
         }
         if (point.line) {
-            this.context.stdout.write(`  line: ${point.line}\n`);
+            this.writeLine(`  line: ${point.line}`);
         }
         if (point.column) {
-            this.context.stdout.write(`  column: ${point.column}\n`);
+            this.writeLine(`  column: ${point.column}`);
         }
         if (point.matcher) {
-            this.context.stdout.write(`  matcher: ${JSON.stringify(point.matcher)}\n`);
+            this.writeLine(`  matcher: ${JSON.stringify(point.matcher)}`);
         }
         if (point.expected != null) {
-            this.context.stdout.write(`  expected: ${JSON.stringify(point.expected)}\n`);
+            this.writeLine(`  expected: ${JSON.stringify(point.expected)}`);
         }
         if (point.actual != null) {
-            this.context.stdout.write(`  actual: ${JSON.stringify(point.actual)}\n`);
+            this.writeLine(`  actual: ${JSON.stringify(point.actual)}`);
         }
         if (point.durationMs != null) {
-            this.context.stdout.write(`  duration_ms: ${Math.round(point.durationMs * 1000) / 1000}\n`);
+            this.writeLine(`  duration_ms: ${Math.round(point.durationMs * 1000) / 1000}`);
         }
-        this.context.stdout.write("  ...\n");
+        this.writeLine("  ...");
     }
+    flushToReportDir() {
+        const dir = path.join(process.cwd(), ".as-test", "reports");
+        if (!existsSync(dir)) {
+            mkdirSync(dir, { recursive: true });
+        }
+        const fileName = resolveTapFileName(process.argv.slice(2));
+        writeFileSync(path.join(dir, fileName), this.output);
+    }
+}
+function resolveTapFileName(argv) {
+    for (let i = 0; i < argv.length; i++) {
+        const token = argv[i];
+        if (token == "--config" || token == "--reporter") {
+            i++;
+            continue;
+        }
+        if (token.startsWith("-"))
+            continue;
+        if (token == "run")
+            return "run.tap";
+        if (token == "test")
+            return "test.tap";
+    }
+    return "run.tap";
 }
 function collectTapPoints(reports) {
     const points = [];

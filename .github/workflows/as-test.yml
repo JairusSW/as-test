@@ -20,13 +20,10 @@ jobs:
         run: bun install
 
       - name: Run tests
-        run: |
-          mkdir -p .as-test
-          set -o pipefail
-          bun run test --update-snapshots --tap | tee .as-test/test-results.tap
+        run: bun run test --update-snapshots --tap
 
       - name: Test Summary
         uses: test-summary/action@v2
         if: always()
         with:
-          paths: ".as-test/test-results.tap"
+          paths: ".as-test/reports/*.tap"
