@@ -5,7 +5,6 @@ import { Log } from "./log";
 import { after_each_callback, before_each_callback } from "..";
 import { sendSuiteEnd, sendSuiteStart } from "../util/wipc";
 
-
 @json
 export class Suite {
 

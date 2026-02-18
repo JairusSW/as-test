@@ -24,6 +24,7 @@ import {
 import { RangeTransform } from "./range.js";
 import { isStdlib, SimpleParser } from "./util.js";
 import { Visitor } from "./visitor.js";
+import { DecoratorNode } from "types:assemblyscript/src/ast";
 
 enum CoverType {
   Function,
@@ -66,6 +67,7 @@ export class CoverageTransform extends Visitor {
     }
     super.visitCallExpression(node);
   }
+  visitDecoratorNode(_node: DecoratorNode, _ref?: Node | null): void {}
   visitBinaryExpression(node: BinaryExpression): void {
     super.visitBinaryExpression(node);
     // @ts-ignore

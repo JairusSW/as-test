@@ -42,6 +42,7 @@ export class CoverageTransform extends Visitor {
         }
         super.visitCallExpression(node);
     }
+    visitDecoratorNode(_node, _ref) { }
     visitBinaryExpression(node) {
         super.visitBinaryExpression(node);
         if (node.visited)
