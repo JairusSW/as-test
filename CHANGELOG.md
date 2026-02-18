@@ -12,10 +12,16 @@
 - fix: keep TAP stdout clean by routing runtime passthrough output to stderr in TAP mode.
 - fix: ensure reporter flag values are not treated as test selectors in `ast test`.
 
+### Mocking API & Transform
+
+- feat: add `unmockFn(oldFn)` and `unmockImport(path)` APIs to complement `mockFn` and `mockImport`.
+- feat: update transform/runtime handling so `unmockFn` stops later function-call rewrites and `unmockImport` clears the active import mock mapping.
+
 ### Config & Docs
 
 - docs: document built-in TAP usage in README (`--tap`, `--reporter tap`, and config-based usage).
 - docs: update config schema reporter description to include built-in `default` and `tap` values.
+- docs: add README mocking section covering `mockFn`, `unmockFn`, `mockImport`, and `unmockImport`.
 
 ## 2026-02-16 - v0.5.1
 
