@@ -27,9 +27,16 @@ export class BuildOptions {
 
 export class RunOptions {
   runtime: Runtime = new Runtime();
-  reporter: string = "";
+  reporter: string | ReporterConfig = "";
 }
 
 export class Runtime {
   cmd: string = "node ./.as-test/runners/default.wasi.js <file>";
+}
+
+export class ReporterConfig {
+  name: string = "";
+  options: string[] = [];
+  outDir: string = "";
+  outFile: string = "";
 }

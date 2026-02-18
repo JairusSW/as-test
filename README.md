@@ -189,7 +189,7 @@ Key fields:
 - `snapshotDir`: snapshot storage dir
 - `buildOptions.target`: `wasi` or `bindings`
 - `runOptions.runtime.cmd`: runtime command, supports `<file>` and `<name>`; if its script path is missing, as-test falls back to the default runner for the selected target
-- `runOptions.reporter`: reporter selection (`""`/`default`, `tap`, or custom module path)
+- `runOptions.reporter`: reporter selection as a string or object
 
 ## Custom Reporters
 
@@ -200,7 +200,7 @@ ast run --tap
 ast run --reporter tap
 ```
 
-TAP output is also written to `./.as-test/reports/` (`run.tap` or `test.tap`).
+TAP output is written to `./.as-test/reports/report.tap` by default.
 
 Or in config:
 
@@ -208,6 +208,35 @@ Or in config:
 {
   "runOptions": {
     "reporter": "tap"
+  }
+}
+```
+
+Or with reporter object config:
+
+```json
+{
+  "runOptions": {
+    "reporter": {
+      "name": "tap",
+      "options": ["single-file"],
+      "outDir": "./.as-test/reports"
+    }
+  }
+}
+```
+
+`options` supports `single-file` (default) and `per-file`.
+
+Single-file explicit path:
+
+```json
+{
+  "runOptions": {
+    "reporter": {
+      "name": "tap",
+      "outFile": "./.as-test/reports/report.tap"
+    }
   }
 }
 ```
@@ -244,6 +273,13 @@ Set reporter path in config:
     "reporter": "./tests/my-reporter.js"
   }
 }
+```
+
+It's even possible to use something like [tap-summary](https://github.com/zoubin/tap-summary) to summarize the test results!
+
+```bash
+npm install -g tap-summary
+ast test --tap | tap-summary
 ```
 
 Reporter module should export `createReporter` (named or default):

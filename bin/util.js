@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "fs";
-import { BuildOptions, Config, RunOptions, Runtime } from "./types.js";
+import { BuildOptions, Config, ReporterConfig, RunOptions, Runtime, } from "./types.js";
 import chalk from "chalk";
 import { delimiter, dirname, join } from "path";
 import { fileURLToPath } from "url";
@@ -38,6 +38,26 @@ export function loadConfig(CONFIG_PATH, warn = false) {
         const runOptionsRaw = raw.runOptions ?? {};
         config.buildOptions = Object.assign(new BuildOptions(), raw.buildOptions ?? {});
         config.runOptions = Object.assign(new RunOptions(), runOptionsRaw);
+        const reporterRaw = runOptionsRaw.reporter;
+        if (typeof reporterRaw == "string") {
+            config.runOptions.reporter = reporterRaw;
+        }
+        else if (reporterRaw && typeof reporterRaw == "object") {
+            const reporterConfig = Object.assign(new ReporterConfig(), reporterRaw);
+            reporterConfig.name =
+                typeof reporterConfig.name == "string" ? reporterConfig.name : "";
+            reporterConfig.options = Array.isArray(reporterConfig.options)
+                ? reporterConfig.options.filter((value) => typeof value == "string")
+                : [];
+            reporterConfig.outDir =
+                typeof reporterConfig.outDir == "string" ? reporterConfig.outDir : "";
+            reporterConfig.outFile =
+                typeof reporterConfig.outFile == "string" ? reporterConfig.outFile : "";
+            config.runOptions.reporter = reporterConfig;
+        }
+        else {
+            config.runOptions.reporter = "";
+        }
         const runtimeRaw = runOptionsRaw.runtime;
         const runtime = new Runtime();
         const legacyRun = typeof runOptionsRaw.run == "string" && runOptionsRaw.run.length

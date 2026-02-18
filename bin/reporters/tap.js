@@ -1,103 +1,137 @@
 import * as path from "path";
-import { existsSync, mkdirSync, writeFileSync } from "fs";
+import { mkdirSync, writeFileSync } from "fs";
+export function createTapReporter(context, config = {}) {
+    return new TapReporter(context, normalizeTapConfig(config));
+}
 export const createReporter = (context) => {
-    return new TapReporter(context);
+    return createTapReporter(context);
 };
 class TapReporter {
-    constructor(context) {
+    constructor(context, config) {
         this.context = context;
-        this.output = "";
+        this.config = config;
     }
     onRunComplete(event) {
         const points = collectTapPoints(event.reports);
-        const totals = {
-            pass: 0,
-            fail: 0,
-            skip: 0,
-        };
-        this.writeLine("TAP version 13");
-        this.writeLine(`1..${points.length}`);
-        for (let i = 0; i < points.length; i++) {
-            const point = points[i];
-            const id = i + 1;
-            const name = sanitizeTap(point.name.length ? point.name : `test ${id}`);
-            if (point.status == "fail") {
-                totals.fail++;
-                this.writeLine(`not ok ${id} - ${name}`);
-                this.writeFailDetails(point);
-                emitGitHubAnnotation(this.context, point);
+        const output = buildTapDocument(points);
+        this.context.stdout.write(output);
+        for (const point of points) {
+            if (point.status != "fail")
                 continue;
-            }
-            if (point.status == "skip") {
-                totals.skip++;
-                this.writeLine(`ok ${id} - ${name} # SKIP`);
-                continue;
-            }
-            totals.pass++;
-            this.writeLine(`ok ${id} - ${name}`);
+            emitGitHubAnnotation(this.context, point);
         }
-        this.writeLine(`# tests ${points.length}`);
-        this.writeLine(`# pass ${totals.pass}`);
-        if (totals.skip) {
-            this.writeLine(`# skip ${totals.skip}`);
-        }
-        this.writeLine(`# fail ${totals.fail}`);
-        this.flushToReportDir();
+        this.writeArtifacts(points, output);
     }
-    writeLine(line) {
-        this.output += line + "\n";
-        this.context.stdout.write(line + "\n");
+    writeArtifacts(points, output) {
+        if (this.config.mode == "per-file") {
+            this.writePerFileArtifacts(points);
+            return;
+        }
+        const outFile = path.resolve(process.cwd(), this.config.outFile);
+        mkdirSync(path.dirname(outFile), { recursive: true });
+        writeFileSync(outFile, output);
     }
-    writeFailDetails(point) {
-        this.writeLine("  ---");
-        this.writeLine(`  message: ${JSON.stringify(point.message ?? "assertion failed")}`);
-        if (point.file) {
-            this.writeLine(`  file: ${JSON.stringify(point.file)}`);
+    writePerFileArtifacts(points) {
+        const groups = new Map();
+        for (const point of points) {
+            const key = point.file?.length ? point.file : "unknown";
+            if (!groups.has(key))
+                groups.set(key, []);
+            groups.get(key).push(point);
         }
-        if (point.line) {
-            this.writeLine(`  line: ${point.line}`);
+        let unknownIndex = 0;
+        const outDir = path.resolve(process.cwd(), this.config.outDir);
+        mkdirSync(outDir, { recursive: true });
+        for (const [fileKey, filePoints] of groups) {
+            const fileName = fileKey == "unknown"
+                ? `unknown-${++unknownIndex}.tap`
+                : toTapFileName(fileKey);
+            const outFile = path.join(outDir, fileName);
+            writeFileSync(outFile, buildTapDocument(filePoints));
         }
-        if (point.column) {
-            this.writeLine(`  column: ${point.column}`);
-        }
-        if (point.matcher) {
-            this.writeLine(`  matcher: ${JSON.stringify(point.matcher)}`);
-        }
-        if (point.expected != null) {
-            this.writeLine(`  expected: ${JSON.stringify(point.expected)}`);
-        }
-        if (point.actual != null) {
-            this.writeLine(`  actual: ${JSON.stringify(point.actual)}`);
-        }
-        if (point.durationMs != null) {
-            this.writeLine(`  duration_ms: ${Math.round(point.durationMs * 1000) / 1000}`);
-        }
-        this.writeLine("  ...");
-    }
-    flushToReportDir() {
-        const dir = path.join(process.cwd(), ".as-test", "reports");
-        if (!existsSync(dir)) {
-            mkdirSync(dir, { recursive: true });
-        }
-        const fileName = resolveTapFileName(process.argv.slice(2));
-        writeFileSync(path.join(dir, fileName), this.output);
     }
 }
-function resolveTapFileName(argv) {
-    for (let i = 0; i < argv.length; i++) {
-        const token = argv[i];
-        if (token == "--config" || token == "--reporter") {
-            i++;
+function normalizeTapConfig(config) {
+    const mode = config.mode == "per-file" ? "per-file" : "single-file";
+    const outDir = typeof config.outDir == "string" && config.outDir.trim().length
+        ? config.outDir.trim()
+        : "./.as-test/reports";
+    const outFile = typeof config.outFile == "string" && config.outFile.trim().length
+        ? config.outFile.trim()
+        : path.join(outDir, "report.tap");
+    return {
+        mode,
+        outDir,
+        outFile,
+    };
+}
+function toTapFileName(file) {
+    const normalized = file
+        .replace(/^[.\\/]+/, "")
+        .replace(/[\\/]/g, "__")
+        .replace(/\.[^.]+$/, "");
+    return `${normalized}.tap`;
+}
+function buildTapDocument(points) {
+    const totals = {
+        pass: 0,
+        fail: 0,
+        skip: 0,
+    };
+    const lines = [];
+    lines.push("TAP version 13");
+    lines.push(`1..${points.length}`);
+    for (let i = 0; i < points.length; i++) {
+        const point = points[i];
+        const id = i + 1;
+        const name = sanitizeTap(point.name.length ? point.name : `test ${id}`);
+        if (point.status == "fail") {
+            totals.fail++;
+            lines.push(`not ok ${id} - ${name}`);
+            lines.push(...buildFailDetails(point));
             continue;
         }
-        if (token.startsWith("-"))
+        if (point.status == "skip") {
+            totals.skip++;
+            lines.push(`ok ${id} - ${name} # SKIP`);
             continue;
-        if (token == "run")
-            return "run.tap";
-        if (token == "test")
-            return "test.tap";
+        }
+        totals.pass++;
+        lines.push(`ok ${id} - ${name}`);
     }
-    return "run.tap";
+    lines.push(`# tests ${points.length}`);
+    lines.push(`# pass ${totals.pass}`);
+    if (totals.skip) {
+        lines.push(`# skip ${totals.skip}`);
+    }
+    lines.push(`# fail ${totals.fail}`);
+    return lines.join("\n") + "\n";
+}
+function buildFailDetails(point) {
+    const lines = ["  ---", `  message: ${JSON.stringify(point.message ?? "assertion failed")}`];
+    if (point.file) {
+        lines.push(`  file: ${JSON.stringify(point.file)}`);
+    }
+    if (point.line) {
+        lines.push(`  line: ${point.line}`);
+    }
+    if (point.column) {
+        lines.push(`  column: ${point.column}`);
+    }
+    if (point.matcher) {
+        lines.push(`  matcher: ${JSON.stringify(point.matcher)}`);
+    }
+    if (point.expected != null) {
+        lines.push(`  expected: ${JSON.stringify(point.expected)}`);
+    }
+    if (point.actual != null) {
+        lines.push(`  actual: ${JSON.stringify(point.actual)}`);
+    }
+    if (point.durationMs != null) {
+        lines.push(`  duration_ms: ${Math.round(point.durationMs * 1000) / 1000}`);
+    }
+    lines.push("  ...");
+    return lines;
 }
 function collectTapPoints(reports) {
     const points = [];
@@ -115,10 +149,10 @@ function collectTapPoints(reports) {
     }
     return points;
 }
-function collectTapPointsFromSuite(suite, file, path, points) {
+function collectTapPointsFromSuite(suite, file, pathStack, points) {
     const suiteAny = suite;
     const description = String(suiteAny.description ?? "suite");
-    const fullPath = [...path, description];
+    const fullPath = [...pathStack, description];
     const localFile = suiteAny.file ? String(suiteAny.file) : file;
     const childSuites = Array.isArray(suiteAny.suites)
         ? suiteAny.suites

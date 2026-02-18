@@ -40,3 +40,11 @@ export class Runtime {
         this.cmd = "node ./.as-test/runners/default.wasi.js <file>";
     }
 }
+export class ReporterConfig {
+    constructor() {
+        this.name = "";
+        this.options = [];
+        this.outDir = "";
+        this.outFile = "";
+    }
+}

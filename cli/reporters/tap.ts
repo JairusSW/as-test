@@ -5,9 +5,23 @@ import {
   TestReporter,
 } from "./types.js";
 import * as path from "path";
-import { existsSync, mkdirSync, writeFileSync } from "fs";
+import { mkdirSync, writeFileSync } from "fs";
 
 type TapStatus = "ok" | "fail" | "skip";
+
+export type TapReporterMode = "single-file" | "per-file";
+
+export type TapReporterConfig = {
+  mode?: TapReporterMode;
+  outDir?: string;
+  outFile?: string;
+};
+
+type TapReporterResolvedConfig = {
+  mode: TapReporterMode;
+  outDir: string;
+  outFile: string;
+};
 
 type TapPoint = {
   name: string;
@@ -27,117 +41,168 @@ type Location = {
   column?: number;
 };
 
+export function createTapReporter(
+  context: ReporterContext,
+  config: TapReporterConfig = {},
+): TestReporter {
+  return new TapReporter(context, normalizeTapConfig(config));
+}
+
 export const createReporter: ReporterFactory = (
   context: ReporterContext,
 ): TestReporter => {
-  return new TapReporter(context);
+  return createTapReporter(context);
 };
 
 class TapReporter implements TestReporter {
-  private output = "";
-  constructor(private readonly context: ReporterContext) {}
+  constructor(
+    private readonly context: ReporterContext,
+    private readonly config: TapReporterResolvedConfig,
+  ) {}
 
   onRunComplete(event: RunCompleteEvent): void {
     const points = collectTapPoints(event.reports);
-    const totals = {
-      pass: 0,
-      fail: 0,
-      skip: 0,
-    };
+    const output = buildTapDocument(points);
 
-    this.writeLine("TAP version 13");
-    this.writeLine(`1..${points.length}`);
+    this.context.stdout.write(output);
 
-    for (let i = 0; i < points.length; i++) {
-      const point = points[i]!;
-      const id = i + 1;
-      const name = sanitizeTap(point.name.length ? point.name : `test ${id}`);
-
-      if (point.status == "fail") {
-        totals.fail++;
-        this.writeLine(`not ok ${id} - ${name}`);
-        this.writeFailDetails(point);
-        emitGitHubAnnotation(this.context, point);
-        continue;
-      }
-
-      if (point.status == "skip") {
-        totals.skip++;
-        this.writeLine(`ok ${id} - ${name} # SKIP`);
-        continue;
-      }
-
-      totals.pass++;
-      this.writeLine(`ok ${id} - ${name}`);
+    for (const point of points) {
+      if (point.status != "fail") continue;
+      emitGitHubAnnotation(this.context, point);
     }
 
-    this.writeLine(`# tests ${points.length}`);
-    this.writeLine(`# pass ${totals.pass}`);
-    if (totals.skip) {
-      this.writeLine(`# skip ${totals.skip}`);
-    }
-    this.writeLine(`# fail ${totals.fail}`);
-    this.flushToReportDir();
+    this.writeArtifacts(points, output);
   }
 
-  private writeLine(line: string): void {
-    this.output += line + "\n";
-    this.context.stdout.write(line + "\n");
+  private writeArtifacts(points: TapPoint[], output: string): void {
+    if (this.config.mode == "per-file") {
+      this.writePerFileArtifacts(points);
+      return;
+    }
+
+    const outFile = path.resolve(process.cwd(), this.config.outFile);
+    mkdirSync(path.dirname(outFile), { recursive: true });
+    writeFileSync(outFile, output);
   }
 
-  private writeFailDetails(point: TapPoint): void {
-    this.writeLine("  ---");
-    this.writeLine(
-      `  message: ${JSON.stringify(point.message ?? "assertion failed")}`,
-    );
-    if (point.file) {
-      this.writeLine(`  file: ${JSON.stringify(point.file)}`);
-    }
-    if (point.line) {
-      this.writeLine(`  line: ${point.line}`);
-    }
-    if (point.column) {
-      this.writeLine(`  column: ${point.column}`);
-    }
-    if (point.matcher) {
-      this.writeLine(`  matcher: ${JSON.stringify(point.matcher)}`);
-    }
-    if (point.expected != null) {
-      this.writeLine(`  expected: ${JSON.stringify(point.expected)}`);
-    }
-    if (point.actual != null) {
-      this.writeLine(`  actual: ${JSON.stringify(point.actual)}`);
-    }
-    if (point.durationMs != null) {
-      this.writeLine(
-        `  duration_ms: ${Math.round(point.durationMs * 1000) / 1000}`,
-      );
-    }
-    this.writeLine("  ...");
-  }
+  private writePerFileArtifacts(points: TapPoint[]): void {
+    const groups = new Map<string, TapPoint[]>();
 
-  private flushToReportDir(): void {
-    const dir = path.join(process.cwd(), ".as-test", "reports");
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
+    for (const point of points) {
+      const key = point.file?.length ? point.file : "unknown";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(point);
     }
-    const fileName = resolveTapFileName(process.argv.slice(2));
-    writeFileSync(path.join(dir, fileName), this.output);
+
+    let unknownIndex = 0;
+    const outDir = path.resolve(process.cwd(), this.config.outDir);
+    mkdirSync(outDir, { recursive: true });
+
+    for (const [fileKey, filePoints] of groups) {
+      const fileName =
+        fileKey == "unknown"
+          ? `unknown-${++unknownIndex}.tap`
+          : toTapFileName(fileKey);
+      const outFile = path.join(outDir, fileName);
+      writeFileSync(outFile, buildTapDocument(filePoints));
+    }
   }
 }
 
-function resolveTapFileName(argv: string[]): string {
-  for (let i = 0; i < argv.length; i++) {
-    const token = argv[i]!;
-    if (token == "--config" || token == "--reporter") {
-      i++;
+function normalizeTapConfig(config: TapReporterConfig): TapReporterResolvedConfig {
+  const mode = config.mode == "per-file" ? "per-file" : "single-file";
+  const outDir =
+    typeof config.outDir == "string" && config.outDir.trim().length
+      ? config.outDir.trim()
+      : "./.as-test/reports";
+  const outFile =
+    typeof config.outFile == "string" && config.outFile.trim().length
+      ? config.outFile.trim()
+      : path.join(outDir, "report.tap");
+
+  return {
+    mode,
+    outDir,
+    outFile,
+  };
+}
+
+function toTapFileName(file: string): string {
+  const normalized = file
+    .replace(/^[.\\/]+/, "")
+    .replace(/[\\/]/g, "__")
+    .replace(/\.[^.]+$/, "");
+  return `${normalized}.tap`;
+}
+
+function buildTapDocument(points: TapPoint[]): string {
+  const totals = {
+    pass: 0,
+    fail: 0,
+    skip: 0,
+  };
+  const lines: string[] = [];
+
+  lines.push("TAP version 13");
+  lines.push(`1..${points.length}`);
+
+  for (let i = 0; i < points.length; i++) {
+    const point = points[i]!;
+    const id = i + 1;
+    const name = sanitizeTap(point.name.length ? point.name : `test ${id}`);
+
+    if (point.status == "fail") {
+      totals.fail++;
+      lines.push(`not ok ${id} - ${name}`);
+      lines.push(...buildFailDetails(point));
       continue;
     }
-    if (token.startsWith("-")) continue;
-    if (token == "run") return "run.tap";
-    if (token == "test") return "test.tap";
+
+    if (point.status == "skip") {
+      totals.skip++;
+      lines.push(`ok ${id} - ${name} # SKIP`);
+      continue;
+    }
+
+    totals.pass++;
+    lines.push(`ok ${id} - ${name}`);
   }
-  return "run.tap";
+
+  lines.push(`# tests ${points.length}`);
+  lines.push(`# pass ${totals.pass}`);
+  if (totals.skip) {
+    lines.push(`# skip ${totals.skip}`);
+  }
+  lines.push(`# fail ${totals.fail}`);
+
+  return lines.join("\n") + "\n";
+}
+
+function buildFailDetails(point: TapPoint): string[] {
+  const lines = ["  ---", `  message: ${JSON.stringify(point.message ?? "assertion failed")}`];
+  if (point.file) {
+    lines.push(`  file: ${JSON.stringify(point.file)}`);
+  }
+  if (point.line) {
+    lines.push(`  line: ${point.line}`);
+  }
+  if (point.column) {
+    lines.push(`  column: ${point.column}`);
+  }
+  if (point.matcher) {
+    lines.push(`  matcher: ${JSON.stringify(point.matcher)}`);
+  }
+  if (point.expected != null) {
+    lines.push(`  expected: ${JSON.stringify(point.expected)}`);
+  }
+  if (point.actual != null) {
+    lines.push(`  actual: ${JSON.stringify(point.actual)}`);
+  }
+  if (point.durationMs != null) {
+    lines.push(`  duration_ms: ${Math.round(point.durationMs * 1000) / 1000}`);
+  }
+  lines.push("  ...");
+  return lines;
 }
 
 function collectTapPoints(reports: unknown[]): TapPoint[] {
@@ -161,12 +226,12 @@ function collectTapPoints(reports: unknown[]): TapPoint[] {
 function collectTapPointsFromSuite(
   suite: unknown,
   file: string,
-  path: string[],
+  pathStack: string[],
   points: TapPoint[],
 ): void {
   const suiteAny = suite as Record<string, unknown>;
   const description = String(suiteAny.description ?? "suite");
-  const fullPath = [...path, description];
+  const fullPath = [...pathStack, description];
   const localFile = suiteAny.file ? String(suiteAny.file) : file;
   const childSuites = Array.isArray(suiteAny.suites)
     ? (suiteAny.suites as unknown[])

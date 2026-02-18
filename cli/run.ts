@@ -13,7 +13,8 @@ import {
   TestReporter,
 } from "./reporters/types.js";
 import { createReporter as createDefaultReporter } from "./reporters/default.js";
-import { createReporter as createTapReporter } from "./reporters/tap.js";
+import { createTapReporter } from "./reporters/tap.js";
+import type { TapReporterConfig } from "./reporters/tap.js";
 
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 
@@ -123,6 +124,12 @@ type RunExecutionOptions = {
 };
 
 type ReporterKind = "default" | "tap" | "custom";
+type ReporterConfigObject = {
+  name?: unknown;
+  options?: unknown;
+  outDir?: unknown;
+  outFile?: unknown;
+};
 
 export type RunResult = {
   failed: boolean;
@@ -1176,7 +1183,7 @@ async function loadReporter(
     return createDefaultReporter(context);
   }
   if (selection.kind == "tap") {
-    return createTapReporter(context);
+    return createTapReporter(context, selection.tap);
   }
   const reporterPath = selection.reporterPath;
   if (!reporterPath) {
@@ -1205,25 +1212,27 @@ async function loadReporter(
 type ReporterSelection = {
   kind: ReporterKind;
   reporterPath: string;
+  tap: TapReporterConfig;
 };
 
 function resolveReporterSelection(
   cliValue: string | undefined,
-  configValue: string | undefined,
+  configValue: unknown,
 ): ReporterSelection {
-  const raw = resolveCliReporter(process.argv.slice(2), cliValue ?? configValue ?? "");
+  const parsed = parseReporterConfig(configValue);
+  const raw = resolveCliReporter(process.argv.slice(2), cliValue ?? parsed.name);
   const normalized = raw.trim();
   const canonical = normalized.toLowerCase();
 
   if (!normalized.length || canonical == "default") {
-    return { kind: "default", reporterPath: "" };
+    return { kind: "default", reporterPath: "", tap: parsed.tap };
   }
 
   if (canonical == "tap" || canonical == "tap13") {
-    return { kind: "tap", reporterPath: "" };
+    return { kind: "tap", reporterPath: "", tap: parsed.tap };
   }
 
-  return { kind: "custom", reporterPath: normalized };
+  return { kind: "custom", reporterPath: normalized, tap: parsed.tap };
 }
 
 function resolveCliReporter(argv: string[], fallback: string): string {
@@ -1253,6 +1262,53 @@ function resolveCliReporter(argv: string[], fallback: string): string {
     }
   }
   return resolved;
+}
+
+function parseReporterConfig(value: unknown): {
+  name: string;
+  tap: TapReporterConfig;
+} {
+  const tap: TapReporterConfig = {
+    mode: "single-file",
+    outDir: "./.as-test/reports",
+    outFile: "./.as-test/reports/report.tap",
+  };
+
+  if (typeof value == "string") {
+    return { name: value, tap };
+  }
+
+  if (!value || typeof value != "object") {
+    return { name: "", tap };
+  }
+
+  const config = value as ReporterConfigObject;
+  const name = typeof config.name == "string" ? config.name : "";
+
+  if (typeof config.outDir == "string" && config.outDir.trim().length) {
+    tap.outDir = config.outDir.trim();
+  }
+  if (typeof config.outFile == "string" && config.outFile.trim().length) {
+    tap.outFile = config.outFile.trim();
+  } else if (tap.outDir && tap.outDir.length) {
+    tap.outFile = path.join(tap.outDir, "report.tap");
+  }
+
+  if (Array.isArray(config.options)) {
+    const options = config.options
+      .filter((option): option is string => typeof option == "string")
+      .map((option) => option.toLowerCase());
+    if (options.includes("per-file")) {
+      tap.mode = "per-file";
+      if (!config.outFile && tap.outDir && tap.outDir.length) {
+        tap.outFile = path.join(tap.outDir, "report.tap");
+      }
+    } else {
+      tap.mode = "single-file";
+    }
+  }
+
+  return { name, tap };
 }
 
 function resolveReporterFactory(mod: Record<string, unknown>): ReporterFactory {
