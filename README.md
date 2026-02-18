@@ -23,7 +23,7 @@ Most AssemblyScript testing tools are tied to a single runtime, usually Node.js.
 If you deploy to WASI, Wazero, or a custom runtime, you often end up mocking everything and maintaining parallel logic just for tests.
 as-test solves this by letting you run tests on your actual target runtime, while only mocking what’s necessary.
 
-**Key benefits**
+Key benefits
 
 - Runtime-agnostic: test on WASI, bindings, or custom runners
 - Minimal mocking: keep real imports when possible
@@ -189,9 +189,28 @@ Key fields:
 - `snapshotDir`: snapshot storage dir
 - `buildOptions.target`: `wasi` or `bindings`
 - `runOptions.runtime.cmd`: runtime command, supports `<file>` and `<name>`; if its script path is missing, as-test falls back to the default runner for the selected target
-- `runOptions.reporter`: optional custom reporter module path
+- `runOptions.reporter`: reporter selection (`""`/`default`, `tap`, or custom module path)
 
 ## Custom Reporters
+
+Built-in TAP reporter (useful for CI, including GitHub Actions):
+
+```bash
+ast run --tap
+ast run --reporter tap
+```
+
+Or in config:
+
+```json
+{
+  "runOptions": {
+    "reporter": "tap"
+  }
+}
+```
+
+In GitHub Actions, failed TAP points emit `::error` annotations with file and line when available.
 
 Set reporter path in config:
 

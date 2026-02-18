@@ -43,7 +43,10 @@ else if (COMMANDS.includes(args[0])) {
         });
     }
     else if (command === "run") {
-        run(runFlags, configPath);
+        run(runFlags, configPath).catch((error) => {
+            printCliError(error);
+            process.exit(1);
+        });
     }
     else if (command === "test") {
         runTestSequential(runFlags, configPath, commandArgs).catch((error) => {
@@ -133,6 +136,14 @@ function info() {
         chalk.bold.blue("--verbose") +
         "                     " +
         "Print each suite start/end line");
+    console.log("   " +
+        chalk.bold.blue("--tap") +
+        "                         " +
+        "Use built-in TAP v13 reporter");
+    console.log("   " +
+        chalk.bold.blue("--reporter <name|path>") +
+        "       " +
+        "Use built-in reporter (default|tap) or custom module path");
     console.log("");
     console.log(chalk.dim("If your using this, consider dropping a star, it would help a lot!") + "\n");
     console.log("View the repo:                   " +
@@ -177,6 +188,16 @@ function resolveCommandArgs(rawArgs, command) {
             continue;
         }
         if (arg.startsWith("--config=")) {
+            continue;
+        }
+        if (arg == "--reporter") {
+            i++;
+            continue;
+        }
+        if (arg.startsWith("--reporter=")) {
+            continue;
+        }
+        if (arg == "--tap") {
             continue;
         }
         if (arg.startsWith("-")) {
