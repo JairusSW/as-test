@@ -20,7 +20,7 @@ jobs:
         run: bun install
 
       - name: Run tests
-        run: bun run test --update-snapshots --tap
+        run: bun run test --tap
 
       - name: Test Summary
         uses: test-summary/action@v2
