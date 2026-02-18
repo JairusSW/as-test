@@ -15,7 +15,7 @@ afterEach(() => {
 describe("Expectation helpers", () => {
   test("not modifier inverts matcher verdict", () => {
     expect(1).not.toBe(2);
-    expect(2).toBe(2);
+    expect(2).toBe(1);
   });
 
   test("truthy and falsy matchers", () => {
