@@ -5,6 +5,7 @@
 <details>
 <summary>Table of Contents</summary>
 
+- [Why as-test](#why-as-test)
 - [Installation](#installation)
 - [Writing Tests](#writing-tests)
 - [Snapshots](#snapshots)
@@ -15,6 +16,20 @@
 - [Contact](#contact)
 
 </details>
+
+## Why as-test
+
+Most AssemblyScript testing tools are tied to a single runtime, usually Node.js. This works for development, but it doesn’t reflect how your code runs in production.
+If you deploy to WASI, Wazero, or a custom runtime, you often end up mocking everything and maintaining parallel logic just for tests.
+as-test solves this by letting you run tests on your actual target runtime, while only mocking what’s necessary.
+
+**Key benefits**
+
+- Runtime-agnostic: test on WASI, bindings, or custom runners
+- Minimal mocking: keep real imports when possible
+- Production-like testing: catch runtime-specific issues early
+- Inline mocking and snapshots
+- Custom reporters and coverage
 
 ## Installation
 
@@ -176,7 +191,7 @@ Key fields:
 - `runOptions.runtime.cmd`: runtime command, supports `<file>` and `<name>`; if its script path is missing, as-test falls back to the default runner for the selected target
 - `runOptions.reporter`: optional custom reporter module path
 
-## Custom Reporter
+## Custom Reporters
 
 Set reporter path in config:
 
@@ -204,6 +219,8 @@ export function createReporter(context) {
   };
 }
 ```
+
+With these hooks, you can emit machine-readable output (for example TAP/JSON) while still keeping the default human-readable terminal view for local runs.
 
 ## Assertions
 
