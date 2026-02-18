@@ -231,6 +231,7 @@ function applyInit(
   if (target == "wasi" || target == "bindings") {
     ensureDir(root, ".as-test/runners", summary);
   }
+  ensureGitignoreIncludesAsTestDirs(root, summary);
 
   const configPath = path.join(root, "as-test.config.json");
   const config = loadConfig(configPath, false);
@@ -318,6 +319,37 @@ function ensureDir(root: string, rel: string, summary: ApplySummary): void {
   if (existsSync(full)) return;
   mkdirSync(full, { recursive: true });
   summary.created.push(rel + "/");
+}
+
+function ensureGitignoreIncludesAsTestDirs(
+  root: string,
+  summary: ApplySummary,
+): void {
+  const rel = ".gitignore";
+  const fullPath = path.join(root, rel);
+  const entries = ["!.as-test/runners/", "!.as-test/snapshots/"];
+  const existed = existsSync(fullPath);
+  const source = existed ? readFileSync(fullPath, "utf8") : "";
+  const lines = source.split(/\r?\n/);
+  const missing = entries.filter(
+    (entry) => !lines.some((line) => line.trim() == entry),
+  );
+  if (!missing.length) {
+    return;
+  }
+  const eol = source.includes("\r\n") ? "\r\n" : "\n";
+  let output = source;
+  if (
+    output.length &&
+    !output.endsWith("\n") &&
+    !output.endsWith("\r\n")
+  ) {
+    output += eol;
+  }
+  output += missing.join(eol) + eol;
+  writeFileSync(fullPath, output);
+  if (existed) summary.updated.push(rel);
+  else summary.created.push(rel);
 }
 
 function writeJson(
