@@ -13,6 +13,8 @@ import {
   TestReporter,
 } from "./reporters/types.js";
 import { createReporter as createDefaultReporter } from "./reporters/default.js";
+import { createTapReporter } from "./reporters/tap.js";
+import type { TapReporterConfig } from "./reporters/tap.js";
 
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 
@@ -113,10 +115,20 @@ type RunFlags = {
 
 type RunExecutionOptions = {
   reporter?: TestReporter;
+  reporterKind?: ReporterKind;
+  reporterPath?: string;
   emitRunStart?: boolean;
   emitRunComplete?: boolean;
   logFileName?: string;
   coverageFileName?: string;
+};
+
+type ReporterKind = "default" | "tap" | "custom";
+type ReporterConfigObject = {
+  name?: unknown;
+  options?: unknown;
+  outDir?: unknown;
+  outFile?: unknown;
 };
 
 export type RunResult = {
@@ -253,9 +265,14 @@ export async function run(
     getConfiguredRuntimeCmd(config),
     config.buildOptions.target,
   );
+  const reporterSelection = resolveReporterSelection(
+    options.reporterPath,
+    config.runOptions.reporter,
+  );
+  const reporterKind = options.reporterKind ?? reporterSelection.kind;
   const reporter =
     options.reporter ??
-    (await loadReporter(config.runOptions.reporter, resolvedConfigPath, {
+    (await loadReporter(reporterSelection, resolvedConfigPath, {
       stdout: process.stdout,
       stderr: process.stderr,
     }));
@@ -327,6 +344,7 @@ export async function run(
       snapshotEnabled,
       updateSnapshots,
       reporter,
+      reporterKind == "tap",
     );
     const normalized = normalizeReport(report);
     snapshotStore.flush();
@@ -877,6 +895,7 @@ async function runProcess(
   snapshotEnabled: boolean,
   updateSnapshots: boolean,
   reporter: TestReporter,
+  tapMode: boolean = false,
 ): Promise<any> {
   const child = spawn(cmd, {
     stdio: ["pipe", "pipe", "pipe"],
@@ -905,7 +924,11 @@ async function runProcess(
 
   class TestChannel extends Channel {
     protected onPassthrough(data: Buffer): void {
-      process.stdout.write(data);
+      if (tapMode) {
+        process.stderr.write(data);
+      } else {
+        process.stdout.write(data);
+      }
     }
 
     protected onCall(msg: unknown): void {
@@ -1124,14 +1147,17 @@ function mergeVerdict(current: Verdict, next: Verdict): Verdict {
 
 export async function createRunReporter(
   configPath: string = DEFAULT_CONFIG_PATH,
+  reporterPath?: string,
 ): Promise<{
   reporter: TestReporter;
+  reporterKind: ReporterKind;
   runtimeName: string;
   resolvedConfigPath: string;
 }> {
   const resolvedConfigPath = configPath ?? DEFAULT_CONFIG_PATH;
   const config = loadConfig(resolvedConfigPath);
-  const reporter = await loadReporter(config.runOptions.reporter, resolvedConfigPath, {
+  const selection = resolveReporterSelection(reporterPath, config.runOptions.reporter);
+  const reporter = await loadReporter(selection, resolvedConfigPath, {
     stdout: process.stdout,
     stderr: process.stderr,
   });
@@ -1142,16 +1168,24 @@ export async function createRunReporter(
   );
   return {
     reporter,
+    reporterKind: selection.kind,
     runtimeName: runtimeNameFromCommand(runtimeCommand),
     resolvedConfigPath,
   };
 }
 
 async function loadReporter(
-  reporterPath: string | undefined,
+  selection: ReporterSelection,
   configPath: string,
   context: ReporterContext,
 ): Promise<TestReporter> {
+  if (selection.kind == "default") {
+    return createDefaultReporter(context);
+  }
+  if (selection.kind == "tap") {
+    return createTapReporter(context, selection.tap);
+  }
+  const reporterPath = selection.reporterPath;
   if (!reporterPath) {
     return createDefaultReporter(context);
   }
@@ -1173,6 +1207,108 @@ async function loadReporter(
     reporterError.cause = error;
     throw reporterError;
   }
+}
+
+type ReporterSelection = {
+  kind: ReporterKind;
+  reporterPath: string;
+  tap: TapReporterConfig;
+};
+
+function resolveReporterSelection(
+  cliValue: string | undefined,
+  configValue: unknown,
+): ReporterSelection {
+  const parsed = parseReporterConfig(configValue);
+  const raw = resolveCliReporter(process.argv.slice(2), cliValue ?? parsed.name);
+  const normalized = raw.trim();
+  const canonical = normalized.toLowerCase();
+
+  if (!normalized.length || canonical == "default") {
+    return { kind: "default", reporterPath: "", tap: parsed.tap };
+  }
+
+  if (canonical == "tap" || canonical == "tap13") {
+    return { kind: "tap", reporterPath: "", tap: parsed.tap };
+  }
+
+  return { kind: "custom", reporterPath: normalized, tap: parsed.tap };
+}
+
+function resolveCliReporter(argv: string[], fallback: string): string {
+  let resolved = fallback;
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i]!;
+    if (token == "--tap") {
+      resolved = "tap";
+      continue;
+    }
+    if (token == "--reporter") {
+      const value = argv[i + 1];
+      if (!value || value.startsWith("-")) {
+        throw new Error(`--reporter requires a value`);
+      }
+      resolved = value;
+      i++;
+      continue;
+    }
+    if (token.startsWith("--reporter=")) {
+      const value = token.slice("--reporter=".length);
+      if (!value.length) {
+        throw new Error(`--reporter requires a value`);
+      }
+      resolved = value;
+      continue;
+    }
+  }
+  return resolved;
+}
+
+function parseReporterConfig(value: unknown): {
+  name: string;
+  tap: TapReporterConfig;
+} {
+  const tap: TapReporterConfig = {
+    mode: "single-file",
+    outDir: "./.as-test/reports",
+    outFile: "./.as-test/reports/report.tap",
+  };
+
+  if (typeof value == "string") {
+    return { name: value, tap };
+  }
+
+  if (!value || typeof value != "object") {
+    return { name: "", tap };
+  }
+
+  const config = value as ReporterConfigObject;
+  const name = typeof config.name == "string" ? config.name : "";
+
+  if (typeof config.outDir == "string" && config.outDir.trim().length) {
+    tap.outDir = config.outDir.trim();
+  }
+  if (typeof config.outFile == "string" && config.outFile.trim().length) {
+    tap.outFile = config.outFile.trim();
+  } else if (tap.outDir && tap.outDir.length) {
+    tap.outFile = path.join(tap.outDir, "report.tap");
+  }
+
+  if (Array.isArray(config.options)) {
+    const options = config.options
+      .filter((option): option is string => typeof option == "string")
+      .map((option) => option.toLowerCase());
+    if (options.includes("per-file")) {
+      tap.mode = "per-file";
+      if (!config.outFile && tap.outDir && tap.outDir.length) {
+        tap.outFile = path.join(tap.outDir, "report.tap");
+      }
+    } else {
+      tap.mode = "single-file";
+    }
+  }
+
+  return { name, tap };
 }
 
 function resolveReporterFactory(mod: Record<string, unknown>): ReporterFactory {

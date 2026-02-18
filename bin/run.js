@@ -6,6 +6,7 @@ import * as path from "path";
 import { pathToFileURL } from "url";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { createReporter as createDefaultReporter } from "./reporters/default.js";
+import { createTapReporter } from "./reporters/tap.js";
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 var MessageType;
 (function (MessageType) {
@@ -156,8 +157,10 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
     const coverageEnabled = coverage.enabled;
     const coverageDir = config.coverageDir ?? "./.as-test/coverage";
     const runtimeCommand = resolveRuntimeCommand(getConfiguredRuntimeCmd(config), config.buildOptions.target);
+    const reporterSelection = resolveReporterSelection(options.reporterPath, config.runOptions.reporter);
+    const reporterKind = options.reporterKind ?? reporterSelection.kind;
     const reporter = options.reporter ??
-        (await loadReporter(config.runOptions.reporter, resolvedConfigPath, {
+        (await loadReporter(reporterSelection, resolvedConfigPath, {
             stdout: process.stdout,
             stderr: process.stderr,
         }));
@@ -208,7 +211,7 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
             cmd = cmd.replace("<file>", outFile);
         }
         const snapshotStore = new SnapshotStore(file, config.snapshotDir);
-        const report = await runProcess(cmd, snapshotStore, snapshotEnabled, updateSnapshots, reporter);
+        const report = await runProcess(cmd, snapshotStore, snapshotEnabled, updateSnapshots, reporter, reporterKind == "tap");
         const normalized = normalizeReport(report);
         snapshotStore.flush();
         snapshotSummary.matched += snapshotStore.matched;
@@ -644,7 +647,7 @@ function compareCoveragePoints(a, b) {
         return a.type.localeCompare(b.type);
     return a.hash.localeCompare(b.hash);
 }
-async function runProcess(cmd, snapshots, snapshotEnabled, updateSnapshots, reporter) {
+async function runProcess(cmd, snapshots, snapshotEnabled, updateSnapshots, reporter, tapMode = false) {
     const child = spawn(cmd, {
         stdio: ["pipe", "pipe", "pipe"],
         shell: true,
@@ -671,7 +674,12 @@ async function runProcess(cmd, snapshots, snapshotEnabled, updateSnapshots, repo
     });
     class TestChannel extends Channel {
         onPassthrough(data) {
-            process.stdout.write(data);
+            if (tapMode) {
+                process.stderr.write(data);
+            }
+            else {
+                process.stdout.write(data);
+            }
         }
         onCall(msg) {
             const event = msg;
@@ -871,21 +879,30 @@ function mergeVerdict(current, next) {
         return "skip";
     return "none";
 }
-export async function createRunReporter(configPath = DEFAULT_CONFIG_PATH) {
+export async function createRunReporter(configPath = DEFAULT_CONFIG_PATH, reporterPath) {
     const resolvedConfigPath = configPath ?? DEFAULT_CONFIG_PATH;
     const config = loadConfig(resolvedConfigPath);
-    const reporter = await loadReporter(config.runOptions.reporter, resolvedConfigPath, {
+    const selection = resolveReporterSelection(reporterPath, config.runOptions.reporter);
+    const reporter = await loadReporter(selection, resolvedConfigPath, {
         stdout: process.stdout,
         stderr: process.stderr,
     });
     const runtimeCommand = resolveRuntimeCommand(getConfiguredRuntimeCmd(config), config.buildOptions.target, false);
     return {
         reporter,
+        reporterKind: selection.kind,
         runtimeName: runtimeNameFromCommand(runtimeCommand),
         resolvedConfigPath,
     };
 }
-async function loadReporter(reporterPath, configPath, context) {
+async function loadReporter(selection, configPath, context) {
+    if (selection.kind == "default") {
+        return createDefaultReporter(context);
+    }
+    if (selection.kind == "tap") {
+        return createTapReporter(context, selection.tap);
+    }
+    const reporterPath = selection.reporterPath;
     if (!reporterPath) {
         return createDefaultReporter(context);
     }
@@ -902,6 +919,86 @@ async function loadReporter(reporterPath, configPath, context) {
         reporterError.cause = error;
         throw reporterError;
     }
+}
+function resolveReporterSelection(cliValue, configValue) {
+    const parsed = parseReporterConfig(configValue);
+    const raw = resolveCliReporter(process.argv.slice(2), cliValue ?? parsed.name);
+    const normalized = raw.trim();
+    const canonical = normalized.toLowerCase();
+    if (!normalized.length || canonical == "default") {
+        return { kind: "default", reporterPath: "", tap: parsed.tap };
+    }
+    if (canonical == "tap" || canonical == "tap13") {
+        return { kind: "tap", reporterPath: "", tap: parsed.tap };
+    }
+    return { kind: "custom", reporterPath: normalized, tap: parsed.tap };
+}
+function resolveCliReporter(argv, fallback) {
+    let resolved = fallback;
+    for (let i = 0; i < argv.length; i++) {
+        const token = argv[i];
+        if (token == "--tap") {
+            resolved = "tap";
+            continue;
+        }
+        if (token == "--reporter") {
+            const value = argv[i + 1];
+            if (!value || value.startsWith("-")) {
+                throw new Error(`--reporter requires a value`);
+            }
+            resolved = value;
+            i++;
+            continue;
+        }
+        if (token.startsWith("--reporter=")) {
+            const value = token.slice("--reporter=".length);
+            if (!value.length) {
+                throw new Error(`--reporter requires a value`);
+            }
+            resolved = value;
+            continue;
+        }
+    }
+    return resolved;
+}
+function parseReporterConfig(value) {
+    const tap = {
+        mode: "single-file",
+        outDir: "./.as-test/reports",
+        outFile: "./.as-test/reports/report.tap",
+    };
+    if (typeof value == "string") {
+        return { name: value, tap };
+    }
+    if (!value || typeof value != "object") {
+        return { name: "", tap };
+    }
+    const config = value;
+    const name = typeof config.name == "string" ? config.name : "";
+    if (typeof config.outDir == "string" && config.outDir.trim().length) {
+        tap.outDir = config.outDir.trim();
+    }
+    if (typeof config.outFile == "string" && config.outFile.trim().length) {
+        tap.outFile = config.outFile.trim();
+    }
+    else if (tap.outDir && tap.outDir.length) {
+        tap.outFile = path.join(tap.outDir, "report.tap");
+    }
+    if (Array.isArray(config.options)) {
+        const options = config.options
+            .filter((option) => typeof option == "string")
+            .map((option) => option.toLowerCase());
+        if (options.includes("per-file")) {
+            tap.mode = "per-file";
+            if (!config.outFile && tap.outDir && tap.outDir.length) {
+                tap.outFile = path.join(tap.outDir, "report.tap");
+            }
+        }
+        else {
+            tap.mode = "single-file";
+        }
+    }
+    return { name, tap };
 }
 function resolveReporterFactory(mod) {
     const fromNamed = mod.createReporter;

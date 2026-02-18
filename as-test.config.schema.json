@@ -121,8 +121,39 @@
           }
         },
         "reporter": {
-          "type": "string",
-          "description": "Optional path to a custom reporter module.",
+          "description": "Reporter selection. Use a string for built-in/default/custom path, or an object for named reporter configuration.",
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "\"\" or \"default\" uses built-in default reporter, \"tap\" uses built-in TAP v13 reporter, otherwise treated as custom module path."
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Reporter name or module path. Built-in values: \"default\", \"tap\"."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "Reporter options. TAP supports \"single-file\" (default) and \"per-file\".",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "outDir": {
+                  "type": "string",
+                  "description": "TAP output directory. Defaults to \"./.as-test/reports\"."
+                },
+                "outFile": {
+                  "type": "string",
+                  "description": "TAP output file path for single-file mode. Defaults to \"./.as-test/reports/report.tap\"."
+                }
+              },
+              "required": ["name"]
+            }
+          ],
           "default": ""
         }
       },

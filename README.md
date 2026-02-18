@@ -23,7 +23,7 @@ Most AssemblyScript testing tools are tied to a single runtime, usually Node.js.
 If you deploy to WASI, Wazero, or a custom runtime, you often end up mocking everything and maintaining parallel logic just for tests.
 as-test solves this by letting you run tests on your actual target runtime, while only mocking what’s necessary.
 
-**Key benefits**
+Key benefits
 
 - Runtime-agnostic: test on WASI, bindings, or custom runners
 - Minimal mocking: keep real imports when possible
@@ -189,9 +189,81 @@ Key fields:
 - `snapshotDir`: snapshot storage dir
 - `buildOptions.target`: `wasi` or `bindings`
 - `runOptions.runtime.cmd`: runtime command, supports `<file>` and `<name>`; if its script path is missing, as-test falls back to the default runner for the selected target
-- `runOptions.reporter`: optional custom reporter module path
+- `runOptions.reporter`: reporter selection as a string or object
 
 ## Custom Reporters
+
+Built-in TAP reporter (useful for CI, including GitHub Actions):
+
+```bash
+ast run --tap
+ast run --reporter tap
+```
+
+TAP output is written to `./.as-test/reports/report.tap` by default.
+
+Or in config:
+
+```json
+{
+  "runOptions": {
+    "reporter": "tap"
+  }
+}
+```
+
+Or with reporter object config:
+
+```json
+{
+  "runOptions": {
+    "reporter": {
+      "name": "tap",
+      "options": ["single-file"],
+      "outDir": "./.as-test/reports"
+    }
+  }
+}
+```
+
+`options` supports `single-file` (default) and `per-file`.
+
+Single-file explicit path:
+
+```json
+{
+  "runOptions": {
+    "reporter": {
+      "name": "tap",
+      "outFile": "./.as-test/reports/report.tap"
+    }
+  }
+}
+```
+
+In GitHub Actions, failed TAP points emit `::error` annotations with file and line when available.
+
+Example GitHub workflow (Bun + Wasmtime + TAP summary):
+
+```yaml
+name: Run Tests
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jcbhmr/setup-wasmtime@v2
+      - uses: oven-sh/setup-bun@v1
+      - run: bun install
+      - run: bun run test --update-snapshots --tap
+      - uses: test-summary/action@v2
+        if: always()
+        with:
+          paths: ".as-test/reports/*.tap"
+```
 
 Set reporter path in config:
 
@@ -201,6 +273,13 @@ Set reporter path in config:
     "reporter": "./tests/my-reporter.js"
   }
 }
+```
+
+It's even possible to use something like [tap-summary](https://github.com/zoubin/tap-summary) to summarize the test results!
+
+```bash
+npm install -g tap-summary
+ast test --tap | tap-summary
 ```
 
 Reporter module should export `createReporter` (named or default):
