@@ -14,7 +14,7 @@ describe("Should sleep", () => {
   it("100ms", () => {
     const start = Date.now();
     sleep(100);
-    expect(Date.now() - start).toBeGreaterOrEqualTo(1000);
+    expect(Date.now() - start).toBeGreaterOrEqualTo(100);
   });
   it("1s", () => {
     const start = Date.now();
