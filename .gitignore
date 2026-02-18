@@ -3,6 +3,7 @@ node_modules
 build
 .as-test/*
 !.as-test/runners/
+!.as-test/snapshots/
 .as-test/runners/*
 !.as-test/runners/default.wasi.js
 pnpm-lock.yaml
