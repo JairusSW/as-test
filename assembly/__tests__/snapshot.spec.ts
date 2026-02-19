@@ -10,7 +10,3 @@ describe("Snapshot support", () => {
     expect("named-value").toMatchSnapshot("named");
   });
 });
-
-run({
-  log: false,
-});

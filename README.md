@@ -7,6 +7,7 @@
 
 - [Why as-test](#why-as-test)
 - [Installation](#installation)
+- [Examples](#examples)
 - [Writing Tests](#writing-tests)
 - [Mocking](#mocking)
 - [Snapshots](#snapshots)
@@ -43,6 +44,16 @@ Alternatively, you can install it manually:
 ```bash
 npm install as-test --save-dev
 ```
+
+## Examples
+
+Full runnable examples live in `examples/`, including:
+
+- complete spec files for core features
+- import mocking and import snapshot patterns
+- a dedicated config you can run directly
+
+See `examples/README.md` for the walkthrough.
 
 ## Writing Tests
 

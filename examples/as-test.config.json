@@ -1,0 +1,19 @@
+{
+  "$schema": "./node_modules/as-test/as-test.config.schema.json",
+  "input": ["./assembly/__tests__/*.spec.ts"],
+  "outDir": "./.as-test/build",
+  "logs": "./.as-test/logs",
+  "coverageDir": "./.as-test/coverage",
+  "snapshotDir": "./.as-test/snapshots",
+  "config": "./asconfig.json",
+  "coverage": true,
+  "buildOptions": {
+    "args": [],
+    "target": "wasi"
+  },
+  "runOptions": {
+    "runtime": {
+      "cmd": "node ./.as-test/runners/default.wasi.js <file>"
+    }
+  }
+}

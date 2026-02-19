@@ -1,0 +1,22 @@
+{
+  "name": "as-test-examples",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "npm run test:wasi && npm run test:bindings",
+    "test:01": "npm run test:01:wasi && npm run test:01:bindings",
+    "test:wasi": "as-test test --config ./as-test.config.json",
+    "test:bindings": "as-test test --config ./as-test.bindings.config.json",
+    "test:01:wasi": "as-test test 01-basic --config ./as-test.config.json",
+    "test:01:bindings": "as-test test 01-basic --config ./as-test.bindings.config.json",
+    "test:update-snapshots": "npm run test:update-snapshots:wasi && npm run test:update-snapshots:bindings",
+    "test:update-snapshots:wasi": "as-test test --config ./as-test.config.json --update-snapshots",
+    "test:update-snapshots:bindings": "as-test test --config ./as-test.bindings.config.json --update-snapshots"
+  },
+  "devDependencies": {
+    "@assemblyscript/wasi-shim": "^0.1.0",
+    "as-test": "file:..",
+    "assemblyscript": "^0.28.9",
+    "json-as": "^1.2.5"
+  }
+}

@@ -1,7 +1,6 @@
 import {
   describe,
   expect,
-  run,
   test,
   xdescribe,
   xexpect,
@@ -37,8 +36,4 @@ describe("skip helpers", () => {
 
 test("skipped callbacks were not executed", () => {
   expect(ran).toBe(0);
-});
-
-run({
-  log: false,
 });

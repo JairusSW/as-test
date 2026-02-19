@@ -279,10 +279,8 @@ function resolveLegacyWasiRuntime(runtimeRun, target, emitWarnings) {
     const preferredPath = "./.as-test/runners/default.wasi.js";
     const legacyPaths = ["./bin/wasi-run.js", "./.as-test/wasi/wasi.run.js"];
     if (runtimeRun.includes(preferredPath)) {
-        const resolvedPreferredPath = path.join(process.cwd(), preferredPath);
-        if (existsSync(resolvedPreferredPath))
-            return runtimeRun;
-        throw new Error(`could not locate WASI runner at ${preferredPath}. Run "ast init --target wasi --force --yes" to scaffold the local runner.`);
+        ensureDefaultRuntimeRunner("wasi", emitWarnings);
+        return runtimeRun;
     }
     for (const legacyPath of legacyPaths) {
         if (!runtimeRun.includes(legacyPath))
@@ -290,14 +288,11 @@ function resolveLegacyWasiRuntime(runtimeRun, target, emitWarnings) {
         const resolvedLegacyPath = path.join(process.cwd(), legacyPath);
         if (existsSync(resolvedLegacyPath))
             return runtimeRun;
-        const resolvedPreferredPath = path.join(process.cwd(), preferredPath);
-        if (existsSync(resolvedPreferredPath)) {
-            if (emitWarnings) {
-                process.stderr.write(chalk.dim(`legacy WASI runtime path detected (${legacyPath}); using ${preferredPath}\n`));
-            }
-            return runtimeRun.replace(legacyPath, preferredPath);
+        ensureDefaultRuntimeRunner("wasi", emitWarnings);
+        if (emitWarnings) {
+            process.stderr.write(chalk.dim(`legacy WASI runtime path detected (${legacyPath}); using ${preferredPath}\n`));
         }
-        throw new Error(`could not locate WASI runner. Expected ${legacyPath} or ${preferredPath}. Run "ast init --target wasi --force --yes" to scaffold the local runner.`);
+        return runtimeRun.replace(legacyPath, preferredPath);
     }
     return runtimeRun;
 }
@@ -310,15 +305,12 @@ function fallbackToDefaultRuntime(runtimeRun, target, emitWarnings) {
         : path.join(process.cwd(), scriptPath);
     if (existsSync(resolvedScriptPath))
         return runtimeRun;
-    const fallback = getDefaultRuntimeFallback(target);
+    const fallback = ensureDefaultRuntimeRunner(target, emitWarnings);
     if (!fallback)
         return runtimeRun;
     const resolvedFallbackPath = path.join(process.cwd(), fallback.scriptPath);
-    if (!existsSync(resolvedFallbackPath)) {
-        if (scriptPath == fallback.scriptPath) {
-            throw new Error(`could not locate runtime script at ${fallback.scriptPath}. Run "ast init --target ${target} --force --yes" to scaffold the local runner.`);
-        }
-        throw new Error(`could not locate runtime script at ${scriptPath}. Default runner ${fallback.scriptPath} is also missing. Run "ast init --target ${target} --force --yes" to scaffold it.`);
+    if (resolvedScriptPath == resolvedFallbackPath || scriptPath == fallback.scriptPath) {
+        return runtimeRun;
     }
     if (emitWarnings) {
         process.stderr.write(chalk.dim(`runtime script not found (${scriptPath}); using ${fallback.scriptPath}\n`));
@@ -337,6 +329,144 @@ function getDefaultRuntimeFallback(target) {
             command: "node ./.as-test/runners/default.run.js <file>",
             scriptPath: "./.as-test/runners/default.run.js",
         };
+    }
+    return null;
+}
+function ensureDefaultRuntimeRunner(target, emitWarnings) {
+    const fallback = getDefaultRuntimeFallback(target);
+    if (!fallback)
+        return null;
+    const resolvedScriptPath = path.join(process.cwd(), fallback.scriptPath);
+    if (existsSync(resolvedScriptPath))
+        return fallback;
+    const source = getDefaultRuntimeRunnerSource(target);
+    if (!source)
+        return fallback;
+    if (!existsSync(path.dirname(resolvedScriptPath))) {
+        mkdirSync(path.dirname(resolvedScriptPath), { recursive: true });
+    }
+    writeFileSync(resolvedScriptPath, source);
+    if (emitWarnings) {
+        process.stderr.write(chalk.dim(`runtime script missing; created ${fallback.scriptPath}\n`));
+    }
+    return fallback;
+}
+function getDefaultRuntimeRunnerSource(target) {
+    if (target == "wasi") {
+        return `import { readFileSync } from "fs";
+import { WASI } from "wasi";
+
+const originalEmitWarning = process.emitWarning.bind(process);
+process.emitWarning = ((warning, ...args) => {
+  const type = typeof args[0] == "string" ? args[0] : "";
+  const name = typeof warning?.name == "string" ? warning.name : type;
+  const message =
+    typeof warning == "string" ? warning : String(warning?.message ?? "");
+  if (
+    name == "ExperimentalWarning" &&
+    message.includes("WASI is an experimental feature")
+  ) {
+    return;
+  }
+  return originalEmitWarning(warning, ...args);
+});
+
+const wasmPath = process.argv[2];
+if (!wasmPath) {
+  process.stderr.write("usage: node ./.as-test/runners/default.wasi.js <file.wasm>\\n");
+  process.exit(1);
+}
+
+try {
+  const wasi = new WASI({
+    version: "preview1",
+    args: [wasmPath],
+    env: process.env,
+    preopens: {},
+  });
+
+  const binary = readFileSync(wasmPath);
+  const module = new WebAssembly.Module(binary);
+  const instance = new WebAssembly.Instance(module, {
+    wasi_snapshot_preview1: wasi.wasiImport,
+  });
+  wasi.start(instance);
+} catch (error) {
+  process.stderr.write("failed to run WASI module: " + String(error) + "\\n");
+  process.exit(1);
+}
+`;
+    }
+    if (target == "bindings") {
+        return `import fs from "fs";
+import path from "path";
+import { pathToFileURL } from "url";
+
+let patched = false;
+
+function readExact(length) {
+  const out = Buffer.alloc(length);
+  let offset = 0;
+  while (offset < length) {
+    let read = 0;
+    try {
+      read = fs.readSync(0, out, offset, length - offset, null);
+    } catch (error) {
+      if (error && error.code === "EAGAIN") {
+        continue;
+      }
+      throw error;
+    }
+    if (!read) break;
+    offset += read;
+  }
+  const view = out.subarray(0, offset);
+  return view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength);
+}
+
+function writeRaw(data) {
+  const view = Buffer.from(data);
+  fs.writeSync(1, view);
+}
+
+function withNodeIo(imports = {}) {
+  if (!patched) {
+    patched = true;
+    const originalWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = (chunk, ...args) => {
+      if (chunk instanceof ArrayBuffer) {
+        writeRaw(chunk);
+        return true;
+      }
+      return originalWrite(chunk, ...args);
+    };
+    process.stdin.read = (size) => readExact(Number(size ?? 0));
+  }
+  return imports;
+}
+
+const wasmPathArg = process.argv[2];
+if (!wasmPathArg) {
+  process.stderr.write("usage: node ./.as-test/runners/default.run.js <file.wasm>\\n");
+  process.exit(1);
+}
+
+const wasmPath = path.resolve(process.cwd(), wasmPathArg);
+const jsPath = wasmPath.replace(/\\.wasm$/, ".js");
+
+try {
+  const binary = fs.readFileSync(wasmPath);
+  const module = new WebAssembly.Module(binary);
+  const mod = await import(pathToFileURL(jsPath).href);
+  if (typeof mod.instantiate !== "function") {
+    throw new Error("bindings helper missing instantiate export");
+  }
+  mod.instantiate(module, withNodeIo({}));
+} catch (error) {
+  process.stderr.write("failed to run bindings module: " + String(error) + "\\n");
+  process.exit(1);
+}
+`;
     }
     return null;
 }
