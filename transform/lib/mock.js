@@ -78,17 +78,6 @@ export class MockTransform extends Visitor {
                         dec.args[0].value;
             else
                 path = this.srcCurrent.simplePath + "." + node.name.text;
-            if (!this.importMocked.has(path))
-                continue;
-            const args = [
-                Node.createCallExpression(Node.createPropertyAccessExpression(Node.createIdentifierExpression("__mock_import", node.range), Node.createIdentifierExpression("get", node.range), node.range), null, [Node.createStringLiteralExpression(path, node.range)], node.range),
-            ];
-            for (const param of node.signature.parameters) {
-                args.push(Node.createIdentifierExpression(param.name.text, node.range));
-            }
-            const newFn = Node.createFunctionDeclaration(node.name, (node.decorators ?? []).filter((v) => v.name.text != "external"), node.flags - 32768 - 4, node.typeParameters, node.signature, Node.createBlockStatement([
-                Node.createReturnStatement(Node.createCallExpression(Node.createIdentifierExpression("call_indirect", node.range), null, args, node.range), node.range),
-            ], node.range), 0, node.range);
             const stmts = this.srcCurrent.statements;
             let index = -1;
             for (let i = 0; i < stmts.length; i++) {
@@ -101,7 +90,24 @@ export class MockTransform extends Visitor {
             }
             if (index === -1)
                 continue;
-            stmts.splice(index, 1, newFn);
+            const registerImportTarget = Node.createExpressionStatement(Node.createCallExpression(Node.createPropertyAccessExpression(Node.createIdentifierExpression("__mock_import_target_by_index", node.range), Node.createIdentifierExpression("set", node.range), node.range), null, [
+                Node.createPropertyAccessExpression(Node.createIdentifierExpression(node.name.text, node.range), Node.createIdentifierExpression("index", node.range), node.range),
+                Node.createStringLiteralExpression(path, node.range),
+            ], node.range));
+            if (!this.importMocked.has(path)) {
+                stmts.splice(index + 1, 0, registerImportTarget);
+                continue;
+            }
+            const args = [
+                Node.createCallExpression(Node.createPropertyAccessExpression(Node.createIdentifierExpression("__mock_import", node.range), Node.createIdentifierExpression("get", node.range), node.range), null, [Node.createStringLiteralExpression(path, node.range)], node.range),
+            ];
+            for (const param of node.signature.parameters) {
+                args.push(Node.createIdentifierExpression(param.name.text, node.range));
+            }
+            const newFn = Node.createFunctionDeclaration(node.name, (node.decorators ?? []).filter((v) => v.name.text != "external"), node.flags - 32768 - 4, node.typeParameters, node.signature, Node.createBlockStatement([
+                Node.createReturnStatement(Node.createCallExpression(Node.createIdentifierExpression("call_indirect", node.range), null, args, node.range), node.range),
+            ], node.range), 0, node.range);
+            stmts.splice(index, 1, newFn, registerImportTarget);
         }
     }
 }

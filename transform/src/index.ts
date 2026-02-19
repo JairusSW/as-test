@@ -147,7 +147,7 @@ function detectRunAlias(sourceText: string): string | null {
 }
 
 function looksLikeAsTestImport(specifiers: string): boolean {
-  return /\b(?:describe|test|it|expect|beforeAll|afterAll|beforeEach|afterEach|mockFn|unmockFn|mockImport|unmockImport|log|run)\b/.test(
+  return /\b(?:describe|test|it|expect|beforeAll|afterAll|beforeEach|afterEach|mockFn|unmockFn|mockImport|unmockImport|snapshotImport|restoreImport|log|run)\b/.test(
     specifiers,
   );
 }

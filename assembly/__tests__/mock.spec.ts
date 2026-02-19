@@ -3,7 +3,9 @@ import {
   it,
   mockFn,
   mockImport,
+  restoreImport,
   run,
+  snapshotImport,
   unmockFn,
   unmockImport,
 } from "..";
@@ -33,6 +35,42 @@ it("should mock imports", () => {
   });
   expect(foo()).toBe("biz");
   expect(getFoo()).toBe("biz");
+});
+
+it("should snapshot and restore imports by function|string and string|i32 version", () => {
+  snapshotImport(foo, 1);
+  mockImport("mock.foo", (): string => {
+    return "snap";
+  });
+  snapshotImport("mock.foo", "v2");
+  mockImport("mock.foo", (): string => {
+    return "zap";
+  });
+  expect(foo()).toBe("zap");
+  expect(getFoo()).toBe("zap");
+
+  restoreImport("mock.foo", "v2");
+  expect(foo()).toBe("snap");
+  expect(getFoo()).toBe("snap");
+
+  restoreImport(foo, 1);
+  expect(foo()).toBe("biz");
+  expect(getFoo()).toBe("biz");
+});
+
+it("should support callback snapshot syntax", () => {
+  mockImport("mock.foo", (): string => {
+    return "biz";
+  });
+  snapshotImport("mock.foo", (): string => {
+    return foo();
+  });
+  mockImport("mock.foo", (): string => {
+    return "zip";
+  });
+  expect(foo()).toBe("zip");
+  restoreImport("mock.foo", "default");
+  expect(foo()).toBe("biz");
 });
 
 it("should unmock imports", () => {

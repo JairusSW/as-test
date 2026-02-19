@@ -115,11 +115,24 @@ Use these helpers when you need to replace behavior during tests:
 - `unmockFn(oldFn)`: stops that rewrite for subsequent calls
 - `mockImport("module.field", fn)`: sets the runtime mock for an external import
 - `unmockImport("module.field")`: clears the runtime mock for an external import
+- `snapshotImport<T = Function | string>(imp: T, version: string | i32)`: snapshots a single import mock
+- `snapshotImport<T = Function | string>(imp: T, capture: () => unknown)`: runs `capture` and snapshots using version `"default"`
+- `restoreImport<T = Function | string>(imp: T, version: string | i32)`: restores a single import mock
 
 Example:
 
 ```ts
-import { expect, it, mockFn, mockImport, run, unmockFn, unmockImport } from "as-test";
+import {
+  expect,
+  it,
+  mockFn,
+  mockImport,
+  restoreImport,
+  run,
+  snapshotImport,
+  unmockFn,
+  unmockImport,
+} from "as-test";
 import { foo } from "./mock";
 
 mockImport("mock.foo", (): string => "buz");
@@ -134,6 +147,14 @@ unmockFn(foo);
 it("function restored", () => {
   expect(foo()).toBe("buz");
 });
+
+snapshotImport(foo, 1);
+mockImport("mock.foo", (): string => "temp");
+snapshotImport("mock.foo", "v2");
+restoreImport(foo, 1);
+
+snapshotImport("mock.foo", () => foo()); // snapshots to version "default"
+restoreImport("mock.foo", "default");
 
 unmockImport("mock.foo");
 mockImport("mock.foo", (): string => "buz");

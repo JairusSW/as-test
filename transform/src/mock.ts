@@ -108,7 +108,46 @@ export class MockTransform extends Visitor {
           "." +
           (dec.args[0] as StringLiteralExpression).value;
       else path = this.srcCurrent.simplePath + "." + node.name.text;
-      if (!this.importMocked.has(path)) continue;
+      const stmts = this.srcCurrent.statements;
+      let index = -1;
+      for (let i = 0; i < stmts.length; i++) {
+        const stmt = stmts[i];
+        if (
+          stmt instanceof FunctionDeclaration &&
+          stmt.name.text === node.name.text
+        ) {
+          index = i;
+          break;
+        }
+      }
+      if (index === -1) continue;
+
+      const registerImportTarget = Node.createExpressionStatement(
+        Node.createCallExpression(
+          Node.createPropertyAccessExpression(
+            Node.createIdentifierExpression(
+              "__mock_import_target_by_index",
+              node.range,
+            ),
+            Node.createIdentifierExpression("set", node.range),
+            node.range,
+          ),
+          null,
+          [
+            Node.createPropertyAccessExpression(
+              Node.createIdentifierExpression(node.name.text, node.range),
+              Node.createIdentifierExpression("index", node.range),
+              node.range,
+            ),
+            Node.createStringLiteralExpression(path, node.range),
+          ],
+          node.range,
+        ),
+      );
+      if (!this.importMocked.has(path)) {
+        stmts.splice(index + 1, 0, registerImportTarget);
+        continue;
+      }
 
       const args: Expression[] = [
         Node.createCallExpression(
@@ -153,20 +192,7 @@ export class MockTransform extends Visitor {
         node.range,
       );
 
-      const stmts = this.srcCurrent.statements;
-      let index = -1;
-      for (let i = 0; i < stmts.length; i++) {
-        const stmt = stmts[i];
-        if (
-          stmt instanceof FunctionDeclaration &&
-          stmt.name.text === node.name.text
-        ) {
-          index = i;
-          break;
-        }
-      }
-      if (index === -1) continue;
-      stmts.splice(index, 1, newFn);
+      stmts.splice(index, 1, newFn, registerImportTarget);
     }
   }
 }

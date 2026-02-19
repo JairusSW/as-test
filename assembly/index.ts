@@ -16,11 +16,26 @@ let entrySuites: Suite[] = [];
 
 // @ts-ignore
 const FILE = isDefined(ENTRY_FILE) ? ENTRY_FILE : "unknown";
+
+class ImportSnapshot {
+  hasValue: bool = false;
+  value: u32 = 0;
+}
+
+const DEFAULT_IMPORT_SNAPSHOT_VERSION = "default";
+
 // Globals
 // @ts-ignore
 @global let __mock_global: Map<string, u32> = new Map<string, u32>();
 // @ts-ignore
 @global let __mock_import: Map<string, u32> = new Map<string, u32>();
+// @ts-ignore
+@global let __mock_import_snapshots: Map<string, ImportSnapshot> = new Map<
+  string,
+  ImportSnapshot
+>();
+// @ts-ignore
+@global let __mock_import_target_by_index: Map<u32, string> = new Map<u32, string>();
 // @ts-ignore
 @global let suites: Suite[] = [];
 // @ts-ignore
@@ -252,6 +267,43 @@ export function unmockImport(oldFn: string): void {
 }
 
 /**
+ * Save a single import mock value for the given version.
+ *
+ * Accepts either:
+ * - `snapshotImport(importOrPath, version)`
+ * - `snapshotImport(importOrPath, () => { ... })` (uses default version)
+ *
+ * `imp` accepts either a string import path (e.g. "mock.foo") or the imported function.
+ */
+export function snapshotImport<T, V>(imp: T, versionOrCapture: V): void {
+  const importKey = resolveImportKey<T>(imp);
+  if (isFunction<V>(versionOrCapture)) {
+    // @ts-ignore
+    versionOrCapture();
+    saveImportSnapshot(importKey, DEFAULT_IMPORT_SNAPSHOT_VERSION);
+    return;
+  }
+  saveImportSnapshot(importKey, versionKey<V>(versionOrCapture));
+}
+
+/**
+ * Restore a single import mock value for the given version.
+ *
+ * Accepts either a string import path (e.g. "mock.foo") or the imported function.
+ */
+export function restoreImport<T, V>(imp: T, version: V): void {
+  const importKey = resolveImportKey<T>(imp);
+  const snapshotKey = importSnapshotKey(importKey, versionKey<V>(version));
+  if (!__mock_import_snapshots.has(snapshotKey)) return;
+  const snapshot = __mock_import_snapshots.get(snapshotKey);
+  if (snapshot.hasValue) {
+    __mock_import.set(importKey, snapshot.value);
+  } else {
+    __mock_import.delete(importKey);
+  }
+}
+
+/**
  * Class defining options that can be passed to the `run` function.
  *
  * Currently, it offers a single option:
@@ -410,6 +462,46 @@ function snapshotKey(): string {
   }
   const path = parts.join(" > ");
   return FILE + "::" + path + "::" + suite.tests.length.toString();
+}
+
+function resolveImportKey<T>(imp: T): string {
+  if (isString<T>()) {
+    // @ts-ignore
+    return imp as string;
+  }
+  // @ts-ignore
+  const index = imp.index as u32;
+  if (__mock_import_target_by_index.has(index)) {
+    return __mock_import_target_by_index.get(index);
+  }
+  return index.toString();
+}
+
+function importSnapshotKey(importKey: string, version: string): string {
+  return importKey + "::" + version;
+}
+
+function versionKey<V>(version: V): string {
+  if (isString<V>()) {
+    // @ts-ignore
+    return version as string;
+  }
+  if (isInteger<V>()) {
+    // @ts-ignore
+    return (<i64>version).toString();
+  }
+  ERROR("snapshot/restore version must be string or integer");
+  return "";
+}
+
+function saveImportSnapshot(importKey: string, version: string): void {
+  const snapshotKey = importSnapshotKey(importKey, version);
+  const snapshot = new ImportSnapshot();
+  if (__mock_import.has(importKey)) {
+    snapshot.hasValue = true;
+    snapshot.value = __mock_import.get(importKey);
+  }
+  __mock_import_snapshots.set(snapshotKey, snapshot);
 }
 
 export class Result {
