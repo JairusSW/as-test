@@ -4,14 +4,17 @@ import { glob } from "glob";
 import chalk from "chalk";
 import { execSync } from "child_process";
 import * as path from "path";
-import { getPkgRunner, loadConfig } from "./util.js";
+import { applyMode, getPkgRunner, loadConfig } from "./util.js";
 
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 export async function build(
   configPath: string = DEFAULT_CONFIG_PATH,
   selectors: string[] = [],
+  modeName?: string,
 ) {
-  const config = loadConfig(configPath, false);
+  const loadedConfig = loadConfig(configPath, false);
+  const mode = applyMode(loadedConfig, modeName);
+  const config = mode.config;
 
   ensureDeps(config);
 
@@ -22,18 +25,33 @@ export async function build(
   const buildArgs = getBuildArgs(config);
   for (const file of inputFiles) {
     let cmd = `${pkgRunner} asc ${file}${buildArgs}`;
-    const outFile = `${config.outDir}/${file.slice(file.lastIndexOf("/") + 1).replace(".ts", ".wasm")}`;
+    const outFile = `${config.outDir}/${resolveArtifactFileName(file, config.buildOptions.target, modeName)}`;
     if (config.outDir) {
       cmd += " -o " + outFile;
     }
     try {
-      buildFile(cmd);
+      buildFile(cmd, mode.env);
     } catch (error) {
       throw new Error(
         `Failed to build ${path.basename(file)} with ${getBuildStderr(error)}`,
       );
     }
   }
+}
+
+function resolveArtifactFileName(
+  file: string,
+  target: string,
+  modeName?: string,
+): string {
+  const base = path
+    .basename(file)
+    .replace(/\.spec\.ts$/, "")
+    .replace(/\.ts$/, "");
+  if (!modeName) {
+    return `${path.basename(file).replace(".ts", ".wasm")}`;
+  }
+  return `${base}.${modeName}.${target}.wasm`;
 }
 
 function resolveInputPatterns(
@@ -89,10 +107,11 @@ function ensureDeps(config: Config): void {
   }
 }
 
-function buildFile(command: string): void {
+function buildFile(command: string, env: NodeJS.ProcessEnv): void {
   execSync(command, {
     stdio: ["ignore", "pipe", "pipe"],
     encoding: "utf8",
+    env,
   });
 }
 

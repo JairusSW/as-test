@@ -1,7 +1,7 @@
 import chalk from "chalk";
 import { spawn } from "child_process";
 import { glob } from "glob";
-import { getExec, loadConfig } from "./util.js";
+import { applyMode, getExec, loadConfig } from "./util.js";
 import * as path from "path";
 import { pathToFileURL } from "url";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
@@ -117,6 +117,7 @@ type RunExecutionOptions = {
   reporter?: TestReporter;
   reporterKind?: ReporterKind;
   reporterPath?: string;
+  modeName?: string;
   emitRunStart?: boolean;
   emitRunComplete?: boolean;
   logFileName?: string;
@@ -251,7 +252,9 @@ export async function run(
 ) {
   const resolvedConfigPath = configPath ?? DEFAULT_CONFIG_PATH;
   const reports: any[] = [];
-  const config = loadConfig(resolvedConfigPath);
+  const loadedConfig = loadConfig(resolvedConfigPath);
+  const mode = applyMode(loadedConfig, options.modeName);
+  const config = mode.config;
   const inputPatterns = resolveInputPatterns(config.input, selectors);
   const inputFiles = await glob(inputPatterns);
   const snapshotEnabled = flags.snapshot !== false;
@@ -317,7 +320,7 @@ export async function run(
     const file = inputFiles[i]!;
     const outFile = path.join(
       config.outDir,
-      file.slice(file.lastIndexOf("/") + 1).replace(".ts", ".wasm"),
+      resolveArtifactFileName(file, config.buildOptions.target, options.modeName),
     );
 
     const fileBase = file
@@ -327,13 +330,7 @@ export async function run(
     let cmd = runtimeCommand.replace(command, execPath);
     cmd = cmd.replace("<name>", fileBase);
     if (config.buildOptions.target == "bindings" && !cmd.includes("<file>")) {
-      cmd = cmd.replace(
-        "<file>",
-        outFile
-          .replace("build", "tests")
-          .replace(".spec", "")
-          .replace(".wasm", ".run.js"),
-      );
+      cmd = cmd.replace("<file>", resolveBindingsHelperPath(outFile));
     } else {
       cmd = cmd.replace("<file>", outFile);
     }
@@ -345,6 +342,7 @@ export async function run(
       updateSnapshots,
       reporter,
       reporterKind == "tap",
+      mode.env,
     );
     const normalized = normalizeReport(report);
     snapshotStore.flush();
@@ -431,39 +429,73 @@ function resolveRuntimeCommand(
   target: string,
   emitWarnings: boolean = true,
 ): string {
-  const normalized = resolveLegacyWasiRuntime(runtimeRun, target, emitWarnings);
+  const normalized = resolveLegacyRuntime(runtimeRun, target, emitWarnings);
   return fallbackToDefaultRuntime(normalized, target, emitWarnings);
 }
 
-function resolveLegacyWasiRuntime(
+function resolveLegacyRuntime(
   runtimeRun: string,
   target: string,
   emitWarnings: boolean,
 ): string {
-  if (target != "wasi") return runtimeRun;
-  const preferredPath = "./.as-test/runners/default.wasi.js";
-  const legacyPaths = ["./bin/wasi-run.js", "./.as-test/wasi/wasi.run.js"];
+  if (target == "wasi") {
+    const preferredPath = "./.as-test/runners/default.wasi.js";
+    const legacyPaths = ["./bin/wasi-run.js", "./.as-test/wasi/wasi.run.js"];
 
-  if (runtimeRun.includes(preferredPath)) {
-    ensureDefaultRuntimeRunner("wasi", emitWarnings);
+    if (runtimeRun.includes(preferredPath)) {
+      ensureDefaultRuntimeRunner("wasi", emitWarnings);
+      return runtimeRun;
+    }
+
+    for (const legacyPath of legacyPaths) {
+      if (!runtimeRun.includes(legacyPath)) continue;
+
+      const resolvedLegacyPath = path.join(process.cwd(), legacyPath);
+      if (existsSync(resolvedLegacyPath)) return runtimeRun;
+
+      ensureDefaultRuntimeRunner("wasi", emitWarnings);
+      if (emitWarnings) {
+        process.stderr.write(
+          chalk.dim(
+            `legacy WASI runtime path detected (${legacyPath}); using ${preferredPath}\n`,
+          ),
+        );
+      }
+      return runtimeRun.replace(legacyPath, preferredPath);
+    }
     return runtimeRun;
   }
 
-  for (const legacyPath of legacyPaths) {
-    if (!runtimeRun.includes(legacyPath)) continue;
-
-    const resolvedLegacyPath = path.join(process.cwd(), legacyPath);
-    if (existsSync(resolvedLegacyPath)) return runtimeRun;
-
-    ensureDefaultRuntimeRunner("wasi", emitWarnings);
-    if (emitWarnings) {
-      process.stderr.write(
-        chalk.dim(
-          `legacy WASI runtime path detected (${legacyPath}); using ${preferredPath}\n`,
-        ),
-      );
+  if (target == "bindings") {
+    const preferredPath = "./.as-test/runners/default.bindings.js";
+    const legacyPath = "./.as-test/runners/default.run.js";
+    if (runtimeRun.includes(preferredPath)) {
+      ensureDefaultRuntimeRunner("bindings", emitWarnings);
+      return runtimeRun;
     }
-    return runtimeRun.replace(legacyPath, preferredPath);
+    if (runtimeRun.includes(legacyPath)) {
+      const resolvedLegacyPath = path.join(process.cwd(), legacyPath);
+      if (existsSync(resolvedLegacyPath)) {
+        if (emitWarnings) {
+          process.stderr.write(
+            chalk.dim(
+              `deprecated runtime script (${legacyPath}) detected; prefer ${preferredPath}\n`,
+            ),
+          );
+        }
+        return runtimeRun;
+      }
+
+      ensureDefaultRuntimeRunner("bindings", emitWarnings);
+      if (emitWarnings) {
+        process.stderr.write(
+          chalk.dim(
+            `legacy bindings runtime path detected (${legacyPath}); using ${preferredPath}\n`,
+          ),
+        );
+      }
+      return runtimeRun.replace(legacyPath, preferredPath);
+    }
   }
 
   return runtimeRun;
@@ -511,8 +543,8 @@ function getDefaultRuntimeFallback(
   }
   if (target == "bindings") {
     return {
-      command: "node ./.as-test/runners/default.run.js <file>",
-      scriptPath: "./.as-test/runners/default.run.js",
+      command: "node ./.as-test/runners/default.bindings.js <file>",
+      scriptPath: "./.as-test/runners/default.bindings.js",
     };
   }
   return null;
@@ -641,7 +673,7 @@ function withNodeIo(imports = {}) {
 
 const wasmPathArg = process.argv[2];
 if (!wasmPathArg) {
-  process.stderr.write("usage: node ./.as-test/runners/default.run.js <file.wasm>\\n");
+  process.stderr.write("usage: node ./.as-test/runners/default.bindings.js <file.wasm>\\n");
   process.exit(1);
 }
 
@@ -664,6 +696,29 @@ try {
   }
 
   return null;
+}
+
+function resolveArtifactFileName(
+  file: string,
+  target: string,
+  modeName?: string,
+): string {
+  const base = path
+    .basename(file)
+    .replace(/\.spec\.ts$/, "")
+    .replace(/\.ts$/, "");
+  if (!modeName) {
+    return `${path.basename(file).replace(".ts", ".wasm")}`;
+  }
+  return `${base}.${modeName}.${target}.wasm`;
+}
+
+function resolveBindingsHelperPath(wasmPath: string): string {
+  const bindingsPath = wasmPath.replace(/\.wasm$/, ".bindings.js");
+  if (existsSync(bindingsPath)) return bindingsPath;
+  const legacyRunPath = wasmPath.replace(/\.wasm$/, ".run.js");
+  if (existsSync(legacyRunPath)) return legacyRunPath;
+  return bindingsPath;
 }
 
 function extractRuntimeScriptPath(runtimeRun: string): string | null {
@@ -1028,10 +1083,12 @@ async function runProcess(
   updateSnapshots: boolean,
   reporter: TestReporter,
   tapMode: boolean = false,
+  env: NodeJS.ProcessEnv = process.env,
 ): Promise<any> {
   const child = spawn(cmd, {
     stdio: ["pipe", "pipe", "pipe"],
     shell: true,
+    env,
   });
   let report: any = null;
   let parseError: string | null = null;
@@ -1280,6 +1337,7 @@ function mergeVerdict(current: Verdict, next: Verdict): Verdict {
 export async function createRunReporter(
   configPath: string = DEFAULT_CONFIG_PATH,
   reporterPath?: string,
+  modeName?: string,
 ): Promise<{
   reporter: TestReporter;
   reporterKind: ReporterKind;
@@ -1287,7 +1345,9 @@ export async function createRunReporter(
   resolvedConfigPath: string;
 }> {
   const resolvedConfigPath = configPath ?? DEFAULT_CONFIG_PATH;
-  const config = loadConfig(resolvedConfigPath);
+  const loadedConfig = loadConfig(resolvedConfigPath);
+  const mode = applyMode(loadedConfig, modeName);
+  const config = mode.config;
   const selection = resolveReporterSelection(reporterPath, config.runOptions.reporter);
   const reporter = await loadReporter(selection, resolvedConfigPath, {
     stdout: process.stdout,

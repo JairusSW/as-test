@@ -3,10 +3,12 @@ import { glob } from "glob";
 import chalk from "chalk";
 import { execSync } from "child_process";
 import * as path from "path";
-import { getPkgRunner, loadConfig } from "./util.js";
+import { applyMode, getPkgRunner, loadConfig } from "./util.js";
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
-export async function build(configPath = DEFAULT_CONFIG_PATH, selectors = []) {
-    const config = loadConfig(configPath, false);
+export async function build(configPath = DEFAULT_CONFIG_PATH, selectors = [], modeName) {
+    const loadedConfig = loadConfig(configPath, false);
+    const mode = applyMode(loadedConfig, modeName);
+    const config = mode.config;
     ensureDeps(config);
     const pkgRunner = getPkgRunner();
     const inputPatterns = resolveInputPatterns(config.input, selectors);
@@ -14,17 +16,27 @@ export async function build(configPath = DEFAULT_CONFIG_PATH, selectors = []) {
     const buildArgs = getBuildArgs(config);
     for (const file of inputFiles) {
         let cmd = `${pkgRunner} asc ${file}${buildArgs}`;
-        const outFile = `${config.outDir}/${file.slice(file.lastIndexOf("/") + 1).replace(".ts", ".wasm")}`;
+        const outFile = `${config.outDir}/${resolveArtifactFileName(file, config.buildOptions.target, modeName)}`;
         if (config.outDir) {
             cmd += " -o " + outFile;
         }
         try {
-            buildFile(cmd);
+            buildFile(cmd, mode.env);
         }
         catch (error) {
             throw new Error(`Failed to build ${path.basename(file)} with ${getBuildStderr(error)}`);
         }
     }
+}
+function resolveArtifactFileName(file, target, modeName) {
+    const base = path
+        .basename(file)
+        .replace(/\.spec\.ts$/, "")
+        .replace(/\.ts$/, "");
+    if (!modeName) {
+        return `${path.basename(file).replace(".ts", ".wasm")}`;
+    }
+    return `${base}.${modeName}.${target}.wasm`;
 }
 function resolveInputPatterns(configured, selectors) {
     const configuredInputs = Array.isArray(configured) ? configured : [configured];
@@ -65,10 +77,11 @@ function ensureDeps(config) {
         process.exit(1);
     }
 }
-function buildFile(command) {
+function buildFile(command, env) {
     execSync(command, {
         stdio: ["ignore", "pipe", "pipe"],
         encoding: "utf8",
+        env,
     });
 }
 function getBuildStderr(error) {

@@ -1,5 +1,25 @@
 # Change Log
 
+## 2026-02-23
+
+### Runtime Matrix & Mode Execution
+
+- feat: add `--mode <name[,name...]>` support for `ast build`, `ast run`, and `ast test`, including multi-mode fan-out in one command.
+- feat: add config `modes` map for per-mode overrides (`buildOptions`, `runOptions`, `env`, and optional output/log/coverage/snapshot directories).
+- feat: when running with `--mode`, compile artifacts are emitted as `<name>.<mode>.<type>.wasm` (where `type` is `wasi` or `bindings`).
+
+### Bindings Runner Naming
+
+- feat: switch default bindings runner path to `./.as-test/runners/default.bindings.js`.
+- fix: keep backward compatibility with deprecated `./.as-test/runners/default.run.js` and legacy `*.run.js` bindings helper files.
+- feat: add runtime warnings for deprecated bindings runner path usage and automatic fallback to `default.bindings.js` when needed.
+
+### Init, Examples & Docs
+
+- feat: `init` now writes both `.as-test/runners/default.wasi.js` and `.as-test/runners/default.bindings.js`.
+- docs: update README runtime examples and mode artifact naming guidance for `--mode`.
+- docs: refresh `examples/` docs/configs for `default.bindings.js` and add a mode matrix example config.
+
 ## 2026-02-18
 
 ### Reporter & CLI

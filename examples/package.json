@@ -4,14 +4,16 @@
   "type": "module",
   "scripts": {
     "test": "npm run test:wasi && npm run test:bindings",
+    "test:modes": "as-test test --config ./as-test.config.json --mode wasi,wasi-env,bindings",
+    "test:01:modes": "as-test test 01-basic --config ./as-test.config.json --mode wasi,wasi-env,bindings",
     "test:01": "npm run test:01:wasi && npm run test:01:bindings",
-    "test:wasi": "as-test test --config ./as-test.config.json",
-    "test:bindings": "as-test test --config ./as-test.bindings.config.json",
-    "test:01:wasi": "as-test test 01-basic --config ./as-test.config.json",
-    "test:01:bindings": "as-test test 01-basic --config ./as-test.bindings.config.json",
+    "test:wasi": "as-test test --config ./as-test.config.json --mode wasi",
+    "test:bindings": "as-test test --config ./as-test.config.json --mode bindings",
+    "test:01:wasi": "as-test test 01-basic --config ./as-test.config.json --mode wasi",
+    "test:01:bindings": "as-test test 01-basic --config ./as-test.config.json --mode bindings",
     "test:update-snapshots": "npm run test:update-snapshots:wasi && npm run test:update-snapshots:bindings",
-    "test:update-snapshots:wasi": "as-test test --config ./as-test.config.json --update-snapshots",
-    "test:update-snapshots:bindings": "as-test test --config ./as-test.bindings.config.json --update-snapshots"
+    "test:update-snapshots:wasi": "as-test test --config ./as-test.config.json --mode wasi --update-snapshots",
+    "test:update-snapshots:bindings": "as-test test --config ./as-test.config.json --mode bindings --update-snapshots"
   },
   "devDependencies": {
     "@assemblyscript/wasi-shim": "^0.1.0",

@@ -201,11 +201,9 @@ function printPlan(root: string, target: Target, example: ExampleMode): void {
   if (example != "none") {
     console.log(chalk.dim("    assembly/__tests__/example.spec.ts"));
   }
-  if (target == "wasi") {
+  if (target == "wasi" || target == "bindings") {
     console.log(chalk.dim("    .as-test/runners/default.wasi.js"));
-  }
-  if (target == "bindings") {
-    console.log(chalk.dim("    .as-test/runners/default.run.js"));
+    console.log(chalk.dim("    .as-test/runners/default.bindings.js"));
   }
   console.log(chalk.dim("    package.json"));
   console.log("");
@@ -240,7 +238,7 @@ function applyInit(
   if (target == "wasi") {
     config.runOptions.runtime.cmd = "node ./.as-test/runners/default.wasi.js <file>";
   } else {
-    config.runOptions.runtime.cmd = "node ./.as-test/runners/default.run.js <file>";
+    config.runOptions.runtime.cmd = "node ./.as-test/runners/default.bindings.js <file>";
   }
   writeJson(configPath, config, summary, "as-test.config.json");
 
@@ -257,7 +255,7 @@ function applyInit(
     );
   }
 
-  if (target == "wasi") {
+  if (target == "wasi" || target == "bindings") {
     const runnerPath = path.join(root, ".as-test/runners/default.wasi.js");
     writeManagedFile(
       runnerPath,
@@ -268,14 +266,14 @@ function applyInit(
     );
   }
 
-  if (target == "bindings") {
-    const runnerPath = path.join(root, ".as-test/runners/default.run.js");
+  if (target == "wasi" || target == "bindings") {
+    const runnerPath = path.join(root, ".as-test/runners/default.bindings.js");
     writeManagedFile(
       runnerPath,
       buildBindingsRunner(),
       force,
       summary,
-      ".as-test/runners/default.run.js",
+      ".as-test/runners/default.bindings.js",
     );
   }
 
@@ -591,7 +589,7 @@ function withNodeIo(imports = {}) {
 
 const wasmPathArg = process.argv[2];
 if (!wasmPathArg) {
-  process.stderr.write("usage: node ./.as-test/runners/default.run.js <file.wasm>\\n");
+  process.stderr.write("usage: node ./.as-test/runners/default.bindings.js <file.wasm>\\n");
   process.exit(1);
 }
 

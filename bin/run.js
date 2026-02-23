@@ -1,7 +1,7 @@
 import chalk from "chalk";
 import { spawn } from "child_process";
 import { glob } from "glob";
-import { getExec, loadConfig } from "./util.js";
+import { applyMode, getExec, loadConfig } from "./util.js";
 import * as path from "path";
 import { pathToFileURL } from "url";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
@@ -146,7 +146,9 @@ class SnapshotStore {
 export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selectors = [], shouldExit = true, options = {}) {
     const resolvedConfigPath = configPath ?? DEFAULT_CONFIG_PATH;
     const reports = [];
-    const config = loadConfig(resolvedConfigPath);
+    const loadedConfig = loadConfig(resolvedConfigPath);
+    const mode = applyMode(loadedConfig, options.modeName);
+    const config = mode.config;
     const inputPatterns = resolveInputPatterns(config.input, selectors);
     const inputFiles = await glob(inputPatterns);
     const snapshotEnabled = flags.snapshot !== false;
@@ -194,7 +196,7 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
     };
     for (let i = 0; i < inputFiles.length; i++) {
         const file = inputFiles[i];
-        const outFile = path.join(config.outDir, file.slice(file.lastIndexOf("/") + 1).replace(".ts", ".wasm"));
+        const outFile = path.join(config.outDir, resolveArtifactFileName(file, config.buildOptions.target, options.modeName));
         const fileBase = file
             .slice(file.lastIndexOf("/") + 1)
             .replace(".ts", "")
@@ -202,16 +204,13 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
         let cmd = runtimeCommand.replace(command, execPath);
         cmd = cmd.replace("<name>", fileBase);
         if (config.buildOptions.target == "bindings" && !cmd.includes("<file>")) {
-            cmd = cmd.replace("<file>", outFile
-                .replace("build", "tests")
-                .replace(".spec", "")
-                .replace(".wasm", ".run.js"));
+            cmd = cmd.replace("<file>", resolveBindingsHelperPath(outFile));
         }
         else {
             cmd = cmd.replace("<file>", outFile);
         }
         const snapshotStore = new SnapshotStore(file, config.snapshotDir);
-        const report = await runProcess(cmd, snapshotStore, snapshotEnabled, updateSnapshots, reporter, reporterKind == "tap");
+        const report = await runProcess(cmd, snapshotStore, snapshotEnabled, updateSnapshots, reporter, reporterKind == "tap", mode.env);
         const normalized = normalizeReport(report);
         snapshotStore.flush();
         snapshotSummary.matched += snapshotStore.matched;
@@ -270,29 +269,52 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
     };
 }
 function resolveRuntimeCommand(runtimeRun, target, emitWarnings = true) {
-    const normalized = resolveLegacyWasiRuntime(runtimeRun, target, emitWarnings);
+    const normalized = resolveLegacyRuntime(runtimeRun, target, emitWarnings);
     return fallbackToDefaultRuntime(normalized, target, emitWarnings);
 }
-function resolveLegacyWasiRuntime(runtimeRun, target, emitWarnings) {
-    if (target != "wasi")
-        return runtimeRun;
-    const preferredPath = "./.as-test/runners/default.wasi.js";
-    const legacyPaths = ["./bin/wasi-run.js", "./.as-test/wasi/wasi.run.js"];
-    if (runtimeRun.includes(preferredPath)) {
-        ensureDefaultRuntimeRunner("wasi", emitWarnings);
+function resolveLegacyRuntime(runtimeRun, target, emitWarnings) {
+    if (target == "wasi") {
+        const preferredPath = "./.as-test/runners/default.wasi.js";
+        const legacyPaths = ["./bin/wasi-run.js", "./.as-test/wasi/wasi.run.js"];
+        if (runtimeRun.includes(preferredPath)) {
+            ensureDefaultRuntimeRunner("wasi", emitWarnings);
+            return runtimeRun;
+        }
+        for (const legacyPath of legacyPaths) {
+            if (!runtimeRun.includes(legacyPath))
+                continue;
+            const resolvedLegacyPath = path.join(process.cwd(), legacyPath);
+            if (existsSync(resolvedLegacyPath))
+                return runtimeRun;
+            ensureDefaultRuntimeRunner("wasi", emitWarnings);
+            if (emitWarnings) {
+                process.stderr.write(chalk.dim(`legacy WASI runtime path detected (${legacyPath}); using ${preferredPath}\n`));
+            }
+            return runtimeRun.replace(legacyPath, preferredPath);
+        }
         return runtimeRun;
     }
-    for (const legacyPath of legacyPaths) {
-        if (!runtimeRun.includes(legacyPath))
-            continue;
-        const resolvedLegacyPath = path.join(process.cwd(), legacyPath);
-        if (existsSync(resolvedLegacyPath))
+    if (target == "bindings") {
+        const preferredPath = "./.as-test/runners/default.bindings.js";
+        const legacyPath = "./.as-test/runners/default.run.js";
+        if (runtimeRun.includes(preferredPath)) {
+            ensureDefaultRuntimeRunner("bindings", emitWarnings);
             return runtimeRun;
-        ensureDefaultRuntimeRunner("wasi", emitWarnings);
-        if (emitWarnings) {
-            process.stderr.write(chalk.dim(`legacy WASI runtime path detected (${legacyPath}); using ${preferredPath}\n`));
         }
-        return runtimeRun.replace(legacyPath, preferredPath);
+        if (runtimeRun.includes(legacyPath)) {
+            const resolvedLegacyPath = path.join(process.cwd(), legacyPath);
+            if (existsSync(resolvedLegacyPath)) {
+                if (emitWarnings) {
+                    process.stderr.write(chalk.dim(`deprecated runtime script (${legacyPath}) detected; prefer ${preferredPath}\n`));
+                }
+                return runtimeRun;
+            }
+            ensureDefaultRuntimeRunner("bindings", emitWarnings);
+            if (emitWarnings) {
+                process.stderr.write(chalk.dim(`legacy bindings runtime path detected (${legacyPath}); using ${preferredPath}\n`));
+            }
+            return runtimeRun.replace(legacyPath, preferredPath);
+        }
     }
     return runtimeRun;
 }
@@ -326,8 +348,8 @@ function getDefaultRuntimeFallback(target) {
     }
     if (target == "bindings") {
         return {
-            command: "node ./.as-test/runners/default.run.js <file>",
-            scriptPath: "./.as-test/runners/default.run.js",
+            command: "node ./.as-test/runners/default.bindings.js <file>",
+            scriptPath: "./.as-test/runners/default.bindings.js",
         };
     }
     return null;
@@ -447,7 +469,7 @@ function withNodeIo(imports = {}) {
 
 const wasmPathArg = process.argv[2];
 if (!wasmPathArg) {
-  process.stderr.write("usage: node ./.as-test/runners/default.run.js <file.wasm>\\n");
+  process.stderr.write("usage: node ./.as-test/runners/default.bindings.js <file.wasm>\\n");
   process.exit(1);
 }
 
@@ -469,6 +491,25 @@ try {
 `;
     }
     return null;
+}
+function resolveArtifactFileName(file, target, modeName) {
+    const base = path
+        .basename(file)
+        .replace(/\.spec\.ts$/, "")
+        .replace(/\.ts$/, "");
+    if (!modeName) {
+        return `${path.basename(file).replace(".ts", ".wasm")}`;
+    }
+    return `${base}.${modeName}.${target}.wasm`;
+}
+function resolveBindingsHelperPath(wasmPath) {
+    const bindingsPath = wasmPath.replace(/\.wasm$/, ".bindings.js");
+    if (existsSync(bindingsPath))
+        return bindingsPath;
+    const legacyRunPath = wasmPath.replace(/\.wasm$/, ".run.js");
+    if (existsSync(legacyRunPath))
+        return legacyRunPath;
+    return bindingsPath;
 }
 function extractRuntimeScriptPath(runtimeRun) {
     const tokens = runtimeRun.trim().split(/\s+/).filter((token) => token.length > 0);
@@ -777,10 +818,11 @@ function compareCoveragePoints(a, b) {
         return a.type.localeCompare(b.type);
     return a.hash.localeCompare(b.hash);
 }
-async function runProcess(cmd, snapshots, snapshotEnabled, updateSnapshots, reporter, tapMode = false) {
+async function runProcess(cmd, snapshots, snapshotEnabled, updateSnapshots, reporter, tapMode = false, env = process.env) {
     const child = spawn(cmd, {
         stdio: ["pipe", "pipe", "pipe"],
         shell: true,
+        env,
     });
     let report = null;
     let parseError = null;
@@ -1009,9 +1051,11 @@ function mergeVerdict(current, next) {
         return "skip";
     return "none";
 }
-export async function createRunReporter(configPath = DEFAULT_CONFIG_PATH, reporterPath) {
+export async function createRunReporter(configPath = DEFAULT_CONFIG_PATH, reporterPath, modeName) {
     const resolvedConfigPath = configPath ?? DEFAULT_CONFIG_PATH;
-    const config = loadConfig(resolvedConfigPath);
+    const loadedConfig = loadConfig(resolvedConfigPath);
+    const mode = applyMode(loadedConfig, modeName);
+    const config = mode.config;
     const selection = resolveReporterSelection(reporterPath, config.runOptions.reporter);
     const reporter = await loadReporter(selection, resolvedConfigPath, {
         stdout: process.stdout,

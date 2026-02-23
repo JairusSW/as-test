@@ -10,9 +10,11 @@ From this `examples/` directory:
 npm i
 npm run test:01
 npm run test
+npm run test:modes
 ```
 
 `test:01` and `test` run both runtimes (`wasi` and `bindings`).
+`test:modes` runs a 3-mode matrix from `as-test.config.json`.
 
 Run a single target:
 
@@ -28,6 +30,12 @@ npm run test:wasi
 npm run test:bindings
 ```
 
+Run matrix modes for a single suite:
+
+```bash
+npm run test:01:modes
+```
+
 Update snapshots for all example suites on both runtimes:
 
 ```bash
@@ -41,10 +49,10 @@ examples/
   README.md
   asconfig.json
   as-test.config.json
-  as-test.bindings.config.json
   package.json
   .as-test/runners/default.wasi.js
-  .as-test/runners/default.run.js
+  .as-test/runners/default.bindings.js
+  .as-test/runners/default.run.js  (legacy compatibility)
   assembly/__tests__/
     01-basic.spec.ts
     02-hooks.spec.ts
@@ -68,4 +76,5 @@ examples/
 
 - These files are designed to be copied into your own project and adapted.
 - Runtime artifacts are isolated under `examples/.as-test/*`.
+- In mode runs, artifact names follow `<name>.<mode>.<target>.wasm`.
 - `clock.ts` is a small external-import fixture used to demonstrate runtime import mocking patterns.
