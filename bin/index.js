@@ -273,7 +273,7 @@ async function resolveSelectedFiles(configPath, selectors) {
     const patterns = resolveInputPatterns(config.input, selectors);
     const matches = await glob(patterns);
     const specs = matches.filter((file) => file.endsWith(".spec.ts"));
-    return [...new Set(specs)];
+    return [...new Set(specs)].sort((a, b) => a.localeCompare(b));
 }
 function resolveInputPatterns(configured, selectors) {
     const configuredInputs = Array.isArray(configured) ? configured : [configured];

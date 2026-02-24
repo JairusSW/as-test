@@ -17,7 +17,9 @@ export async function build(
 
   const pkgRunner = getPkgRunner();
   const inputPatterns = resolveInputPatterns(config.input, selectors);
-  const inputFiles = await glob(inputPatterns);
+  const inputFiles = (await glob(inputPatterns)).sort((a, b) =>
+    a.localeCompare(b),
+  );
 
   const buildArgs = getBuildArgs(config);
   for (const file of inputFiles) {

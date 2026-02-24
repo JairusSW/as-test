@@ -253,7 +253,9 @@ export async function run(
   const reports: any[] = [];
   const config = loadConfig(resolvedConfigPath);
   const inputPatterns = resolveInputPatterns(config.input, selectors);
-  const inputFiles = await glob(inputPatterns);
+  const inputFiles = (await glob(inputPatterns)).sort((a, b) =>
+    a.localeCompare(b),
+  );
   const snapshotEnabled = flags.snapshot !== false;
   const updateSnapshots = Boolean(flags.updateSnapshots);
   const cleanOutput = Boolean(flags.clean);

@@ -10,7 +10,7 @@ export async function build(configPath = DEFAULT_CONFIG_PATH, selectors = []) {
     ensureDeps(config);
     const pkgRunner = getPkgRunner();
     const inputPatterns = resolveInputPatterns(config.input, selectors);
-    const inputFiles = await glob(inputPatterns);
+    const inputFiles = (await glob(inputPatterns)).sort((a, b) => a.localeCompare(b));
     const buildArgs = getBuildArgs(config);
     for (const file of inputFiles) {
         let cmd = `${pkgRunner} asc ${file}${buildArgs}`;
