@@ -14,7 +14,3 @@ describe("Math operations", () => {
     expect(3.14159).toBeCloseTo(3.14, 2);
   });
 });
-
-run({
-  log: false,
-});

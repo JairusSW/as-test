@@ -102,6 +102,126 @@
         "target": "wasi"
       }
     },
+    "modes": {
+      "type": "object",
+      "description": "Named build/run modes. Each mode can override target/args/runtime/env and artifact directories.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "outDir": {
+            "type": "string",
+            "description": "Mode-specific build output directory. If omitted, defaults to <outDir>/<mode-name>."
+          },
+          "logs": {
+            "type": "string",
+            "description": "Mode-specific log output directory."
+          },
+          "coverageDir": {
+            "type": "string",
+            "description": "Mode-specific coverage output directory."
+          },
+          "snapshotDir": {
+            "type": "string",
+            "description": "Mode-specific snapshot directory."
+          },
+          "config": {
+            "type": "string",
+            "description": "Mode-specific asconfig path or \"none\"."
+          },
+          "coverage": {
+            "description": "Mode-specific coverage settings.",
+            "oneOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "includeSpecs": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            ]
+          },
+          "buildOptions": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "target": {
+                "type": "string",
+                "enum": ["wasi", "bindings"]
+              }
+            }
+          },
+          "runOptions": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "runtime": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "cmd": {
+                    "type": "string",
+                    "description": "Mode-specific runtime command."
+                  }
+                }
+              },
+              "reporter": {
+                "description": "Mode-specific reporter config.",
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "options": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "outDir": {
+                        "type": "string"
+                      },
+                      "outFile": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["name"]
+                  }
+                ]
+              }
+            }
+          },
+          "env": {
+            "type": "object",
+            "description": "Environment variables injected when building/running this mode.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "default": {}
+    },
     "runOptions": {
       "type": "object",
       "additionalProperties": false,

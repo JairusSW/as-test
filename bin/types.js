@@ -10,6 +10,7 @@ export class Config {
         this.coverage = true;
         this.buildOptions = new BuildOptions();
         this.runOptions = new RunOptions();
+        this.modes = {};
     }
 }
 export class CoverageOptions {
@@ -38,6 +39,13 @@ export class RunOptions {
 export class Runtime {
     constructor() {
         this.cmd = "node ./.as-test/runners/default.wasi.js <file>";
+    }
+}
+export class ModeConfig {
+    constructor() {
+        this.buildOptions = {};
+        this.runOptions = {};
+        this.env = {};
     }
 }
 export class ReporterConfig {

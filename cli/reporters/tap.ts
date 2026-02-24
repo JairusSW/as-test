@@ -372,7 +372,7 @@ function emitGitHubAnnotation(context: ReporterContext, point: TapPoint): void {
 
   const message = point.message?.length ? point.message : "assertion failed";
   const detail = `${message} | test=${point.name}`;
-  context.stderr.write(
+  context.stdout.write(
     `::error ${properties.join(",")}::${escapeGithubValue(detail)}\n`,
   );
 }

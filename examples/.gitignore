@@ -1,0 +1,7 @@
+node_modules/
+.as-test/*
+!.as-test/runners/
+!.as-test/runners/default.wasi.js
+!.as-test/runners/default.run.js
+!.as-test/snapshots/
+!.as-test/snapshots/*.snap.json

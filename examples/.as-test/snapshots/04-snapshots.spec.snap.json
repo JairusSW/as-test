@@ -1,0 +1,4 @@
+{
+  "04-snapshots.spec.ts::04 snapshots > unnamed snapshot::0": "\"snapshot-demo-v1\"",
+  "04-snapshots.spec.ts::04 snapshots > named snapshot::0::named": "\"named-snapshot-demo\""
+}

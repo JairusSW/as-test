@@ -9,6 +9,7 @@ export class Config {
   coverage: boolean | CoverageOptions = true;
   buildOptions: BuildOptions = new BuildOptions();
   runOptions: RunOptions = new RunOptions();
+  modes: Record<string, ModeConfig> = {};
 }
 
 export class CoverageOptions {
@@ -32,6 +33,18 @@ export class RunOptions {
 
 export class Runtime {
   cmd: string = "node ./.as-test/runners/default.wasi.js <file>";
+}
+
+export class ModeConfig {
+  outDir?: string;
+  logs?: string;
+  coverageDir?: string;
+  snapshotDir?: string;
+  config?: string;
+  coverage?: boolean | CoverageOptions;
+  buildOptions: Partial<BuildOptions> = {};
+  runOptions: Partial<RunOptions> = {};
+  env: Record<string, string> = {};
 }
 
 export class ReporterConfig {

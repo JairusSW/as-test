@@ -7,7 +7,6 @@ import aseslint from "./tools/assemblyscript-eslint-local.js";
 export default tseslint.config(
   {
     ignores: [
-      "assembly/**",
       "bin/**",
       "templates/**",
       "tests/**/*.js",

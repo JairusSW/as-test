@@ -54,7 +54,3 @@ describe("Expectation helpers", () => {
     expect(afterCount).toBe(6);
   });
 });
-
-run({
-  log: false,
-});

@@ -19,7 +19,3 @@ describe("Array manipulation", () => {
 
   it("should be empty", () => {});
 });
-
-run({
-  log: true,
-});

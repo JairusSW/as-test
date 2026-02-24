@@ -7,6 +7,7 @@
 
 - [Why as-test](#why-as-test)
 - [Installation](#installation)
+- [Examples](#examples)
 - [Writing Tests](#writing-tests)
 - [Mocking](#mocking)
 - [Snapshots](#snapshots)
@@ -43,6 +44,17 @@ Alternatively, you can install it manually:
 ```bash
 npm install as-test --save-dev
 ```
+
+## Examples
+
+Full runnable examples live in `examples/`, including:
+
+- complete spec files for core features
+- import mocking and import snapshot patterns
+- mode-based runtime matrix config in `examples/as-test.config.json`
+- a dedicated config you can run directly
+
+See `examples/README.md` for the walkthrough.
 
 ## Writing Tests
 
@@ -102,6 +114,7 @@ No test files matched: ...
 ### Useful flags
 
 - `--config <path>`: use another config file
+- `--mode <name[,name...]>`: run one or multiple named config modes
 - `--update-snapshots`: write snapshot updates
 - `--no-snapshot`: disable snapshot assertions for the run
 - `--show-coverage`: print uncovered coverage points
@@ -227,6 +240,7 @@ Example:
     "args": [],
     "target": "wasi"
   },
+  "modes": {},
   "runOptions": {
     "runtime": {
       "cmd": "node ./.as-test/runners/default.wasi.js <file>"
@@ -244,15 +258,85 @@ Key fields:
 - `coverageDir`: coverage output dir or `"none"`
 - `snapshotDir`: snapshot storage dir
 - `buildOptions.target`: `wasi` or `bindings`
+- `modes`: named overrides for target/args/runtime/env/artifact directories (selected via `--mode`)
 - `runOptions.runtime.cmd`: runtime command, supports `<file>` and `<name>`; if its script path is missing, as-test falls back to the default runner for the selected target
 - `runOptions.reporter`: reporter selection as a string or object
+
+Example multi-runtime matrix:
+
+```json
+{
+  "modes": {
+    "wasi-simd": {
+      "buildOptions": {
+        "target": "wasi",
+        "args": ["--enable", "simd"]
+      },
+      "runOptions": {
+        "runtime": {
+          "cmd": "wasmer run <file>"
+        }
+      }
+    },
+    "wasi-nosimd": {
+      "buildOptions": {
+        "target": "wasi"
+      },
+      "runOptions": {
+        "runtime": {
+          "cmd": "wasmer run <file>"
+        }
+      }
+    },
+    "bindings-node-simd": {
+      "buildOptions": {
+        "target": "bindings",
+        "args": ["--enable", "simd"]
+      },
+      "runOptions": {
+        "runtime": {
+          "cmd": "node ./.as-test/runners/default.bindings.js <file>"
+        }
+      }
+    }
+  }
+}
+```
+
+Run all modes:
+
+```bash
+ast test --mode wasi-simd,wasi-nosimd,bindings-node-simd
+```
+
+When using `--mode`, compiled artifacts are emitted as:
+
+```text
+<test-name>.<mode>.<target>.wasm
+```
+
+Example:
+
+```text
+math.wasi-simd.wasi.wasm
+math.bindings-node-simd.bindings.wasm
+```
+
+Bindings runner naming:
+
+- preferred: `./.as-test/runners/default.bindings.js`
+- deprecated but supported: `./.as-test/runners/default.run.js`
+
+`ast init` now scaffolds both local runners:
+
+- `.as-test/runners/default.wasi.js`
+- `.as-test/runners/default.bindings.js`
 
 ## Custom Reporters
 
 Built-in TAP reporter (useful for CI, including GitHub Actions):
 
 ```bash
-ast run --tap
 ast run --reporter tap
 ```
 
@@ -335,7 +419,7 @@ It's even possible to use something like [tap-summary](https://github.com/zoubin
 
 ```bash
 npm install -g tap-summary
-ast test --tap | tap-summary
+ast test --reporter tap | tap-summary
 ```
 
 Reporter module should export `createReporter` (named or default):

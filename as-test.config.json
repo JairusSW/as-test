@@ -9,5 +9,6 @@
     "args": [],
     "target": "wasi"
   },
+  "modes": {},
   "runOptions": {}
 }

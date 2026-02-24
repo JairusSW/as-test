@@ -4,7 +4,7 @@ import chalk from "chalk";
 import { build } from "./build.js";
 import { createRunReporter, run, RunResult } from "./run.js";
 import { init } from "./init.js";
-import { getCliVersion, loadConfig } from "./util.js";
+import { getCliVersion, loadConfig, resolveModeNames } from "./util.js";
 import * as path from "path";
 import { glob } from "glob";
 import { CoverageSummary, RunStats } from "./reporters/types.js";
@@ -17,6 +17,7 @@ const COMMANDS: string[] = ["run", "build", "test", "init"];
 
 const version = getCliVersion();
 const configPath = resolveConfigPath(_args);
+const selectedModes = resolveModeNames(_args);
 
 for (const arg of _args) {
   if (arg.startsWith("-")) flags.push(arg);
@@ -40,17 +41,17 @@ if (!args.length) {
     verbose: flags.includes("--verbose"),
   };
   if (command === "build") {
-    build(configPath).catch((error) => {
+    runBuildModes(configPath, commandArgs, selectedModes).catch((error) => {
       printCliError(error);
       process.exit(1);
     });
   } else if (command === "run") {
-    run(runFlags, configPath).catch((error) => {
+    runRuntimeModes(runFlags, configPath, commandArgs, selectedModes).catch((error) => {
       printCliError(error);
       process.exit(1);
     });
   } else if (command === "test") {
-    runTestSequential(runFlags, configPath, commandArgs).catch((error) => {
+    runTestModes(runFlags, configPath, commandArgs, selectedModes).catch((error) => {
       printCliError(error);
       process.exit(1);
     });
@@ -133,6 +134,12 @@ function info(): void {
 
   console.log(
       "   " +
+      chalk.bold.blue("--mode <name[,name...]>") +
+      "       " +
+      "Run one or multiple named config modes",
+  );
+  console.log(
+      "   " +
       chalk.bold.blue("--config <path>") +
       "               " +
       "Use a specific config file",
@@ -169,14 +176,8 @@ function info(): void {
   );
   console.log(
       "   " +
-      chalk.bold.blue("--tap") +
-      "                         " +
-      "Use built-in TAP v13 reporter",
-  );
-  console.log(
-      "   " +
       chalk.bold.blue("--reporter <name|path>") +
-      "       " +
+      "        " +
       "Use built-in reporter (default|tap) or custom module path",
   );
   console.log("");
@@ -232,7 +233,14 @@ function resolveCommandArgs(rawArgs: string[], command: string): string[] {
       i++;
       continue;
     }
+    if (arg == "--mode") {
+      i++;
+      continue;
+    }
     if (arg.startsWith("--config=")) {
+      continue;
+    }
+    if (arg.startsWith("--mode=")) {
       continue;
     }
     if (arg == "--reporter") {
@@ -277,7 +285,8 @@ async function runTestSequential(
   },
   configPath: string | undefined,
   selectors: string[],
-): Promise<void> {
+  modeName?: string,
+): Promise<boolean> {
   const files = await resolveSelectedFiles(configPath, selectors);
   if (!files.length) {
     const scope =
@@ -287,7 +296,7 @@ async function runTestSequential(
     throw new Error(`No test files matched: ${scope}`);
   }
 
-  const reporterSession = await createRunReporter(configPath);
+  const reporterSession = await createRunReporter(configPath, undefined, modeName);
   const reporter = reporterSession.reporter;
   const snapshotEnabled = runFlags.snapshot !== false;
   reporter.onRunStart?.({
@@ -301,7 +310,7 @@ async function runTestSequential(
   const results: RunResult[] = [];
   let failed = false;
   for (const file of files) {
-    await build(configPath, [file]);
+    await build(configPath, [file], modeName);
     const artifactKey = path.basename(file).replace(/[^a-zA-Z0-9._-]/g, "_");
     const result = await run(runFlags, configPath, [file], false, {
       reporter,
@@ -309,6 +318,7 @@ async function runTestSequential(
       emitRunComplete: false,
       logFileName: `test.${artifactKey}.log.json`,
       coverageFileName: `coverage.${artifactKey}.log.json`,
+      modeName,
     });
     results.push(result);
     if (result?.failed) failed = true;
@@ -324,6 +334,66 @@ async function runTestSequential(
     stats: summary.stats,
     reports: summary.reports,
   });
+  return failed;
+}
+
+async function runBuildModes(
+  configPath: string | undefined,
+  selectors: string[],
+  modes: string[],
+): Promise<void> {
+  const targets = modes.length ? modes : [undefined];
+  for (const modeName of targets) {
+    await build(configPath, selectors, modeName);
+  }
+}
+
+async function runRuntimeModes(
+  runFlags: {
+    snapshot: boolean;
+    updateSnapshots: boolean;
+    clean: boolean;
+    showCoverage: boolean;
+    verbose: boolean;
+  },
+  configPath: string | undefined,
+  selectors: string[],
+  modes: string[],
+): Promise<void> {
+  const targets = modes.length ? modes : [undefined];
+  let failed = false;
+  for (const modeName of targets) {
+    const result = await run(runFlags, configPath, selectors, false, {
+      modeName,
+    });
+    if (result.failed) failed = true;
+  }
+  process.exit(failed ? 1 : 0);
+}
+
+async function runTestModes(
+  runFlags: {
+    snapshot: boolean;
+    updateSnapshots: boolean;
+    clean: boolean;
+    showCoverage: boolean;
+    verbose: boolean;
+  },
+  configPath: string | undefined,
+  selectors: string[],
+  modes: string[],
+): Promise<void> {
+  const targets = modes.length ? modes : [undefined];
+  let failed = false;
+  for (const modeName of targets) {
+    const modeFailed = await runTestSequential(
+      runFlags,
+      configPath,
+      selectors,
+      modeName,
+    );
+    if (modeFailed) failed = true;
+  }
   process.exit(failed ? 1 : 0);
 }
 

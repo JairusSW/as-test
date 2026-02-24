@@ -27,5 +27,3 @@ describe("log serialization", () => {
     expect(1).toBe(1);
   });
 });
-
-run({ log: true });
