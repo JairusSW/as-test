@@ -30,10 +30,8 @@
   "dependencies": {
     "as-console": "^7.0.0",
     "as-rainbow": "^0.1.0",
-    "as-variant": "^0.4.1",
     "chalk": "^5.6.2",
     "glob": "^13.0.3",
-    "gradient-string": "^3.0.0",
     "typer-diff": "^1.1.1"
   },
   "optionalDependencies": {
