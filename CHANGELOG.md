@@ -1,5 +1,19 @@
 # Change Log
 
+## 2026-02-24
+
+### Runtime & Serialization
+
+- refactor: remove `json-as` dependency by inlining portable serialization and deserialization helpers into the runtime.
+
+### CLI
+
+- fix: enforce deterministic alphanumeric test input ordering for `ast build`, `ast run`, and `ast test`.
+
+### Dependencies
+
+- chore: remove unused runtime dependencies `as-variant` and `gradient-string`.
+
 ## 2026-02-18
 
 ### Reporter & CLI
