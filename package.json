@@ -23,7 +23,6 @@
     "as-test": "./",
     "assemblyscript": "^0.28.9",
     "assemblyscript-prettier": "^3.0.1",
-    "json-as": "^1.2.5",
     "prettier": "3.6.2",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.55.0"
@@ -35,11 +34,7 @@
     "chalk": "^5.6.2",
     "glob": "^13.0.3",
     "gradient-string": "^3.0.0",
-    "typer-diff": "^1.1.1",
-    "wipc-js": "^0.1.1"
-  },
-  "peerDependencies": {
-    "json-as": "^1.2.5"
+    "typer-diff": "^1.1.1"
   },
   "optionalDependencies": {
     "try-as": "^0.2.5"

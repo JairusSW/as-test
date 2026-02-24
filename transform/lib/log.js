@@ -1,7 +1,6 @@
 import { Node, Source, Tokenizer, } from "assemblyscript/dist/assemblyscript.js";
 import { Visitor } from "./visitor.js";
 import { toString } from "./util.js";
-const LOG_VALUE_FN = "__as_test_log_value";
 const LOG_CALL_FN = "__as_test_log_call";
 const LOG_ENABLED_IMPORT = "__as_test_log_is_enabled_internal";
 const LOG_SERIALIZED_IMPORT = "__as_test_log_serialized_internal";
@@ -11,7 +10,6 @@ export class LogTransform extends Visitor {
     activeSource = null;
     touchedSource = null;
     hasLogCalls = false;
-    classNames = [];
     constructor(parser) {
         super();
         this.parser = parser;
@@ -22,7 +20,6 @@ export class LogTransform extends Visitor {
         this.activeSource = node;
         this.touchedSource = node;
         this.hasLogCalls = false;
-        this.classNames = [];
         super.visitSource(node);
         if (!this.hasLogCalls) {
             this.activeSource = null;
@@ -34,18 +31,7 @@ export class LogTransform extends Visitor {
         this.parser.currentSource = tokenizer.source;
         node.statements.unshift(this.parser.parseTopLevelStatement(tokenizer));
         this.parser.currentSource = node;
-        const jsonTokenizer = new Tokenizer(new Source(0, node.normalizedPath, `import { JSON } from "json-as";`));
-        this.parser.currentSource = jsonTokenizer.source;
-        node.statements.unshift(this.parser.parseTopLevelStatement(jsonTokenizer));
-        this.parser.currentSource = node;
-        const classFallbackLines = this.classNames
-            .map((className) => `if (idof<nonnull<T>>() == idof<${className}>()) return JSON.stringify<${className}>(changetype<${className}>(value));`)
-            .join(" ");
-        const genericTokenizer = new Tokenizer(new Source(0, node.normalizedPath, `function ${LOG_VALUE_FN}<T>(value: T): string { const formatted = ${LOG_DEFAULT_IMPORT}<T>(value); if (formatted != "none") return formatted; if (isReference<T>()) { ${classFallbackLines} } return formatted; }`));
-        this.parser.currentSource = genericTokenizer.source;
-        node.statements.push(this.parser.parseTopLevelStatement(genericTokenizer));
-        this.parser.currentSource = node;
-        const callTokenizer = new Tokenizer(new Source(0, node.normalizedPath, `function ${LOG_CALL_FN}<T>(value: T): void { if (!${LOG_ENABLED_IMPORT}()) return; ${LOG_SERIALIZED_IMPORT}(${LOG_VALUE_FN}(value)); }`));
+        const callTokenizer = new Tokenizer(new Source(0, node.normalizedPath, `function ${LOG_CALL_FN}<T>(value: T): void { if (!${LOG_ENABLED_IMPORT}()) return; ${LOG_SERIALIZED_IMPORT}(${LOG_DEFAULT_IMPORT}<T>(value)); }`));
         this.parser.currentSource = callTokenizer.source;
         node.statements.push(this.parser.parseTopLevelStatement(callTokenizer));
         this.parser.currentSource = node;
@@ -65,33 +51,10 @@ export class LogTransform extends Visitor {
         node.args[0] = arg;
         this.hasLogCalls = true;
     }
-    visitClassDeclaration(node, isDefault = false) {
-        super.visitClassDeclaration(node, isDefault);
-        if (!this.activeSource || this.touchedSource !== this.activeSource)
-            return;
-        if (!node.name)
-            return;
-        if (node.flags & 32768)
-            return;
-        if (node.decorators?.some((decorator) => isDecoratorNamed(decorator, "json")))
-            return;
-        if (node.decorators?.some((decorator) => isDecoratorNamed(decorator, "unmanaged")))
-            return;
-        const className = node.name.text;
-        if (!this.classNames.includes(className)) {
-            this.classNames.push(className);
-        }
-        const decorators = node.decorators ? [...node.decorators] : [];
-        decorators.unshift(Node.createDecorator(Node.createIdentifierExpression("json", node.range), [], node.range));
-        node.decorators = decorators;
-    }
 }
 function isUserSource(source) {
     return (source.sourceKind === 0 ||
         source.sourceKind === 1);
-}
-function isDecoratorNamed(node, name) {
-    return toString(node.name) === name;
 }
 function detectAsTestImportPath(sourceText) {
     const text = stripComments(sourceText);

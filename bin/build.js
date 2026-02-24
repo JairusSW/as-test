@@ -27,7 +27,9 @@ export async function build(configPath = DEFAULT_CONFIG_PATH, selectors = []) {
     }
 }
 function resolveInputPatterns(configured, selectors) {
-    const configuredInputs = Array.isArray(configured) ? configured : [configured];
+    const configuredInputs = Array.isArray(configured)
+        ? configured
+        : [configured];
     if (!selectors.length)
         return configuredInputs;
     const patterns = new Set();
@@ -60,10 +62,6 @@ function ensureDeps(config) {
             process.exit(1);
         }
     }
-    if (!hasJsonAsTransform()) {
-        console.log(`${chalk.bgRed(" ERROR ")}${chalk.dim(":")} could not find json-as. Install it to compile as-test suites.`);
-        process.exit(1);
-    }
 }
 function buildFile(command) {
     execSync(command, {
@@ -90,7 +88,6 @@ function getBuildStderr(error) {
 function getBuildArgs(config) {
     let buildArgs = "";
     buildArgs += " --transform as-test/transform";
-    buildArgs += " --transform json-as/transform";
     if (hasTryAsRuntime()) {
         buildArgs += " --transform try-as/transform";
     }
@@ -123,9 +120,4 @@ function getBuildArgs(config) {
 function hasTryAsRuntime() {
     return (existsSync(path.join(process.cwd(), "node_modules/try-as")) ||
         existsSync(path.join(process.cwd(), "node_modules/try-as/package.json")));
-}
-function hasJsonAsTransform() {
-    return (existsSync(path.join(process.cwd(), "node_modules/json-as/transform.js")) ||
-        existsSync(path.join(process.cwd(), "node_modules/json-as/transform.ts")) ||
-        existsSync(path.join(process.cwd(), "node_modules/json-as/transform")));
 }

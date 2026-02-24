@@ -4,11 +4,9 @@ import { Tests } from "./tests";
 import { Log } from "./log";
 import { after_each_callback, before_each_callback } from "..";
 import { sendSuiteEnd, sendSuiteStart } from "../util/wipc";
+import { quote } from "../util/json";
 
-@json
 export class Suite {
-
-  @omitif((self: Suite) => self.depth > 0)
   public file: string = "unknown";
   public order: i32 = 0;
   public time: Time = new Time();
@@ -19,8 +17,6 @@ export class Suite {
   public logs: Log[] = [];
   public kind: string;
 
-
-  @omit
   public parent: Suite | null = null;
 
   public verdict: string = "none";
@@ -58,9 +54,7 @@ export class Suite {
     this.time.start = performance.now();
     sendSuiteStart(this.file, this.depth, this.kind, this.description);
     const isSkippedCase =
-      this.kind == "xdescribe" ||
-      this.kind == "xtest" ||
-      this.kind == "xit";
+      this.kind == "xdescribe" || this.kind == "xtest" || this.kind == "xit";
     const isTestCase =
       this.kind == "test" ||
       this.kind == "it" ||
@@ -133,4 +127,55 @@ export class Suite {
       this.verdict,
     );
   }
+
+  serialize(): string {
+    let out = "{";
+    if (this.depth <= 0) {
+      out += '"file":' + quote(this.file) + ",";
+    }
+    out += '"order":' + this.order.toString();
+    out += ',"time":' + this.time.serialize();
+    out += ',"description":' + quote(this.description);
+    out += ',"depth":' + this.depth.toString();
+    out += ',"suites":' + serializeSuites(this.suites);
+    out += ',"tests":' + serializeTests(this.tests);
+    out += ',"logs":' + serializeLogs(this.logs);
+    out += ',"kind":' + quote(this.kind);
+    out += ',"verdict":' + quote(this.verdict);
+    out += "}";
+    return out;
+  }
+}
+
+function serializeSuites(values: Suite[]): string {
+  if (!values.length) return "[]";
+  let out = "[";
+  for (let i = 0; i < values.length; i++) {
+    if (i) out += ",";
+    out += unchecked(values[i]).serialize();
+  }
+  out += "]";
+  return out;
+}
+
+function serializeTests(values: Tests[]): string {
+  if (!values.length) return "[]";
+  let out = "[";
+  for (let i = 0; i < values.length; i++) {
+    if (i) out += ",";
+    out += unchecked(values[i]).serialize();
+  }
+  out += "]";
+  return out;
+}
+
+function serializeLogs(values: Log[]): string {
+  if (!values.length) return "[]";
+  let out = "[";
+  for (let i = 0; i < values.length; i++) {
+    if (i) out += ",";
+    out += unchecked(values[i]).serialize();
+  }
+  out += "]";
+  return out;
 }

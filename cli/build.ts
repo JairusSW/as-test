@@ -40,7 +40,9 @@ function resolveInputPatterns(
   configured: string[] | string,
   selectors: string[],
 ): string[] {
-  const configuredInputs = Array.isArray(configured) ? configured : [configured];
+  const configuredInputs = Array.isArray(configured)
+    ? configured
+    : [configured];
   if (!selectors.length) return configuredInputs;
 
   const patterns = new Set<string>();
@@ -49,7 +51,9 @@ function resolveInputPatterns(
     if (isBareSuiteSelector(selector)) {
       const base = stripSuiteSuffix(selector);
       for (const configuredInput of configuredInputs) {
-        patterns.add(path.join(path.dirname(configuredInput), `${base}.spec.ts`));
+        patterns.add(
+          path.join(path.dirname(configuredInput), `${base}.spec.ts`),
+        );
       }
       continue;
     }
@@ -70,7 +74,6 @@ function stripSuiteSuffix(selector: string): string {
   return selector.replace(/\.spec\.ts$/, "").replace(/\.ts$/, "");
 }
 
-
 function ensureDeps(config: Config): void {
   if (config.buildOptions.target == "wasi") {
     if (!existsSync("./node_modules/@assemblyscript/wasi-shim/asconfig.json")) {
@@ -79,13 +82,6 @@ function ensureDeps(config: Config): void {
       );
       process.exit(1);
     }
-  }
-
-  if (!hasJsonAsTransform()) {
-    console.log(
-      `${chalk.bgRed(" ERROR ")}${chalk.dim(":")} could not find json-as. Install it to compile as-test suites.`,
-    );
-    process.exit(1);
   }
 }
 
@@ -114,7 +110,6 @@ function getBuildArgs(config: Config): string {
   let buildArgs = "";
 
   buildArgs += " --transform as-test/transform";
-  buildArgs += " --transform json-as/transform";
   if (hasTryAsRuntime()) {
     buildArgs += " --transform try-as/transform";
   }
@@ -154,13 +149,5 @@ function hasTryAsRuntime(): boolean {
   return (
     existsSync(path.join(process.cwd(), "node_modules/try-as")) ||
     existsSync(path.join(process.cwd(), "node_modules/try-as/package.json"))
-  );
-}
-
-function hasJsonAsTransform(): boolean {
-  return (
-    existsSync(path.join(process.cwd(), "node_modules/json-as/transform.js")) ||
-    existsSync(path.join(process.cwd(), "node_modules/json-as/transform.ts")) ||
-    existsSync(path.join(process.cwd(), "node_modules/json-as/transform"))
   );
 }

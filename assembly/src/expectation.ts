@@ -1,6 +1,6 @@
 import { visualize } from "../util/helpers";
 import { Tests } from "./tests";
-import { JSON } from "json-as";
+import { quote, stringifyValue } from "../util/json";
 import {
   sendAssertionFailure,
   sendWarning,
@@ -9,41 +9,26 @@ import {
 
 let warnedToThrowDisabled = false;
 
-
-@json
 export class Expectation<T> extends Tests {
   public verdict: string = "none";
-  public right: JSON.Raw = JSON.Raw.from("");
-  public left: JSON.Raw = JSON.Raw.from("");
+  public right: string = "null";
+  public left: string = "null";
 
-
-  @omit
   private _left: T;
 
-
-  @omit
   // @ts-ignore
   private _right: u64 = 0;
 
-
-  @omit
   // @ts-ignore
   private _not: boolean = false;
 
-  @omit
   // @ts-ignore
   private _skip: boolean = false;
 
-
-  @omit
   private _message: string = "";
 
-
-  @omit
   private _snapshotKey: string = "";
 
-
-  @omit
   private _location: string = "";
 
   constructor(
@@ -79,8 +64,8 @@ export class Expectation<T> extends Tests {
     if (this._skip) {
       this.verdict = "skip";
       this.instr = instr;
-      this.left.set(left);
-      this.right.set(right);
+      this.left = left;
+      this.right = right;
       this.message = "";
       this._not = false;
       return;
@@ -88,8 +73,8 @@ export class Expectation<T> extends Tests {
     const isFail = this._not ? passed : !passed;
     this.verdict = isFail ? "fail" : "ok";
     this.instr = instr;
-    this.left.set(left);
-    this.right.set(right);
+    this.left = left;
+    this.right = right;
     this.message = isFail ? this._message : "";
     if (isFail) {
       sendAssertionFailure(this._snapshotKey, instr, left, right, this.message);
@@ -317,7 +302,8 @@ export class Expectation<T> extends Tests {
    * Tests if a string starts with the provided prefix.
    */
   toStartWith(value: string): void {
-    if (!isString<T>()) ERROR("toStartWith() can only be used on string types!");
+    if (!isString<T>())
+      ERROR("toStartWith() can only be used on string types!");
     // @ts-ignore
     const left = this._left as string;
     const passed = left.indexOf(value) == 0;
@@ -369,7 +355,7 @@ export class Expectation<T> extends Tests {
     let key = this._snapshotKey;
     if (name.length) key += "::" + name;
 
-    const actual = JSON.stringify<T>(this._left);
+    const actual = stringifyValue<T>(this._left);
     const res = snapshotAssert(key, actual);
     this._resolve(res.ok, "toMatchSnapshot", actual, res.expected);
   }
@@ -417,21 +403,21 @@ export class Expectation<T> extends Tests {
       passed = this._left === equals;
     } else {
       // Fallback for reference/value types where strict equality is not enough.
-      passed = JSON.stringify<T>(this._left) == JSON.stringify<T>(equals);
+      passed = stringifyValue<T>(this._left) == stringifyValue<T>(equals);
     }
 
     this._resolve(
       passed,
       "toBe",
-      JSON.stringify<T>(this._left),
-      JSON.stringify<T>(equals),
+      stringifyValue<T>(this._left),
+      stringifyValue<T>(equals),
     );
   }
 }
 
 function arrayEquals<T extends any[]>(a: T, b: T): boolean {
   if (a.length != b.length) return false;
-  return JSON.stringify(a) == JSON.stringify(b);
+  return stringifyValue(a) == stringifyValue(b);
 }
 
 function isTruthy<T>(value: T): bool {
@@ -455,5 +441,5 @@ function isTruthy<T>(value: T): bool {
 }
 
 function q(value: string): string {
-  return JSON.stringify<string>(value);
+  return quote(value);
 }

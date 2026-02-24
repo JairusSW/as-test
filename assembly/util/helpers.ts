@@ -1,5 +1,4 @@
 import { rainbow } from "as-rainbow";
-import { JSON } from "json-as";
 
 export function visualize<T>(value: T): string {
   if (isNullable<T>() && changetype<usize>(value) == <usize>0) {

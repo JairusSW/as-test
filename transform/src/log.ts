@@ -1,8 +1,5 @@
 import {
   CallExpression,
-  ClassDeclaration,
-  CommonFlags,
-  DecoratorNode,
   Node,
   Parser,
   Source,
@@ -12,7 +9,6 @@ import {
 import { Visitor } from "./visitor.js";
 import { toString } from "./util.js";
 
-const LOG_VALUE_FN = "__as_test_log_value";
 const LOG_CALL_FN = "__as_test_log_call";
 const LOG_ENABLED_IMPORT = "__as_test_log_is_enabled_internal";
 const LOG_SERIALIZED_IMPORT = "__as_test_log_serialized_internal";
@@ -22,7 +18,6 @@ export class LogTransform extends Visitor {
   private activeSource: Source | null = null;
   private touchedSource: Source | null = null;
   private hasLogCalls: boolean = false;
-  private classNames: string[] = [];
 
   constructor(private parser: Parser) {
     super();
@@ -34,7 +29,6 @@ export class LogTransform extends Visitor {
     this.activeSource = node;
     this.touchedSource = node;
     this.hasLogCalls = false;
-    this.classNames = [];
     super.visitSource(node);
 
     if (!this.hasLogCalls) {
@@ -55,40 +49,11 @@ export class LogTransform extends Visitor {
     node.statements.unshift(this.parser.parseTopLevelStatement(tokenizer)!);
     this.parser.currentSource = node;
 
-    const jsonTokenizer = new Tokenizer(
-      new Source(
-        SourceKind.User,
-        node.normalizedPath,
-        `import { JSON } from "json-as";`,
-      ),
-    );
-    this.parser.currentSource = jsonTokenizer.source;
-    node.statements.unshift(this.parser.parseTopLevelStatement(jsonTokenizer)!);
-    this.parser.currentSource = node;
-
-    const classFallbackLines = this.classNames
-      .map(
-        (className) =>
-          `if (idof<nonnull<T>>() == idof<${className}>()) return JSON.stringify<${className}>(changetype<${className}>(value));`,
-      )
-      .join(" ");
-
-    const genericTokenizer = new Tokenizer(
-      new Source(
-        SourceKind.User,
-        node.normalizedPath,
-        `function ${LOG_VALUE_FN}<T>(value: T): string { const formatted = ${LOG_DEFAULT_IMPORT}<T>(value); if (formatted != "none") return formatted; if (isReference<T>()) { ${classFallbackLines} } return formatted; }`,
-      ),
-    );
-    this.parser.currentSource = genericTokenizer.source;
-    node.statements.push(this.parser.parseTopLevelStatement(genericTokenizer)!);
-    this.parser.currentSource = node;
-
     const callTokenizer = new Tokenizer(
       new Source(
         SourceKind.User,
         node.normalizedPath,
-        `function ${LOG_CALL_FN}<T>(value: T): void { if (!${LOG_ENABLED_IMPORT}()) return; ${LOG_SERIALIZED_IMPORT}(${LOG_VALUE_FN}(value)); }`,
+        `function ${LOG_CALL_FN}<T>(value: T): void { if (!${LOG_ENABLED_IMPORT}()) return; ${LOG_SERIALIZED_IMPORT}(${LOG_DEFAULT_IMPORT}<T>(value)); }`,
       ),
     );
     this.parser.currentSource = callTokenizer.source;
@@ -113,41 +78,6 @@ export class LogTransform extends Visitor {
     node.args[0] = arg;
     this.hasLogCalls = true;
   }
-
-  visitClassDeclaration(
-    node: ClassDeclaration,
-    isDefault: boolean = false,
-  ): void {
-    super.visitClassDeclaration(node, isDefault);
-    if (!this.activeSource || this.touchedSource !== this.activeSource) return;
-    if (!node.name) return;
-    if (node.flags & CommonFlags.Ambient) return;
-    if (
-      node.decorators?.some((decorator) => isDecoratorNamed(decorator, "json"))
-    )
-      return;
-    if (
-      node.decorators?.some((decorator) =>
-        isDecoratorNamed(decorator, "unmanaged"),
-      )
-    )
-      return;
-
-    const className = node.name.text;
-    if (!this.classNames.includes(className)) {
-      this.classNames.push(className);
-    }
-
-    const decorators = node.decorators ? [...node.decorators] : [];
-    decorators.unshift(
-      Node.createDecorator(
-        Node.createIdentifierExpression("json", node.range),
-        [],
-        node.range,
-      ),
-    );
-    node.decorators = decorators;
-  }
 }
 
 function isUserSource(source: Source): boolean {
@@ -155,10 +85,6 @@ function isUserSource(source: Source): boolean {
     source.sourceKind === SourceKind.User ||
     source.sourceKind === SourceKind.UserEntry
   );
-}
-
-function isDecoratorNamed(node: DecoratorNode, name: string): boolean {
-  return toString(node.name) === name;
 }
 
 function detectAsTestImportPath(sourceText: string): string | null {

@@ -8,9 +8,9 @@ import {
   __ALL_POINTS,
   CoverPoint,
 } from "as-test/assembly/coverage";
-import { JSON } from "json-as";
 import { Log } from "./src/log";
 import { sendFileEnd, sendFileStart, sendReport } from "./util/wipc";
+import { quote } from "./util/json";
 
 let entrySuites: Suite[] = [];
 
@@ -35,7 +35,10 @@ const DEFAULT_IMPORT_SNAPSHOT_VERSION = "default";
   ImportSnapshot
 >();
 // @ts-ignore
-@global let __mock_import_target_by_index: Map<u32, string> = new Map<u32, string>();
+@global let __mock_import_target_by_index: Map<u32, string> = new Map<
+  u32,
+  string
+>();
 // @ts-ignore
 @global let suites: Suite[] = [];
 // @ts-ignore
@@ -368,7 +371,7 @@ export function run(options: RunOptions = new RunOptions()): void {
   const report = new FileReport();
   report.suites = entrySuites;
   report.coverage = collectCoverage();
-  sendReport(JSON.stringify(report));
+  sendReport(report.serialize());
 }
 
 function registerSuite(
@@ -393,18 +396,30 @@ function registerSuite(
   suites.push(suite);
 }
 
-
-@json
 class CoverageReport {
   total: i32 = 0;
   covered: i32 = 0;
   uncovered: i32 = 0;
   percent: f64 = 100.0;
   points: CoveragePointReport[] = [];
+
+  serialize(): string {
+    return (
+      '{"total":' +
+      this.total.toString() +
+      ',"covered":' +
+      this.covered.toString() +
+      ',"uncovered":' +
+      this.uncovered.toString() +
+      ',"percent":' +
+      this.percent.toString() +
+      ',"points":' +
+      serializeCoveragePoints(this.points) +
+      "}"
+    );
+  }
 }
 
-
-@json
 class CoveragePointReport {
   hash: string = "";
   file: string = "";
@@ -412,13 +427,61 @@ class CoveragePointReport {
   column: i32 = 0;
   type: string = "";
   executed: bool = false;
+
+  serialize(): string {
+    return (
+      '{"hash":' +
+      quote(this.hash) +
+      ',"file":' +
+      quote(this.file) +
+      ',"line":' +
+      this.line.toString() +
+      ',"column":' +
+      this.column.toString() +
+      ',"type":' +
+      quote(this.type) +
+      ',"executed":' +
+      (this.executed ? "true" : "false") +
+      "}"
+    );
+  }
 }
 
-
-@json
 class FileReport {
   suites: Suite[] = [];
   coverage: CoverageReport = new CoverageReport();
+
+  serialize(): string {
+    return (
+      '{"suites":' +
+      serializeSuites(this.suites) +
+      ',"coverage":' +
+      this.coverage.serialize() +
+      "}"
+    );
+  }
+}
+
+function serializeSuites(values: Suite[]): string {
+  if (!values.length) return "[]";
+  let out = "[";
+  for (let i = 0; i < values.length; i++) {
+    if (i) out += ",";
+    out += unchecked(values[i]).serialize();
+  }
+  out += "]";
+  return out;
+}
+
+function serializeCoveragePoints(values: CoveragePointReport[]): string {
+  if (!values.length) return "[]";
+  let out = "[";
+  for (let i = 0; i < values.length; i++) {
+    if (i) out += ",";
+    out += unchecked(values[i]).serialize();
+  }
+  out += "]";
+  return out;
 }
 
 function collectCoverage(): CoverageReport {
@@ -525,17 +588,33 @@ export class Result {
     return out;
   }
   serialize(): string {
-    return JSON.stringify(this);
+    return (
+      '{"name":' +
+      quote(this.name) +
+      ',"arg1":' +
+      this.arg1.toString() +
+      ',"arg2":' +
+      this.arg2.toString() +
+      "}"
+    );
   }
 }
 
-
-@json
 export class Time {
   start: f64 = 0;
   end: f64 = 0;
   format(): string {
     return formatTime(this.end - this.start);
+  }
+
+  serialize(): string {
+    return (
+      '{"start":' +
+      this.start.toString() +
+      ',"end":' +
+      this.end.toString() +
+      "}"
+    );
   }
 }
 
