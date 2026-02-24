@@ -1,6 +1,6 @@
 # Change Log
 
-## 2026-02-24
+## 2026-02-24 - v0.5.2
 
 ### Runtime & Serialization
 
