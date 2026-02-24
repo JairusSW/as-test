@@ -150,8 +150,6 @@ function printPlan(root, target, example) {
     }
     if (target == "wasi" || target == "bindings") {
         console.log(chalk.dim("    .as-test/runners/default.wasi.js"));
-    }
-    if (target == "wasi" || target == "bindings") {
         console.log(chalk.dim("    .as-test/runners/default.bindings.js"));
     }
     console.log(chalk.dim("    package.json"));
