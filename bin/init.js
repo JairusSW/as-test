@@ -174,6 +174,7 @@ function applyInit(root, target, example, force) {
     const config = loadConfig(configPath, false);
     config.$schema = "./node_modules/as-test/as-test.config.schema.json";
     config.buildOptions.target = target;
+    config.runOptions.reporter = "default";
     if (target == "wasi") {
         config.runOptions.runtime.cmd = "node ./.as-test/runners/default.wasi.js <file>";
     }
