@@ -126,8 +126,8 @@ No test files matched: ...
 - `--update-snapshots`: write snapshot updates
 - `--no-snapshot`: disable snapshot assertions for the run
 - `--show-coverage`: print uncovered coverage points
-- `--enable <feature>`: enable as-test feature (`coverage`, `try-as`, `exceptions`)
-- `--disable <feature>`: disable as-test feature (`coverage`, `try-as`, `exceptions`)
+- `--enable <feature>`: enable as-test feature (`coverage`, `try-as`)
+- `--disable <feature>`: disable as-test feature (`coverage`, `try-as`)
 - `--verbose`: keep expanded suite/test lines and update running `....` statuses in place
 - `--clean`: disable in-place TTY updates and print only final per-file verdict lines. Useful for CI/CD.
 

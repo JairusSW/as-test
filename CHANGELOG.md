@@ -1,5 +1,46 @@
 # Change Log
 
+## 2026-02-25 - v0.5.3
+
+### CLI, Modes & Matrix
+
+- feat: support mode fan-out behavior consistently across `ast build`, `ast run`, and `ast test`.
+- feat: when no `--mode` is provided and modes are configured, run using configured modes.
+- feat: add matrix-style per-file output with mode-aware timing:
+  - non-verbose: average time
+  - verbose: per-mode times.
+- feat: add real-time matrix line updates in the default reporter and normalize timing precision to one decimal.
+- feat: support comma-separated bare selectors (for example `ast test box,custom,generics,string`) across build/run/test selectors.
+
+### Config Merge & Env Behavior
+
+- fix: apply mode config as field-level merge over base config instead of replacing entire sections.
+- fix: merge `buildOptions.args` between base config and mode config.
+- fix: pass config env variables to both build and run processes for mode execution.
+
+### Build Pipeline & Feature Flags
+
+- feat: include the exact build command in build failure output.
+- feat: allow `buildOptions.cmd` to override default command generation while still appending user build args.
+- feat: support CLI feature toggles:
+  - `--enable coverage` / `--disable coverage`
+  - `--enable try-as` / `--disable try-as`.
+
+### Reporter & Summaries
+
+- fix: move mode summary rendering into the default reporter (via run-complete event payload).
+- feat: include `modeSummary` for single-mode runs.
+- feat: include mode and snapshot totals in final summary output.
+- fix: `--clean` output now behaves as non-TTY in default reporter:
+  - no in-place line editing,
+  - no suite expand/collapse logs,
+  - final per-file verdict lines only.
+
+### Coverage & Transform
+
+- fix: ignore AssemblyScript builtin/compiler helper calls during coverage instrumentation (including `isString`, `changetype<T>`, `idof<T>`, `sizeof<T>`).
+- fix: mock transform now collects mocked import targets across sources so WASI mock imports are rewritten reliably (resolves import-shape runtime failures).
+
 ## 2026-02-24 - v0.5.2
 
 ### Runtime & Serialization
