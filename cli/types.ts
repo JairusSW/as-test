@@ -7,6 +7,7 @@ export class Config {
   snapshotDir: string = "./.as-test/snapshots";
   config: string = "none";
   coverage: boolean | CoverageOptions = true;
+  env: Record<string, string> = {};
   buildOptions: BuildOptions = new BuildOptions();
   runOptions: RunOptions = new RunOptions();
   modes: Record<string, ModeConfig> = {};
@@ -22,6 +23,7 @@ export class Suite {
 }
 
 export class BuildOptions {
+  cmd: string = "";
   args: string[] = [];
   target: string = "wasi";
 }

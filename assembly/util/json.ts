@@ -18,17 +18,16 @@ export function stringifyValue<T>(value: T): string {
   }
 
   if (isInteger<T>() || isFloat<T>()) {
-    // @ts-ignore
+    // @ts-expect-error: type
     return value.toString();
   }
 
   if (isString<T>()) {
-    // @ts-ignore
     return quote(value as string);
   }
 
   if (isArray<T>()) {
-    // @ts-ignore
+    // @ts-expect-error: type
     return stringifyArray<valueof<T>>(value as valueof<T>[]);
   }
 

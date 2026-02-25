@@ -23,6 +23,26 @@ export function __REGISTER(point: CoverPoint): void {
   Coverage.SN.hashes.set(point.hash, point);
 }
 
+export function __REGISTER_RAW(
+  file: string,
+  hash: string,
+  line: i32,
+  column: i32,
+  type: string,
+): void {
+  if (Coverage.SN.allIndex.has(hash)) return;
+  const point = new CoverPoint();
+  point.file = file;
+  point.hash = hash;
+  point.line = line;
+  point.column = column;
+  point.type = type;
+  Coverage.SN.points++;
+  Coverage.SN.allIndex.set(hash, Coverage.SN.all.length);
+  Coverage.SN.all.push(point);
+  Coverage.SN.hashes.set(hash, point);
+}
+
 export function __COVER(hash: string): void {
   if (Coverage.SN.allIndex.has(hash)) {
     const index = Coverage.SN.allIndex.get(hash);

@@ -35,8 +35,18 @@ export function loadConfig(CONFIG_PATH, warn = false) {
     else {
         const raw = JSON.parse(readFileSync(CONFIG_PATH).toString());
         const config = Object.assign(new Config(), raw);
+        config.env = parseEnvMap(raw.env);
         const runOptionsRaw = raw.runOptions ?? {};
         config.buildOptions = Object.assign(new BuildOptions(), raw.buildOptions ?? {});
+        config.buildOptions.cmd =
+            typeof config.buildOptions.cmd == "string" ? config.buildOptions.cmd : "";
+        config.buildOptions.args = Array.isArray(config.buildOptions.args)
+            ? config.buildOptions.args.filter((item) => typeof item == "string")
+            : [];
+        config.buildOptions.target =
+            typeof config.buildOptions.target == "string" && config.buildOptions.target.length
+                ? config.buildOptions.target
+                : "wasi";
         config.runOptions = Object.assign(new RunOptions(), runOptionsRaw);
         const reporterRaw = runOptionsRaw.reporter;
         if (typeof reporterRaw == "string") {
@@ -114,6 +124,9 @@ function parseModes(raw) {
         if (modeRaw.buildOptions && typeof modeRaw.buildOptions == "object") {
             const buildRaw = modeRaw.buildOptions;
             const build = {};
+            if (typeof buildRaw.cmd == "string") {
+                build.cmd = buildRaw.cmd;
+            }
             if (Array.isArray(buildRaw.args)) {
                 build.args = buildRaw.args.filter((item) => typeof item == "string");
             }
@@ -169,6 +182,16 @@ function parseModes(raw) {
     }
     return out;
 }
+function parseEnvMap(raw) {
+    if (!raw || typeof raw != "object" || Array.isArray(raw))
+        return {};
+    const env = {};
+    for (const [key, val] of Object.entries(raw)) {
+        if (typeof val == "string")
+            env[key] = val;
+    }
+    return env;
+}
 export function resolveModeNames(rawArgs) {
     const names = [];
     for (let i = 0; i < rawArgs.length; i++) {
@@ -199,7 +222,10 @@ export function applyMode(config, modeName) {
     if (!modeName) {
         return {
             config,
-            env: process.env,
+            env: {
+                ...process.env,
+                ...config.env,
+            },
         };
     }
     const mode = config.modes[modeName];
@@ -232,8 +258,14 @@ export function applyMode(config, modeName) {
         merged.coverage = mode.coverage;
     if (mode.buildOptions.target)
         merged.buildOptions.target = mode.buildOptions.target;
-    if (mode.buildOptions.args)
-        merged.buildOptions.args = mode.buildOptions.args;
+    if (mode.buildOptions.cmd != undefined)
+        merged.buildOptions.cmd = mode.buildOptions.cmd;
+    if (mode.buildOptions.args) {
+        merged.buildOptions.args = [
+            ...merged.buildOptions.args,
+            ...mode.buildOptions.args,
+        ];
+    }
     if (mode.runOptions.runtime?.cmd) {
         merged.runOptions.runtime.cmd = mode.runOptions.runtime.cmd;
     }
@@ -244,6 +276,7 @@ export function applyMode(config, modeName) {
         config: merged,
         env: {
             ...process.env,
+            ...config.env,
             ...mode.env,
         },
         modeName,

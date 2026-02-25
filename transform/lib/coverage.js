@@ -18,6 +18,31 @@ const COVERAGE_IGNORED_CALLS = new Set([
     "snapshotImport",
     "restoreImport",
 ]);
+const COVERAGE_IGNORED_BUILTINS = new Set([
+    "alignof",
+    "changetype",
+    "idof",
+    "isArray",
+    "isArrayLike",
+    "isBoolean",
+    "isConstant",
+    "isDefined",
+    "isFloat",
+    "isFunction",
+    "isInteger",
+    "isManaged",
+    "isNullable",
+    "isReference",
+    "isSigned",
+    "isString",
+    "isUnsigned",
+    "load",
+    "nameof",
+    "offsetof",
+    "sizeof",
+    "store",
+    "unchecked",
+]);
 class CoverPoint {
     file = "";
     hash = "";
@@ -55,6 +80,8 @@ export class CoverageTransform extends Visitor {
             case 98:
             case 97: {
                 const right = node.right;
+                if (isBuiltinCallExpression(right))
+                    break;
                 const rightLc = getLineCol(node);
                 const point = new CoverPoint();
                 point.line = rightLc?.line;
@@ -63,18 +90,10 @@ export class CoverageTransform extends Visitor {
                 point.type = CoverType.Expression;
                 point.hash = hash(point);
                 const replacer = new RangeTransform(node);
-                const registerStmt = SimpleParser.parseTopLevelStatement(`__REGISTER({
-                        file: "${point.file}",
-                        hash: "${point.hash}",
-                        line: ${point.line},
-                        column: ${point.column},
-                        type: "Expression",
-                        executed: false
-                    });`);
+                const registerStmt = createRegisterStatement(point);
                 replacer.visit(registerStmt);
-                const coverExpression = SimpleParser.parseExpression(`(__COVER("${point.hash}"), $$REPLACE_ME)`);
+                const coverExpression = createCoverExpression(point.hash, right, node);
                 replacer.visit(coverExpression);
-                coverExpression.expression.expressions[1] = right;
                 node.right = coverExpression;
                 this.globalStatements.push(registerStmt);
                 break;
@@ -99,16 +118,9 @@ export class CoverageTransform extends Visitor {
             point.type = CoverType.Function;
             point.hash = hash(point);
             const replacer = new RangeTransform(node);
-            const registerStmt = SimpleParser.parseTopLevelStatement(`__REGISTER({
-                    file: "${point.file}",
-                    hash: "${point.hash}",
-                    line: ${point.line},
-                    column: ${point.column},
-                    type: "Function",
-                    executed: false
-                })`);
+            const registerStmt = createRegisterStatement(point);
             replacer.visit(registerStmt);
-            const coverStmt = SimpleParser.parseStatement(`__COVER("${point.hash}")`, true);
+            const coverStmt = createCoverStatement(point.hash, node);
             replacer.visit(coverStmt);
             const bodyBlock = node.body;
             bodyBlock.statements.unshift(coverStmt);
@@ -125,6 +137,8 @@ export class CoverageTransform extends Visitor {
                 return;
             node.initializer.visited = true;
             super.visitParameter(node);
+            if (isBuiltinCallExpression(node.initializer))
+                return;
             const paramLc = getLineCol(node.initializer);
             const point = new CoverPoint();
             point.line = paramLc?.line;
@@ -133,19 +147,10 @@ export class CoverageTransform extends Visitor {
             point.type = CoverType.Expression;
             point.hash = hash(point);
             const replacer = new RangeTransform(node);
-            const registerStmt = SimpleParser.parseTopLevelStatement(`__REGISTER({
-                    file: "${point.file}",
-                    hash: "${point.hash}",
-                    line: ${point.line},
-                    column: ${point.column},
-                    type: "Expression",
-                    executed: false
-                })`);
+            const registerStmt = createRegisterStatement(point);
             replacer.visit(registerStmt);
-            const coverExpression = SimpleParser.parseExpression(`(__COVER("${point.hash}"), $$REPLACE_ME)`);
+            const coverExpression = createCoverExpression(point.hash, node.initializer, node);
             replacer.visit(coverExpression);
-            coverExpression.expression.expressions[1] =
-                node.initializer;
             node.initializer = coverExpression;
             this.globalStatements.push(registerStmt);
         }
@@ -168,14 +173,7 @@ export class CoverageTransform extends Visitor {
             point.type = CoverType.Function;
             point.hash = hash(point);
             const replacer = new RangeTransform(node);
-            const registerStmt = SimpleParser.parseTopLevelStatement(`__REGISTER({
-                    file: "${point.file}",
-                    hash: "${point.hash}",
-                    line: ${point.line},
-                    column: ${point.column},
-                    type: "Function",
-                    executed: false
-                })`);
+            const registerStmt = createRegisterStatement(point);
             replacer.visit(registerStmt);
             this.globalStatements.push(registerStmt);
             if (node.body.kind === 35) {
@@ -191,7 +189,7 @@ export class CoverageTransform extends Visitor {
                 node.body = body;
             }
             else {
-                const coverStmt = SimpleParser.parseStatement(`__COVER("${point.hash}")`, true);
+                const coverStmt = createCoverStatement(point.hash, node);
                 replacer.visit(coverStmt);
                 if (node.body instanceof BlockStatement) {
                     node.body.statements.unshift(coverStmt);
@@ -214,7 +212,7 @@ export class CoverageTransform extends Visitor {
         const ifTrue = node.ifTrue;
         const ifFalse = node.ifFalse;
         const path = node.range.source.normalizedPath;
-        if (ifTrue.kind !== 30) {
+        if (ifTrue.kind !== 30 && !isBuiltinStatement(ifTrue)) {
             const trueLc = getLineCol(ifTrue);
             const point = new CoverPoint();
             point.line = trueLc?.line;
@@ -223,16 +221,9 @@ export class CoverageTransform extends Visitor {
             point.type = CoverType.Expression;
             point.hash = hash(point);
             const replacer = new RangeTransform(ifTrue);
-            const registerStmt = SimpleParser.parseTopLevelStatement(`__REGISTER({
-                    file: "${point.file}",
-                    hash: "${point.hash}",
-                    line: ${point.line},
-                    column: ${point.column},
-                    type: "Expression",
-                    executed: false
-                })`);
+            const registerStmt = createRegisterStatement(point);
             replacer.visit(registerStmt);
-            const coverStmt = SimpleParser.parseStatement(`{__COVER("${point.hash}")};`, true);
+            const coverStmt = Node.createBlockStatement([createCoverStatement(point.hash, ifTrue)], ifTrue.range);
             replacer.visit(coverStmt);
             coverStmt.statements.push(ifTrue);
             node.ifTrue = coverStmt;
@@ -240,7 +231,9 @@ export class CoverageTransform extends Visitor {
             visitIfTrue = true;
             visitIfFalse = !!ifFalse;
         }
-        if (ifFalse && ifFalse.kind !== 30) {
+        if (ifFalse &&
+            ifFalse.kind !== 30 &&
+            !isBuiltinStatement(ifFalse)) {
             const falseLc = getLineCol(ifFalse);
             const point = new CoverPoint();
             point.line = falseLc?.line;
@@ -248,17 +241,10 @@ export class CoverageTransform extends Visitor {
             point.file = path;
             point.type = CoverType.Expression;
             point.hash = hash(point);
-            const replacer = new RangeTransform(ifTrue);
-            const registerStmt = SimpleParser.parseTopLevelStatement(`__REGISTER({
-                    file: "${point.file}",
-                    hash: "${point.hash}",
-                    line: ${point.line},
-                    column: ${point.column},
-                    type: "Expression",
-                    executed: false
-                })`);
+            const replacer = new RangeTransform(ifFalse);
+            const registerStmt = createRegisterStatement(point);
             replacer.visit(registerStmt);
-            const coverStmt = SimpleParser.parseStatement(`{__COVER("${point.hash}")};`, true);
+            const coverStmt = Node.createBlockStatement([createCoverStatement(point.hash, ifFalse)], ifFalse.range);
             replacer.visit(coverStmt);
             coverStmt.statements.push(ifFalse);
             node.ifFalse = coverStmt;
@@ -293,54 +279,40 @@ export class CoverageTransform extends Visitor {
         const falseExpression = node.ifElse;
         const path = node.range.source.normalizedPath;
         {
-            const trueLc = getLineCol(trueExpression);
-            const point = new CoverPoint();
-            point.line = trueLc?.line;
-            point.column = trueLc?.column;
-            point.file = path;
-            point.type = CoverType.Expression;
-            point.hash = hash(point);
-            const replacer = new RangeTransform(trueExpression);
-            const registerStmt = SimpleParser.parseTopLevelStatement(`__REGISTER({
-                    file: "${point.file}",
-                    hash: "${point.hash}",
-                    line: ${point.line},
-                    column: ${point.column},
-                    type: "Expression",
-                    executed: false
-                })`);
-            replacer.visit(registerStmt);
-            const coverExpression = SimpleParser.parseExpression(`(__COVER("${point.hash}"), $$REPLACE_ME)`);
-            replacer.visit(coverExpression);
-            coverExpression.expression.expressions[1] =
-                trueExpression;
-            node.ifThen = coverExpression;
-            this.globalStatements.push(registerStmt);
+            if (!isBuiltinCallExpression(trueExpression)) {
+                const trueLc = getLineCol(trueExpression);
+                const point = new CoverPoint();
+                point.line = trueLc?.line;
+                point.column = trueLc?.column;
+                point.file = path;
+                point.type = CoverType.Expression;
+                point.hash = hash(point);
+                const replacer = new RangeTransform(trueExpression);
+                const registerStmt = createRegisterStatement(point);
+                replacer.visit(registerStmt);
+                const coverExpression = createCoverExpression(point.hash, trueExpression, trueExpression);
+                replacer.visit(coverExpression);
+                node.ifThen = coverExpression;
+                this.globalStatements.push(registerStmt);
+            }
         }
         {
-            const falseLc = getLineCol(falseExpression);
-            const point = new CoverPoint();
-            point.line = falseLc?.line;
-            point.column = falseLc?.column;
-            point.file = path;
-            point.type = CoverType.Expression;
-            point.hash = hash(point);
-            const replacer = new RangeTransform(falseExpression);
-            const registerStmt = SimpleParser.parseTopLevelStatement(`__REGISTER({
-                    file: "${point.file}",
-                    hash: "${point.hash}",
-                    line: ${point.line},
-                    column: ${point.column},
-                    type: "Expression",
-                    executed: false
-                })`);
-            replacer.visit(registerStmt);
-            const coverExpression = SimpleParser.parseExpression(`(__COVER("${point.hash}"), $$REPLACE_ME)`);
-            replacer.visit(coverExpression);
-            coverExpression.expression.expressions[1] =
-                falseExpression;
-            node.ifElse = coverExpression;
-            this.globalStatements.push(registerStmt);
+            if (!isBuiltinCallExpression(falseExpression)) {
+                const falseLc = getLineCol(falseExpression);
+                const point = new CoverPoint();
+                point.line = falseLc?.line;
+                point.column = falseLc?.column;
+                point.file = path;
+                point.type = CoverType.Expression;
+                point.hash = hash(point);
+                const replacer = new RangeTransform(falseExpression);
+                const registerStmt = createRegisterStatement(point);
+                replacer.visit(registerStmt);
+                const coverExpression = createCoverExpression(point.hash, falseExpression, falseExpression);
+                replacer.visit(coverExpression);
+                node.ifElse = coverExpression;
+                this.globalStatements.push(registerStmt);
+            }
         }
     }
     visitSwitchCase(node) {
@@ -356,16 +328,9 @@ export class CoverageTransform extends Visitor {
         point.type = CoverType.Block;
         point.hash = hash(point);
         const replacer = new RangeTransform(node);
-        const registerStmt = SimpleParser.parseTopLevelStatement(`__REGISTER({
-                file: "${point.file}",
-                hash: "${point.hash}",
-                line: ${point.line},
-                column: ${point.column},
-                type: "Block",
-                executed: false
-            })`);
+        const registerStmt = createRegisterStatement(point);
         replacer.visit(registerStmt);
-        const coverStmt = SimpleParser.parseStatement(`__COVER("${point.hash}")`);
+        const coverStmt = createCoverStatement(point.hash, node);
         replacer.visit(coverStmt);
         this.globalStatements.push(registerStmt);
         super.visitSwitchCase(node);
@@ -388,16 +353,9 @@ export class CoverageTransform extends Visitor {
         point.type = CoverType.Block;
         point.hash = hash(point);
         const replacer = new RangeTransform(node);
-        const registerStmt = SimpleParser.parseTopLevelStatement(`__REGISTER({
-                file: "${point.file}",
-                hash: "${point.hash}",
-                line: ${point.line},
-                column: ${point.column},
-                type: "Block",
-                executed: false
-            })`);
+        const registerStmt = createRegisterStatement(point);
         replacer.visit(registerStmt);
-        const coverStmt = SimpleParser.parseStatement(`__COVER("${point.hash}")`);
+        const coverStmt = createCoverStatement(point.hash, node);
         replacer.visit(coverStmt);
         this.globalStatements.push(registerStmt);
         super.visitBlockStatement(node);
@@ -415,6 +373,29 @@ export class CoverageTransform extends Visitor {
 }
 function getCallName(node) {
     return getExpressionName(node.expression);
+}
+function isBuiltinStatement(node) {
+    if (node.kind !== 38)
+        return false;
+    return isBuiltinCallExpression(node.expression);
+}
+function isBuiltinCallExpression(node) {
+    const unwrapped = unwrapParenthesized(node);
+    if (unwrapped.kind !== 9)
+        return false;
+    const call = unwrapped;
+    const expression = unwrapParenthesized(call.expression);
+    if (expression.kind !== 6)
+        return false;
+    const name = expression.text;
+    return COVERAGE_IGNORED_BUILTINS.has(name);
+}
+function unwrapParenthesized(node) {
+    let current = node;
+    while (current.kind === 20) {
+        current = current.expression;
+    }
+    return current;
 }
 function getExpressionName(node) {
     switch (node.kind) {
@@ -457,6 +438,31 @@ function getLineCol(node) {
         line: node.range.source.lineAt(node.range.start),
         column: node.range.source.columnAt(),
     };
+}
+function createRegisterStatement(point) {
+    return SimpleParser.parseTopLevelStatement(`__REGISTER_RAW(${asStringLiteral(point.file)}, ${asStringLiteral(point.hash)}, ${point.line}, ${point.column}, ${asStringLiteral(coverTypeToString(point.type))})`);
+}
+function createCoverStatement(hashValue, ref) {
+    return Node.createExpressionStatement(createCoverCallExpression(hashValue, ref));
+}
+function createCoverExpression(hashValue, replacement, ref) {
+    return Node.createParenthesizedExpression(Node.createCommaExpression([createCoverCallExpression(hashValue, ref), replacement], ref.range), ref.range);
+}
+function createCoverCallExpression(hashValue, ref) {
+    return Node.createCallExpression(Node.createIdentifierExpression("__COVER", ref.range), null, [Node.createStringLiteralExpression(hashValue, ref.range)], ref.range);
+}
+function coverTypeToString(type) {
+    switch (type) {
+        case CoverType.Function:
+            return "Function";
+        case CoverType.Expression:
+            return "Expression";
+        default:
+            return "Block";
+    }
+}
+function asStringLiteral(value) {
+    return JSON.stringify(value);
 }
 function isConcreteSourceBlock(node) {
     const source = node.range.source;

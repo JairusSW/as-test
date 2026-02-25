@@ -74,7 +74,7 @@ describe("math", () => {
 });
 ```
 
-### Test file selection (`ast test`)
+### File selection (`ast run`, `ast build`, `ast test`)
 
 No selectors:
 
@@ -105,6 +105,14 @@ Multiple selectors:
 ast test sleep array ./assembly/__tests__/snapshot.spec.ts
 ```
 
+Comma-separated bare suite names:
+
+```bash
+ast test box,custom,generics,string
+ast run box,custom,generics,string
+ast build box,custom,generics,string
+```
+
 If nothing matches, `ast test` exits non-zero with:
 
 ```text
@@ -114,11 +122,21 @@ No test files matched: ...
 ### Useful flags
 
 - `--config <path>`: use another config file
-- `--mode <name[,name...]>`: run one or multiple named config modes
+- `--mode <name[,name...]>`: run one or multiple named config modes (if omitted and `modes` is configured, as-test runs all configured modes)
 - `--update-snapshots`: write snapshot updates
 - `--no-snapshot`: disable snapshot assertions for the run
 - `--show-coverage`: print uncovered coverage points
+- `--enable <feature>`: enable as-test feature (`coverage`, `try-as`, `exceptions`)
+- `--disable <feature>`: disable as-test feature (`coverage`, `try-as`, `exceptions`)
 - `--verbose`: keep expanded suite/test lines and update running `....` statuses in place
+- `--clean`: disable in-place TTY updates and print only final per-file verdict lines. Useful for CI/CD.
+
+Example:
+
+```bash
+ast build --enable try-as
+ast test --disable coverage
+```
 
 ## Mocking
 
@@ -236,7 +254,9 @@ Example:
   "snapshotDir": "./.as-test/snapshots",
   "config": "none",
   "coverage": true,
+  "env": {},
   "buildOptions": {
+    "cmd": "",
     "args": [],
     "target": "wasi"
   },
@@ -257,8 +277,10 @@ Key fields:
 - `logs`: log output dir or `"none"`
 - `coverageDir`: coverage output dir or `"none"`
 - `snapshotDir`: snapshot storage dir
+- `env`: environment variables injected into build and runtime processes
+- `buildOptions.cmd`: optional custom build command template; when set it replaces default build command and flags. Supports `<file>`, `<name>`, `<outFile>`, `<target>`, `<mode>`
 - `buildOptions.target`: `wasi` or `bindings`
-- `modes`: named overrides for target/args/runtime/env/artifact directories (selected via `--mode`)
+- `modes`: named overrides for command/target/args/runtime/env/artifact directories (selected via `--mode`); `mode.env` overrides top-level `env`
 - `runOptions.runtime.cmd`: runtime command, supports `<file>` and `<name>`; if its script path is missing, as-test falls back to the default runner for the selected target
 - `runOptions.reporter`: reporter selection as a string or object
 
@@ -308,6 +330,13 @@ Run all modes:
 ```bash
 ast test --mode wasi-simd,wasi-nosimd,bindings-node-simd
 ```
+
+Summary totals:
+
+- `Modes` in the default reporter is config-scoped (`total` is all configured modes)
+- when selecting fewer modes with `--mode`, unselected modes are counted as `skipped`
+- `Files` in the default reporter is also config-scoped (`total` is all files from configured input patterns)
+- when selecting fewer files, unselected files are counted as `skipped`
 
 When using `--mode`, compiled artifacts are emitted as:
 

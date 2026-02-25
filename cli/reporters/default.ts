@@ -25,11 +25,15 @@ class DefaultReporter implements TestReporter {
   private renderedLines = 0;
   private fileHasWarning = false;
   private verboseMode = false;
+  private cleanMode = false;
 
   constructor(private readonly context: ReporterContext) {}
 
   private canRewriteLine(): boolean {
-    return Boolean((this.context.stdout as { isTTY?: boolean }).isTTY);
+    return (
+      !this.cleanMode &&
+      Boolean((this.context.stdout as { isTTY?: boolean }).isTTY)
+    );
   }
 
   private badgeRunning(): string {
@@ -152,13 +156,7 @@ class DefaultReporter implements TestReporter {
     updateSnapshots: boolean;
   }): void {
     this.verboseMode = Boolean(event.verbose);
-    if (event.clean) return;
-    if (event.snapshotEnabled) {
-      this.context.stdout.write(
-        chalk.bgBlue(" SNAPSHOT ") +
-          ` ${chalk.dim(event.updateSnapshots ? "update mode enabled" : "read-only mode")}\n\n`,
-      );
-    }
+    this.cleanMode = Boolean(event.clean);
   }
 
   onFileStart(event: ProgressEvent): void {
@@ -166,6 +164,7 @@ class DefaultReporter implements TestReporter {
     this.openSuites = [];
     this.verboseSuites = [];
     this.fileHasWarning = false;
+    if (this.cleanMode) return;
     if (this.verboseMode && this.canRewriteLine()) {
       this.renderVerboseState();
       return;
@@ -199,6 +198,7 @@ class DefaultReporter implements TestReporter {
   }
 
   onSuiteStart(event: ProgressEvent): void {
+    if (this.cleanMode) return;
     const depth = Math.max(event.depth, 0);
     if (this.verboseMode && this.canRewriteLine()) {
       if (this.currentFile !== event.file) return;
@@ -223,6 +223,7 @@ class DefaultReporter implements TestReporter {
   }
 
   onSuiteEnd(event: ProgressEvent): void {
+    if (this.cleanMode) return;
     const depth = Math.max(event.depth, 0);
     const verdict = String(event.verdict ?? "none");
     if (this.verboseMode && this.canRewriteLine()) {
@@ -283,7 +284,7 @@ class DefaultReporter implements TestReporter {
         renderCoveragePoints(event.coverageSummary.files);
       }
     }
-    renderTotals(event.stats);
+    renderTotals(event.stats, event);
   }
 }
 
@@ -379,7 +380,7 @@ function renderTotals(stats: {
   passedTests: number;
   skippedTests: number;
   time: number;
-}): void {
+}, event: RunCompleteEvent): void {
   console.log("");
   process.stdout.write(chalk.bold("Files:  "));
   process.stdout.write(
@@ -433,7 +434,31 @@ function renderTotals(stats: {
     ", " + (stats.failedTests + stats.passedTests + stats.skippedTests) + " total\n",
   );
 
+  if (event.modeSummary) {
+    renderModeSummary(event.modeSummary);
+  }
+
   process.stdout.write(chalk.bold("Time:   ") + formatTime(stats.time) + "\n");
+}
+
+function renderModeSummary(summary: {
+  failed: number;
+  skipped: number;
+  total: number;
+}): void {
+  process.stdout.write(chalk.bold("Modes:  "));
+  process.stdout.write(
+    summary.failed
+      ? chalk.bold.red(summary.failed + " failed")
+      : chalk.bold.greenBright("0 failed"),
+  );
+  process.stdout.write(
+    ", " +
+      (summary.skipped
+        ? chalk.gray(summary.skipped + " skipped")
+        : chalk.gray("0 skipped")),
+  );
+  process.stdout.write(", " + summary.total + " total\n");
 }
 
 function renderCoverageSummary(summary: {

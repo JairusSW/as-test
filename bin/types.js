@@ -8,6 +8,7 @@ export class Config {
         this.snapshotDir = "./.as-test/snapshots";
         this.config = "none";
         this.coverage = true;
+        this.env = {};
         this.buildOptions = new BuildOptions();
         this.runOptions = new RunOptions();
         this.modes = {};
@@ -26,6 +27,7 @@ export class Suite {
 }
 export class BuildOptions {
     constructor() {
+        this.cmd = "";
         this.args = [];
         this.target = "wasi";
     }

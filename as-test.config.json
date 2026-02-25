@@ -5,7 +5,9 @@
   "logs": "./.as-test/logs",
   "config": "none",
   "coverage": true,
+  "env": {},
   "buildOptions": {
+    "cmd": "",
     "args": [],
     "target": "wasi"
   },

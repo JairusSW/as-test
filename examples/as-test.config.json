@@ -7,7 +7,9 @@
   "snapshotDir": "./.as-test/snapshots",
   "config": "./asconfig.json",
   "coverage": true,
+  "env": {},
   "buildOptions": {
+    "cmd": "",
     "args": [],
     "target": "wasi"
   },

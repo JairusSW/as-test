@@ -80,6 +80,11 @@ export type RunCompleteEvent = {
   coverageSummary: CoverageSummary;
   stats: RunStats;
   reports: unknown[];
+  modeSummary?: {
+    failed: number;
+    skipped: number;
+    total: number;
+  };
 };
 
 export type ReporterContext = {

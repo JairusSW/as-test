@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, run, test } from "..";
-import "try-as";
 
 let beforeCount = 0;
 let afterCount = 0;

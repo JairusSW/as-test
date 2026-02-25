@@ -1,19 +1,17 @@
 {
   "name": "as-test",
   "version": "0.5.2",
-  "description": "Testing framework for AssemblyScript. Compatible with WASI or Bindings",
-  "types": "assembly/index.ts",
   "author": "Jairus Tanaka",
-  "contributors": [],
-  "license": "MIT",
-  "scripts": {
-    "test": "node ./bin/index.js test",
-    "build:transform": "tsc -p ./transform",
-    "build:cli": "tsc -p cli",
-    "build:run": "tsc -p run",
-    "prettier": "prettier -w .",
-    "release:check": "npm run build:cli && npm run build:transform && npm run test && npm pack --dry-run --cache /tmp/as-test-npm-cache",
-    "prepublishOnly": "npm run build:cli && npm run build:transform && npm run test"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JairusSW/as-test.git"
+  },
+  "dependencies": {
+    "as-console": "^7.0.0",
+    "as-rainbow": "^0.1.0",
+    "chalk": "^5.6.2",
+    "glob": "^13.0.3",
+    "typer-diff": "^1.1.1"
   },
   "devDependencies": {
     "@assemblyscript/wasi-shim": "^0.1.0",
@@ -24,38 +22,19 @@
     "assemblyscript": "^0.28.9",
     "assemblyscript-prettier": "^3.0.1",
     "prettier": "3.6.2",
+    "try-as": "^0.2.5",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.55.0"
   },
-  "dependencies": {
-    "as-console": "^7.0.0",
-    "as-rainbow": "^0.1.0",
-    "chalk": "^5.6.2",
-    "glob": "^13.0.3",
-    "typer-diff": "^1.1.1"
+  "bin": {
+    "as-test": "./bin/index.js",
+    "ast": "./bin/index.js"
   },
-  "optionalDependencies": {
-    "try-as": "^0.2.5"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/JairusSW/as-test.git"
-  },
-  "keywords": [
-    "assemblyscript",
-    "testing",
-    "test",
-    "as-pect",
-    "aspect"
-  ],
   "bugs": {
     "url": "https://github.com/JairusSW/as-test/issues"
   },
-  "homepage": "https://github.com/JairusSW/as-test#readme",
-  "type": "module",
-  "publishConfig": {
-    "@JairusSW:registry": "https://npm.pkg.github.com"
-  },
+  "contributors": [],
+  "description": "Testing framework for AssemblyScript. Compatible with WASI or Bindings",
   "files": [
     "assembly/**/*.ts",
     "!assembly/__tests__/**",
@@ -70,8 +49,27 @@
     "as-test.config.schema.json",
     "index.ts"
   ],
-  "bin": {
-    "as-test": "./bin/index.js",
-    "ast": "./bin/index.js"
-  }
+  "homepage": "https://github.com/JairusSW/as-test#readme",
+  "keywords": [
+    "assemblyscript",
+    "testing",
+    "test",
+    "as-pect",
+    "aspect"
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "@JairusSW:registry": "https://npm.pkg.github.com"
+  },
+  "scripts": {
+    "test": "node ./bin/index.js test",
+    "build:transform": "tsc -p ./transform",
+    "build:cli": "tsc -p cli",
+    "build:run": "tsc -p run",
+    "prettier": "prettier -w .",
+    "release:check": "npm run build:cli && npm run build:transform && npm run test && npm pack --dry-run --cache /tmp/as-test-npm-cache",
+    "prepublishOnly": "npm run build:cli && npm run build:transform && npm run test"
+  },
+  "type": "module",
+  "types": "assembly/index.ts"
 }

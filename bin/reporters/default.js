@@ -13,9 +13,11 @@ class DefaultReporter {
         this.renderedLines = 0;
         this.fileHasWarning = false;
         this.verboseMode = false;
+        this.cleanMode = false;
     }
     canRewriteLine() {
-        return Boolean(this.context.stdout.isTTY);
+        return (!this.cleanMode &&
+            Boolean(this.context.stdout.isTTY));
     }
     badgeRunning() {
         return chalk.bgBlackBright.white(" .... ");
@@ -115,18 +117,15 @@ class DefaultReporter {
     }
     onRunStart(event) {
         this.verboseMode = Boolean(event.verbose);
-        if (event.clean)
-            return;
-        if (event.snapshotEnabled) {
-            this.context.stdout.write(chalk.bgBlue(" SNAPSHOT ") +
-                ` ${chalk.dim(event.updateSnapshots ? "update mode enabled" : "read-only mode")}\n\n`);
-        }
+        this.cleanMode = Boolean(event.clean);
     }
     onFileStart(event) {
         this.currentFile = event.file;
         this.openSuites = [];
         this.verboseSuites = [];
         this.fileHasWarning = false;
+        if (this.cleanMode)
+            return;
         if (this.verboseMode && this.canRewriteLine()) {
             this.renderVerboseState();
             return;
@@ -157,6 +156,8 @@ class DefaultReporter {
         this.fileHasWarning = false;
     }
     onSuiteStart(event) {
+        if (this.cleanMode)
+            return;
         const depth = Math.max(event.depth, 0);
         if (this.verboseMode && this.canRewriteLine()) {
             if (this.currentFile !== event.file)
@@ -180,6 +181,8 @@ class DefaultReporter {
         this.renderLiveState();
     }
     onSuiteEnd(event) {
+        if (this.cleanMode)
+            return;
         const depth = Math.max(event.depth, 0);
         const verdict = String(event.verdict ?? "none");
         if (this.verboseMode && this.canRewriteLine()) {
@@ -239,7 +242,7 @@ class DefaultReporter {
                 renderCoveragePoints(event.coverageSummary.files);
             }
         }
-        renderTotals(event.stats);
+        renderTotals(event.stats, event);
     }
 }
 function renderFailedSuites(failedEntries) {
@@ -311,7 +314,7 @@ function renderSnapshotSummary(snapshotSummary) {
     console.log("");
     console.log(`${chalk.bold("Snapshots:")} ${chalk.greenBright(snapshotSummary.matched)} matched, ${chalk.blueBright(snapshotSummary.created)} created, ${chalk.blueBright(snapshotSummary.updated)} updated, ${snapshotSummary.failed ? chalk.red(snapshotSummary.failed) : chalk.greenBright("0")} failed`);
 }
-function renderTotals(stats) {
+function renderTotals(stats, event) {
     console.log("");
     process.stdout.write(chalk.bold("Files:  "));
     process.stdout.write(stats.failedFiles
@@ -344,7 +347,21 @@ function renderTotals(stats) {
             ? chalk.gray(stats.skippedTests + " skipped")
             : chalk.gray("0 skipped")));
     process.stdout.write(", " + (stats.failedTests + stats.passedTests + stats.skippedTests) + " total\n");
+    if (event.modeSummary) {
+        renderModeSummary(event.modeSummary);
+    }
     process.stdout.write(chalk.bold("Time:   ") + formatTime(stats.time) + "\n");
+}
+function renderModeSummary(summary) {
+    process.stdout.write(chalk.bold("Modes:  "));
+    process.stdout.write(summary.failed
+        ? chalk.bold.red(summary.failed + " failed")
+        : chalk.bold.greenBright("0 failed"));
+    process.stdout.write(", " +
+        (summary.skipped
+            ? chalk.gray(summary.skipped + " skipped")
+            : chalk.gray("0 skipped")));
+    process.stdout.write(", " + summary.total + " total\n");
 }
 function renderCoverageSummary(summary) {
     const pct = summary.total

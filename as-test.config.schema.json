@@ -80,10 +80,23 @@
       ],
       "default": true
     },
+    "env": {
+      "type": "object",
+      "description": "Environment variables injected when building/running.",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "default": {}
+    },
     "buildOptions": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "cmd": {
+          "type": "string",
+          "description": "Custom build command template. When set, this replaces the default asc command/flags/output handling. Supports placeholders: <file>, <name>, <outFile>, <target>, <mode>.",
+          "default": ""
+        },
         "args": {
           "type": "array",
           "items": {
@@ -98,6 +111,7 @@
         }
       },
       "default": {
+        "cmd": "",
         "args": [],
         "target": "wasi"
       }
@@ -153,6 +167,10 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+              "cmd": {
+                "type": "string",
+                "description": "Mode-specific custom build command template."
+              },
               "args": {
                 "type": "array",
                 "items": {

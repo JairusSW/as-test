@@ -59,12 +59,22 @@ export function loadConfig(CONFIG_PATH: string, warn: boolean = false): Config {
       new Config(),
       raw,
     ) as Config;
+    config.env = parseEnvMap(raw.env);
     const runOptionsRaw =
       (raw.runOptions as Record<string, unknown> | undefined) ?? {};
     config.buildOptions = Object.assign(
       new BuildOptions(),
       (raw.buildOptions as Record<string, unknown> | undefined) ?? {},
     );
+    config.buildOptions.cmd =
+      typeof config.buildOptions.cmd == "string" ? config.buildOptions.cmd : "";
+    config.buildOptions.args = Array.isArray(config.buildOptions.args)
+      ? config.buildOptions.args.filter((item): item is string => typeof item == "string")
+      : [];
+    config.buildOptions.target =
+      typeof config.buildOptions.target == "string" && config.buildOptions.target.length
+        ? config.buildOptions.target
+        : "wasi";
     config.runOptions = Object.assign(
       new RunOptions(),
       runOptionsRaw,
@@ -159,6 +169,9 @@ function parseModes(raw: unknown): Record<string, ModeConfig> {
     if (modeRaw.buildOptions && typeof modeRaw.buildOptions == "object") {
       const buildRaw = modeRaw.buildOptions as Record<string, unknown>;
       const build: Partial<BuildOptions> = {};
+      if (typeof buildRaw.cmd == "string") {
+        build.cmd = buildRaw.cmd;
+      }
       if (Array.isArray(buildRaw.args)) {
         build.args = buildRaw.args.filter(
           (item): item is string => typeof item == "string",
@@ -229,6 +242,15 @@ function parseModes(raw: unknown): Record<string, ModeConfig> {
   return out;
 }
 
+function parseEnvMap(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw != "object" || Array.isArray(raw)) return {};
+  const env: Record<string, string> = {};
+  for (const [key, val] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof val == "string") env[key] = val;
+  }
+  return env;
+}
+
 export function resolveModeNames(rawArgs: string[]): string[] {
   const names: string[] = [];
   for (let i = 0; i < rawArgs.length; i++) {
@@ -263,7 +285,10 @@ export function applyMode(config: Config, modeName?: string): {
   if (!modeName) {
     return {
       config,
-      env: process.env,
+      env: {
+        ...process.env,
+        ...config.env,
+      },
     };
   }
 
@@ -297,7 +322,13 @@ export function applyMode(config: Config, modeName?: string): {
   if (mode.coverage != undefined) merged.coverage = mode.coverage;
 
   if (mode.buildOptions.target) merged.buildOptions.target = mode.buildOptions.target;
-  if (mode.buildOptions.args) merged.buildOptions.args = mode.buildOptions.args;
+  if (mode.buildOptions.cmd != undefined) merged.buildOptions.cmd = mode.buildOptions.cmd;
+  if (mode.buildOptions.args) {
+    merged.buildOptions.args = [
+      ...merged.buildOptions.args,
+      ...mode.buildOptions.args,
+    ];
+  }
 
   if (mode.runOptions.runtime?.cmd) {
     merged.runOptions.runtime.cmd = mode.runOptions.runtime.cmd;
@@ -310,6 +341,7 @@ export function applyMode(config: Config, modeName?: string): {
     config: merged,
     env: {
       ...process.env,
+      ...config.env,
       ...mode.env,
     },
     modeName,

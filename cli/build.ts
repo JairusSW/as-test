@@ -7,16 +7,25 @@ import * as path from "path";
 import { applyMode, getPkgRunner, loadConfig } from "./util.js";
 
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
+
+export type BuildFeatureToggles = {
+  tryAs?: boolean;
+  coverage?: boolean;
+};
+
 export async function build(
   configPath: string = DEFAULT_CONFIG_PATH,
   selectors: string[] = [],
   modeName?: string,
+  featureToggles: BuildFeatureToggles = {},
 ) {
   const loadedConfig = loadConfig(configPath, false);
   const mode = applyMode(loadedConfig, modeName);
   const config = mode.config;
 
-  ensureDeps(config);
+  if (!hasCustomBuildCommand(config)) {
+    ensureDeps(config);
+  }
 
   const pkgRunner = getPkgRunner();
   const inputPatterns = resolveInputPatterns(config.input, selectors);
@@ -24,21 +33,86 @@ export async function build(
     a.localeCompare(b),
   );
 
-  const buildArgs = getBuildArgs(config);
+  const coverageEnabled = resolveCoverageEnabled(
+    config.coverage,
+    featureToggles.coverage,
+  );
+  const buildEnv = {
+    ...mode.env,
+    AS_TEST_COVERAGE_ENABLED: coverageEnabled ? "1" : "0",
+  };
+
   for (const file of inputFiles) {
-    let cmd = `${pkgRunner} asc ${file}${buildArgs}`;
     const outFile = `${config.outDir}/${resolveArtifactFileName(file, config.buildOptions.target, modeName)}`;
-    if (config.outDir) {
-      cmd += " -o " + outFile;
-    }
+    const cmd = getBuildCommand(
+      config,
+      pkgRunner,
+      file,
+      outFile,
+      modeName,
+      featureToggles,
+    );
     try {
-      buildFile(cmd, mode.env);
+      buildFile(cmd, buildEnv);
     } catch (error) {
+      const modeLabel = modeName ?? "default";
       throw new Error(
-        `Failed to build ${path.basename(file)} with ${getBuildStderr(error)}`,
+        `Failed to build ${path.basename(file)} in mode ${modeLabel} with ${getBuildStderr(error)}\nBuild command: ${cmd}`,
       );
     }
   }
+}
+
+function hasCustomBuildCommand(config: Config): boolean {
+  return !!config.buildOptions.cmd.trim().length;
+}
+
+function getBuildCommand(
+  config: Config,
+  pkgRunner: string,
+  file: string,
+  outFile: string,
+  modeName?: string,
+  featureToggles: BuildFeatureToggles = {},
+): string {
+  const userArgs = getUserBuildArgs(config);
+  if (hasCustomBuildCommand(config)) {
+    return `${expandBuildCommand(config.buildOptions.cmd, file, outFile, config.buildOptions.target, modeName)}${userArgs}`;
+  }
+
+  const defaultArgs = getDefaultBuildArgs(config, featureToggles);
+  let cmd = `${pkgRunner} asc ${file}${userArgs}${defaultArgs}`;
+  if (config.outDir) {
+    cmd += " -o " + outFile;
+  }
+  return cmd;
+}
+
+function getUserBuildArgs(config: Config): string {
+  const args = config.buildOptions.args.filter((value) => value.length > 0);
+  if (args.length) {
+    return " " + args.join(" ");
+  }
+  return "";
+}
+
+function expandBuildCommand(
+  template: string,
+  file: string,
+  outFile: string,
+  target: string,
+  modeName?: string,
+): string {
+  const name = path
+    .basename(file)
+    .replace(/\.spec\.ts$/, "")
+    .replace(/\.ts$/, "");
+  return template
+    .replace(/<file>/g, file)
+    .replace(/<name>/g, name)
+    .replace(/<outFile>/g, outFile)
+    .replace(/<target>/g, target)
+    .replace(/<mode>/g, modeName ?? "");
 }
 
 function resolveArtifactFileName(
@@ -66,7 +140,7 @@ function resolveInputPatterns(
   if (!selectors.length) return configuredInputs;
 
   const patterns = new Set<string>();
-  for (const selector of selectors) {
+  for (const selector of expandSelectors(selectors)) {
     if (!selector) continue;
     if (isBareSuiteSelector(selector)) {
       const base = stripSuiteSuffix(selector);
@@ -80,6 +154,32 @@ function resolveInputPatterns(
     patterns.add(selector);
   }
   return [...patterns];
+}
+
+function expandSelectors(selectors: string[]): string[] {
+  const expanded: string[] = [];
+  for (const selector of selectors) {
+    if (!selector) continue;
+    if (!shouldSplitSelector(selector)) {
+      expanded.push(selector);
+      continue;
+    }
+    for (const token of selector.split(",")) {
+      const trimmed = token.trim();
+      if (!trimmed.length) continue;
+      expanded.push(trimmed);
+    }
+  }
+  return expanded;
+}
+
+function shouldSplitSelector(selector: string): boolean {
+  return (
+    selector.includes(",") &&
+    !selector.includes("/") &&
+    !selector.includes("\\") &&
+    !/[*?[\]{}]/.test(selector)
+  );
 }
 
 function isBareSuiteSelector(selector: string): boolean {
@@ -127,11 +227,15 @@ function getBuildStderr(error: unknown): string {
   return message || "unknown error";
 }
 
-function getBuildArgs(config: Config): string {
+function getDefaultBuildArgs(
+  config: Config,
+  featureToggles: BuildFeatureToggles,
+): string {
   let buildArgs = "";
+  const tryAsEnabled = resolveTryAsEnabled(featureToggles.tryAs);
 
   buildArgs += " --transform as-test/transform";
-  if (hasTryAsRuntime()) {
+  if (tryAsEnabled) {
     buildArgs += " --transform try-as/transform";
   }
 
@@ -139,7 +243,7 @@ function getBuildArgs(config: Config): string {
     buildArgs += " --config " + config.config;
   }
 
-  if (hasTryAsRuntime()) {
+  if (tryAsEnabled) {
     buildArgs += " --use AS_TEST_TRY_AS=1";
   }
   // Should also strip any bindings-enabling from asconfig
@@ -156,14 +260,31 @@ function getBuildArgs(config: Config): string {
     );
     process.exit(1);
   }
-
-  if (
-    config.buildOptions.args.length &&
-    config.buildOptions.args.find((v) => v.length > 0)
-  ) {
-    buildArgs += " " + config.buildOptions.args.join(" ");
-  }
   return buildArgs;
+}
+
+function resolveTryAsEnabled(override?: boolean): boolean {
+  const installed = hasTryAsRuntime();
+  if (override === false) return false;
+  if (override === true && !installed) {
+    throw new Error(
+      'try-as feature was enabled, but package "try-as" is not installed',
+    );
+  }
+  return installed;
+}
+
+function resolveCoverageEnabled(
+  rawCoverage: unknown,
+  override?: boolean,
+): boolean {
+  if (override != undefined) return override;
+  if (typeof rawCoverage == "boolean") return rawCoverage;
+  if (rawCoverage && typeof rawCoverage == "object") {
+    const enabled = (rawCoverage as { enabled?: unknown }).enabled;
+    if (typeof enabled == "boolean") return enabled;
+  }
+  return true;
 }
 
 function hasTryAsRuntime(): boolean {

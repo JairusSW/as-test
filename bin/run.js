@@ -156,6 +156,9 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
     const cleanOutput = Boolean(flags.clean);
     const showCoverage = Boolean(flags.showCoverage);
     const coverage = resolveCoverageOptions(config.coverage);
+    if (flags.coverage != undefined) {
+        coverage.enabled = Boolean(flags.coverage);
+    }
     const coverageEnabled = coverage.enabled;
     const coverageDir = config.coverageDir ?? "./.as-test/coverage";
     const runtimeCommand = resolveRuntimeCommand(getConfiguredRuntimeCmd(config), config.buildOptions.target);
@@ -210,7 +213,15 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
             cmd = cmd.replace("<file>", outFile);
         }
         const snapshotStore = new SnapshotStore(file, config.snapshotDir);
-        const report = await runProcess(cmd, snapshotStore, snapshotEnabled, updateSnapshots, reporter, reporterKind == "tap", mode.env);
+        let report;
+        try {
+            report = await runProcess(cmd, snapshotStore, snapshotEnabled, updateSnapshots, reporter, reporterKind == "tap", mode.env);
+        }
+        catch (error) {
+            const modeLabel = options.modeName ?? "default";
+            const details = error instanceof Error ? error.message : String(error);
+            throw new Error(`Failed to run ${path.basename(file)} in mode ${modeLabel} with ${details}`);
+        }
         const normalized = normalizeReport(report);
         snapshotStore.flush();
         snapshotSummary.matched += snapshotStore.matched;
@@ -234,6 +245,9 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
         writeFileSync(path.join(process.cwd(), config.logs, options.logFileName ?? "test.log.json"), JSON.stringify(logReports, null, 2));
     }
     const stats = collectRunStats(reports.map((report) => report.suites));
+    if (options.fileSummaryTotal != undefined) {
+        applyConfiguredFileTotalToStats(stats, options.fileSummaryTotal);
+    }
     const coverageSummary = collectCoverageSummary(reports, coverageEnabled, showCoverage, coverage);
     if (coverageEnabled &&
         coverageDir &&
@@ -246,6 +260,10 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
         writeFileSync(path.join(resolvedCoverageDir, options.coverageFileName ?? "coverage.log.json"), JSON.stringify(coverageSummary, null, 2));
     }
     if (options.emitRunComplete !== false) {
+        const totalModes = Math.max(options.modeSummaryTotal ?? 1, 1);
+        const executedModes = Math.min(Math.max(options.modeSummaryExecuted ?? 1, 1), totalModes);
+        const unexecutedModes = Math.max(0, totalModes - executedModes);
+        const modeFailed = Boolean(stats.failedFiles || snapshotSummary.failed);
         reporter.onRunComplete?.({
             clean: cleanOutput,
             snapshotEnabled,
@@ -254,6 +272,11 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
             coverageSummary,
             stats,
             reports,
+            modeSummary: {
+                failed: modeFailed ? 1 : 0,
+                skipped: unexecutedModes + (modeFailed || stats.passedFiles > 0 ? 0 : 1),
+                total: totalModes,
+            },
         });
     }
     const failed = Boolean(stats.failedFiles || snapshotSummary.failed);
@@ -267,6 +290,12 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
         coverageSummary,
         reports,
     };
+}
+function applyConfiguredFileTotalToStats(stats, fileSummaryTotal) {
+    const total = Math.max(fileSummaryTotal, 0);
+    const executed = stats.failedFiles + stats.passedFiles + stats.skippedFiles;
+    const unexecuted = Math.max(0, total - executed);
+    stats.skippedFiles += unexecuted;
 }
 function resolveRuntimeCommand(runtimeRun, target, emitWarnings = true) {
     const normalized = resolveLegacyRuntime(runtimeRun, target, emitWarnings);
@@ -589,7 +618,7 @@ function resolveInputPatterns(configured, selectors) {
     if (!selectors.length)
         return configuredInputs;
     const patterns = new Set();
-    for (const selector of selectors) {
+    for (const selector of expandSelectors(selectors)) {
         if (!selector)
             continue;
         if (isBareSuiteSelector(selector)) {
@@ -602,6 +631,30 @@ function resolveInputPatterns(configured, selectors) {
         patterns.add(selector);
     }
     return [...patterns];
+}
+function expandSelectors(selectors) {
+    const expanded = [];
+    for (const selector of selectors) {
+        if (!selector)
+            continue;
+        if (!shouldSplitSelector(selector)) {
+            expanded.push(selector);
+            continue;
+        }
+        for (const token of selector.split(",")) {
+            const trimmed = token.trim();
+            if (!trimmed.length)
+                continue;
+            expanded.push(trimmed);
+        }
+    }
+    return expanded;
+}
+function shouldSplitSelector(selector) {
+    return (selector.includes(",") &&
+        !selector.includes("/") &&
+        !selector.includes("\\") &&
+        !/[*?[\]{}]/.test(selector));
 }
 function isBareSuiteSelector(selector) {
     return (!selector.includes("/") &&

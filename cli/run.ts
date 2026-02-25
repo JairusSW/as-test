@@ -111,6 +111,7 @@ type RunFlags = {
   clean?: boolean;
   showCoverage?: boolean;
   verbose?: boolean;
+  coverage?: boolean;
 };
 
 type RunExecutionOptions = {
@@ -118,6 +119,9 @@ type RunExecutionOptions = {
   reporterKind?: ReporterKind;
   reporterPath?: string;
   modeName?: string;
+  modeSummaryTotal?: number;
+  modeSummaryExecuted?: number;
+  fileSummaryTotal?: number;
   emitRunStart?: boolean;
   emitRunComplete?: boolean;
   logFileName?: string;
@@ -264,6 +268,9 @@ export async function run(
   const cleanOutput = Boolean(flags.clean);
   const showCoverage = Boolean(flags.showCoverage);
   const coverage = resolveCoverageOptions(config.coverage);
+  if (flags.coverage != undefined) {
+    coverage.enabled = Boolean(flags.coverage);
+  }
   const coverageEnabled = coverage.enabled;
   const coverageDir = config.coverageDir ?? "./.as-test/coverage";
   const runtimeCommand = resolveRuntimeCommand(
@@ -337,15 +344,24 @@ export async function run(
       cmd = cmd.replace("<file>", outFile);
     }
     const snapshotStore = new SnapshotStore(file, config.snapshotDir);
-    const report = await runProcess(
-      cmd,
-      snapshotStore,
-      snapshotEnabled,
-      updateSnapshots,
-      reporter,
-      reporterKind == "tap",
-      mode.env,
-    );
+    let report: any;
+    try {
+      report = await runProcess(
+        cmd,
+        snapshotStore,
+        snapshotEnabled,
+        updateSnapshots,
+        reporter,
+        reporterKind == "tap",
+        mode.env,
+      );
+    } catch (error) {
+      const modeLabel = options.modeName ?? "default";
+      const details = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Failed to run ${path.basename(file)} in mode ${modeLabel} with ${details}`,
+      );
+    }
     const normalized = normalizeReport(report);
     snapshotStore.flush();
     snapshotSummary.matched += snapshotStore.matched;
@@ -377,6 +393,9 @@ export async function run(
     );
   }
   const stats = collectRunStats(reports.map((report) => report.suites));
+  if (options.fileSummaryTotal != undefined) {
+    applyConfiguredFileTotalToStats(stats, options.fileSummaryTotal);
+  }
   const coverageSummary = collectCoverageSummary(
     reports,
     coverageEnabled,
@@ -402,6 +421,13 @@ export async function run(
     );
   }
   if (options.emitRunComplete !== false) {
+    const totalModes = Math.max(options.modeSummaryTotal ?? 1, 1);
+    const executedModes = Math.min(
+      Math.max(options.modeSummaryExecuted ?? 1, 1),
+      totalModes,
+    );
+    const unexecutedModes = Math.max(0, totalModes - executedModes);
+    const modeFailed = Boolean(stats.failedFiles || snapshotSummary.failed);
     reporter.onRunComplete?.({
       clean: cleanOutput,
       snapshotEnabled,
@@ -410,6 +436,12 @@ export async function run(
       coverageSummary,
       stats,
       reports,
+      modeSummary: {
+        failed: modeFailed ? 1 : 0,
+        skipped:
+          unexecutedModes + (modeFailed || stats.passedFiles > 0 ? 0 : 1),
+        total: totalModes,
+      },
     });
   }
 
@@ -424,6 +456,16 @@ export async function run(
     coverageSummary,
     reports,
   };
+}
+
+function applyConfiguredFileTotalToStats(
+  stats: RunStats,
+  fileSummaryTotal: number,
+): void {
+  const total = Math.max(fileSummaryTotal, 0);
+  const executed = stats.failedFiles + stats.passedFiles + stats.skippedFiles;
+  const unexecuted = Math.max(0, total - executed);
+  stats.skippedFiles += unexecuted;
 }
 
 function resolveRuntimeCommand(
@@ -800,7 +842,7 @@ function resolveInputPatterns(
   if (!selectors.length) return configuredInputs;
 
   const patterns = new Set<string>();
-  for (const selector of selectors) {
+  for (const selector of expandSelectors(selectors)) {
     if (!selector) continue;
     if (isBareSuiteSelector(selector)) {
       const base = stripSuiteSuffix(selector);
@@ -812,6 +854,32 @@ function resolveInputPatterns(
     patterns.add(selector);
   }
   return [...patterns];
+}
+
+function expandSelectors(selectors: string[]): string[] {
+  const expanded: string[] = [];
+  for (const selector of selectors) {
+    if (!selector) continue;
+    if (!shouldSplitSelector(selector)) {
+      expanded.push(selector);
+      continue;
+    }
+    for (const token of selector.split(",")) {
+      const trimmed = token.trim();
+      if (!trimmed.length) continue;
+      expanded.push(trimmed);
+    }
+  }
+  return expanded;
+}
+
+function shouldSplitSelector(selector: string): boolean {
+  return (
+    selector.includes(",") &&
+    !selector.includes("/") &&
+    !selector.includes("\\") &&
+    !/[*?[\]{}]/.test(selector)
+  );
 }
 
 function isBareSuiteSelector(selector: string): boolean {
