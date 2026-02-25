@@ -16,11 +16,11 @@ import { isStdlib } from "./util.js";
 export default class Transformer extends Transform {
   // Trigger the transform after parse.
   afterParse(parser: Parser): void {
-    // Create new transform
+    // Create new transforms
     const mock = new MockTransform();
-    const coverage = new CoverageTransform();
     const location = new LocationTransform();
     const log = new LogTransform(parser);
+    const coverage = isCoverageEnabled() ? new CoverageTransform() : null;
 
     // Sort the sources so that user scripts are visited last
     const sources = parser.sources
@@ -39,11 +39,20 @@ export default class Transformer extends Transform {
     const entryFile = sources.find(
       (v) => v.sourceKind == SourceKind.UserEntry,
     ).simplePath;
+
+    // Gather mocked import targets across all sources before transform rewrite pass.
+    const mockedImportTargets = collectMockImportTargets(sources);
+    for (const target of mockedImportTargets) {
+      mock.importMocked.add(target);
+    }
+
     // Loop over every source
     for (const source of sources) {
+      const sourceInfo = analyzeSourceText(source.text);
       const shouldInjectRunCall =
         source.sourceKind == SourceKind.UserEntry &&
-        shouldAutoInjectRun(source.text);
+        sourceInfo.hasSuiteCalls &&
+        !sourceInfo.hasRunCall;
 
       const node = Node.createVariableStatement(
         null,
@@ -60,12 +69,20 @@ export default class Transformer extends Transform {
         source.range,
       );
       source.statements.unshift(node);
+
       mock.visit(source);
-      coverage.visit(source);
-      location.visit(source);
-      log.visit(source);
+      if (coverage) {
+        coverage.visit(source);
+      }
+      if (sourceInfo.hasExpectCall) {
+        location.visit(source);
+      }
+      if (sourceInfo.hasLogCall) {
+        log.visit(source);
+      }
+
       if (shouldInjectRunCall) {
-        const runImportPath = detectRunImportPath(source.text);
+        const runImportPath = sourceInfo.runImportPath;
         let runCall = "run();";
         if (runImportPath) {
           const autoImport = new Tokenizer(
@@ -86,38 +103,70 @@ export default class Transformer extends Transform {
         source.statements.push(parser.parseTopLevelStatement(autoCall)!);
         parser.currentSource = source;
       }
-      if (coverage.globalStatements.length) {
+      if (coverage && coverage.globalStatements.length) {
         source.statements.unshift(...coverage.globalStatements);
         const tokenizer = new Tokenizer(
           new Source(
             SourceKind.User,
             source.normalizedPath,
-            'import { __REGISTER, __COVER } from "as-test/assembly/coverage";',
+            'import { __REGISTER_RAW, __COVER } from "as-test/assembly/coverage";',
           ),
         );
         parser.currentSource = tokenizer.source;
         source.statements.unshift(parser.parseTopLevelStatement(tokenizer)!);
         parser.currentSource = source;
+        coverage.globalStatements = [];
       }
     }
-    coverage.globalStatements = [];
+    if (coverage) {
+      coverage.globalStatements = [];
+    }
   }
 }
 
-function shouldAutoInjectRun(sourceText: string): boolean {
+function collectMockImportTargets(sources: Source[]): Set<string> {
+  const out = new Set<string>();
+  const pattern = /\bmockImport\s*\(\s*["']([^"']+)["']/g;
+  for (const source of sources) {
+    const text = stripComments(source.text);
+    for (const match of text.matchAll(pattern)) {
+      const target = (match[1] ?? "").trim();
+      if (!target.length) continue;
+      out.add(target);
+    }
+  }
+  return out;
+}
+
+type SourceInfo = {
+  hasSuiteCalls: boolean;
+  hasRunCall: boolean;
+  runImportPath: string | null;
+  hasMockCalls: boolean;
+  hasLogCall: boolean;
+  hasExpectCall: boolean;
+};
+
+function analyzeSourceText(sourceText: string): SourceInfo {
   const text = stripComments(sourceText);
-  const hasSuiteCalls = /\b(?:describe|test|it)\s*\(/.test(text);
-  if (!hasSuiteCalls) return false;
+  const runImportPath = detectRunImportPath(text);
   const runAlias = detectRunAlias(text);
-  if (runAlias && new RegExp(`\\b${escapeRegex(runAlias)}\\s*\\(`).test(text)) {
-    return false;
-  }
-  const hasRunCall = /\brun\s*\(/.test(text);
-  return !hasRunCall;
+  const hasRunCall = runAlias
+    ? new RegExp(`\\b${escapeRegex(runAlias)}\\s*\\(`).test(text)
+    : /\brun\s*\(/.test(text);
+  return {
+    hasSuiteCalls: /\b(?:describe|test|it)\s*\(/.test(text),
+    hasRunCall,
+    runImportPath,
+    hasMockCalls: /\b(?:mockFn|unmockFn|mockImport|unmockImport)\s*\(/.test(
+      text,
+    ),
+    hasLogCall: /\blog\s*\(/.test(text),
+    hasExpectCall: /\bexpect\s*\(/.test(text),
+  };
 }
 
-function detectRunImportPath(sourceText: string): string | null {
-  const text = stripComments(sourceText);
+function detectRunImportPath(text: string): string | null {
   const imports = text.matchAll(
     /import\s*\{([^}]+)\}\s*from\s*["']([^"']+)["']/g,
   );
@@ -130,8 +179,7 @@ function detectRunImportPath(sourceText: string): string | null {
   return null;
 }
 
-function detectRunAlias(sourceText: string): string | null {
-  const text = stripComments(sourceText);
+function detectRunAlias(text: string): string | null {
   const imports = text.matchAll(
     /import\s*\{([^}]+)\}\s*from\s*["']([^"']+)["']/g,
   );
@@ -158,4 +206,8 @@ function stripComments(sourceText: string): string {
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function isCoverageEnabled(): boolean {
+  return process.env.AS_TEST_COVERAGE_ENABLED !== "0";
 }
