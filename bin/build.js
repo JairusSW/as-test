@@ -15,13 +15,14 @@ export async function build(configPath = DEFAULT_CONFIG_PATH, selectors = [], mo
     const pkgRunner = getPkgRunner();
     const inputPatterns = resolveInputPatterns(config.input, selectors);
     const inputFiles = (await glob(inputPatterns)).sort((a, b) => a.localeCompare(b));
+    const duplicateSpecBasenames = await resolveDuplicateSpecBasenames(config.input);
     const coverageEnabled = resolveCoverageEnabled(config.coverage, featureToggles.coverage);
     const buildEnv = {
         ...mode.env,
         AS_TEST_COVERAGE_ENABLED: coverageEnabled ? "1" : "0",
     };
     for (const file of inputFiles) {
-        const outFile = `${config.outDir}/${resolveArtifactFileName(file, config.buildOptions.target, modeName)}`;
+        const outFile = `${config.outDir}/${resolveArtifactFileName(file, config.buildOptions.target, modeName, duplicateSpecBasenames)}`;
         const cmd = getBuildCommand(config, pkgRunner, file, outFile, modeName, featureToggles);
         try {
             buildFile(cmd, buildEnv);
@@ -66,15 +67,48 @@ function expandBuildCommand(template, file, outFile, target, modeName) {
         .replace(/<target>/g, target)
         .replace(/<mode>/g, modeName ?? "");
 }
-function resolveArtifactFileName(file, target, modeName) {
+function resolveArtifactFileName(file, target, modeName, duplicateSpecBasenames = new Set()) {
     const base = path
         .basename(file)
         .replace(/\.spec\.ts$/, "")
         .replace(/\.ts$/, "");
-    if (!modeName) {
-        return `${path.basename(file).replace(".ts", ".wasm")}`;
+    const legacy = !modeName
+        ? `${path.basename(file).replace(".ts", ".wasm")}`
+        : `${base}.${modeName}.${target}.wasm`;
+    if (!duplicateSpecBasenames.has(path.basename(file))) {
+        return legacy;
     }
-    return `${base}.${modeName}.${target}.wasm`;
+    const disambiguator = resolveDisambiguator(file);
+    if (!disambiguator.length) {
+        return legacy;
+    }
+    const ext = path.extname(legacy);
+    const stem = ext.length ? legacy.slice(0, -ext.length) : legacy;
+    return `${stem}.${disambiguator}${ext}`;
+}
+async function resolveDuplicateSpecBasenames(configured) {
+    const patterns = Array.isArray(configured) ? configured : [configured];
+    const files = await glob(patterns);
+    const counts = new Map();
+    for (const file of files) {
+        const base = path.basename(file);
+        counts.set(base, (counts.get(base) ?? 0) + 1);
+    }
+    const duplicates = new Set();
+    for (const [base, count] of counts) {
+        if (count > 1)
+            duplicates.add(base);
+    }
+    return duplicates;
+}
+function resolveDisambiguator(file) {
+    const relDir = path.dirname(path.relative(process.cwd(), file));
+    if (!relDir.length || relDir == ".")
+        return "";
+    return relDir
+        .replace(/[\\/]+/g, "__")
+        .replace(/[^A-Za-z0-9._-]/g, "_")
+        .replace(/^_+|_+$/g, "");
 }
 function resolveInputPatterns(configured, selectors) {
     const configuredInputs = Array.isArray(configured)

@@ -53,19 +53,32 @@ if (!args.length) {
     };
     if (command === "build") {
       const modeTargets = resolveExecutionModes(configPath, selectedModes);
-      runBuildModes(configPath, commandArgs, modeTargets, buildFeatureToggles).catch((error) => {
+      runBuildModes(
+        configPath,
+        commandArgs,
+        modeTargets,
+        buildFeatureToggles,
+      ).catch((error) => {
         printCliError(error);
         process.exit(1);
       });
     } else if (command === "run") {
       const modeTargets = resolveExecutionModes(configPath, selectedModes);
-      runRuntimeModes(runFlags, configPath, commandArgs, modeTargets).catch((error) => {
-        printCliError(error);
-        process.exit(1);
-      });
+      runRuntimeModes(runFlags, configPath, commandArgs, modeTargets).catch(
+        (error) => {
+          printCliError(error);
+          process.exit(1);
+        },
+      );
     } else if (command === "test") {
       const modeTargets = resolveExecutionModes(configPath, selectedModes);
-      runTestModes(runFlags, configPath, commandArgs, modeTargets, buildFeatureToggles).catch((error) => {
+      runTestModes(
+        runFlags,
+        configPath,
+        commandArgs,
+        modeTargets,
+        buildFeatureToggles,
+      ).catch((error) => {
         printCliError(error);
         process.exit(1);
       });
@@ -151,61 +164,61 @@ function info(): void {
   console.log(chalk.bold("Flags:"));
 
   console.log(
-      "   " +
+    "   " +
       chalk.bold.blue("--mode <name[,name...]>") +
       "       " +
       "Run one or multiple named config modes",
   );
   console.log(
-      "   " +
+    "   " +
       chalk.bold.blue("--config <path>") +
       "               " +
       "Use a specific config file",
   );
   console.log(
-      "   " +
+    "   " +
       chalk.bold.blue("--snapshot") +
       "                    " +
       "Snapshot assertions (enabled by default)",
   );
   console.log(
-      "   " +
+    "   " +
       chalk.bold.blue("--update-snapshots") +
       "            " +
       "Create/update snapshot files on mismatch",
   );
   console.log(
-      "   " +
+    "   " +
       chalk.bold.blue("--no-snapshot") +
       "                 " +
       "Disable snapshot assertions for this run",
   );
   console.log(
-      "   " +
+    "   " +
       chalk.bold.blue("--show-coverage") +
       "               " +
       "Print all coverage points with line:column refs",
   );
   console.log(
-      "   " +
+    "   " +
       chalk.bold.blue("--enable <feature>") +
       "           " +
       "Enable as-test feature (coverage|try-as)",
   );
   console.log(
-      "   " +
+    "   " +
       chalk.bold.blue("--disable <feature>") +
       "          " +
       "Disable as-test feature (coverage|try-as)",
   );
   console.log(
-      "   " +
+    "   " +
       chalk.bold.blue("--verbose") +
       "                     " +
       "Print each suite start/end line",
   );
   console.log(
-      "   " +
+    "   " +
       chalk.bold.blue("--reporter <name|path>") +
       "        " +
       "Use built-in reporter (default|tap) or custom module path",
@@ -387,13 +400,15 @@ async function runTestSequential(
   const files = await resolveSelectedFiles(configPath, selectors);
   if (!files.length) {
     const scope =
-      selectors.length > 0
-        ? selectors.join(", ")
-        : "configured input patterns";
+      selectors.length > 0 ? selectors.join(", ") : "configured input patterns";
     throw new Error(`No test files matched: ${scope}`);
   }
 
-  const reporterSession = await createRunReporter(configPath, undefined, modeName);
+  const reporterSession = await createRunReporter(
+    configPath,
+    undefined,
+    modeName,
+  );
   const reporter = reporterSession.reporter;
   const snapshotEnabled = runFlags.snapshot !== false;
   reporter.onRunStart?.({
@@ -406,9 +421,10 @@ async function runTestSequential(
 
   const results: RunResult[] = [];
   let failed = false;
+  const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
   for (const file of files) {
     await build(configPath, [file], modeName, buildFeatureToggles);
-    const artifactKey = path.basename(file).replace(/[^a-zA-Z0-9._-]/g, "_");
+    const artifactKey = resolvePerFileArtifactKey(file, duplicateSpecBasenames);
     const result = await run(runFlags, configPath, [file], false, {
       reporter,
       emitRunStart: false,
@@ -422,7 +438,10 @@ async function runTestSequential(
   }
 
   const summary = aggregateRunResults(results);
-  summary.stats = applyConfiguredFileTotalToStats(summary.stats, fileSummaryTotal);
+  summary.stats = applyConfiguredFileTotalToStats(
+    summary.stats,
+    fileSummaryTotal,
+  );
   reporter.onRunComplete?.({
     clean: runFlags.clean,
     snapshotEnabled,
@@ -510,9 +529,7 @@ async function runRuntimeMatrix(
   const files = await resolveSelectedFiles(configPath, selectors);
   if (!files.length) {
     const scope =
-      selectors.length > 0
-        ? selectors.join(", ")
-        : "configured input patterns";
+      selectors.length > 0 ? selectors.join(", ") : "configured input patterns";
     throw new Error(`No test files matched: ${scope}`);
   }
 
@@ -541,6 +558,7 @@ async function runRuntimeMatrix(
     failed: false,
     passed: false,
   }));
+  const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
 
   for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
     const file = files[fileIndex]!;
@@ -553,7 +571,10 @@ async function runRuntimeMatrix(
     for (let i = 0; i < modes.length; i++) {
       const modeName = modes[i];
       try {
-        const artifactKey = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const artifactKey = resolvePerFileArtifactKey(
+          file,
+          duplicateSpecBasenames,
+        );
         const result = await run(runFlags, configPath, [file], false, {
           reporter: silentReporter,
           reporterKind: "default",
@@ -565,7 +586,12 @@ async function runRuntimeMatrix(
         });
         modeTimes[i] = formatMatrixModeTime(result.stats.time);
         if (liveMatrix) {
-          renderMatrixLiveLine(fileName, modeLabels, modeTimes, showPerModeTimes);
+          renderMatrixLiveLine(
+            fileName,
+            modeLabels,
+            modeTimes,
+            showPerModeTimes,
+          );
         }
         if (result.failed) {
           modeState[i]!.failed = true;
@@ -679,9 +705,7 @@ async function runTestMatrix(
   const files = await resolveSelectedFiles(configPath, selectors);
   if (!files.length) {
     const scope =
-      selectors.length > 0
-        ? selectors.join(", ")
-        : "configured input patterns";
+      selectors.length > 0 ? selectors.join(", ") : "configured input patterns";
     throw new Error(`No test files matched: ${scope}`);
   }
 
@@ -710,6 +734,7 @@ async function runTestMatrix(
     failed: false,
     passed: false,
   }));
+  const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
 
   for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
     const file = files[fileIndex]!;
@@ -723,7 +748,10 @@ async function runTestMatrix(
       const modeName = modes[i];
       try {
         await build(configPath, [file], modeName, buildFeatureToggles);
-        const artifactKey = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const artifactKey = resolvePerFileArtifactKey(
+          file,
+          duplicateSpecBasenames,
+        );
         const result = await run(runFlags, configPath, [file], false, {
           reporter: silentReporter,
           reporterKind: "default",
@@ -735,7 +763,12 @@ async function runTestMatrix(
         });
         modeTimes[i] = formatMatrixModeTime(result.stats.time);
         if (liveMatrix) {
-          renderMatrixLiveLine(fileName, modeLabels, modeTimes, showPerModeTimes);
+          renderMatrixLiveLine(
+            fileName,
+            modeLabels,
+            modeTimes,
+            showPerModeTimes,
+          );
         }
         if (result.failed) {
           modeState[i]!.failed = true;
@@ -801,7 +834,9 @@ function renderMatrixFileResult(
         : chalk.bgBlackBright.white(" SKIP ");
   const avg = formatMatrixAverageTime(results);
   const timingText = showPerModeTimes ? modeTimes.join(",") : avg;
-  const suffix = showPerModeTimes ? ` ${chalk.dim(`(${modes.join(",")})`)}` : "";
+  const suffix = showPerModeTimes
+    ? ` ${chalk.dim(`(${modes.join(",")})`)}`
+    : "";
   const line = `${badge} ${file} ${chalk.dim(timingText)}${suffix}`;
   if (liveMatrix) clearLiveLine();
   process.stdout.write(line + "\n");
@@ -831,7 +866,9 @@ function renderMatrixLiveLine(
 ): void {
   if (!canRewriteStdout()) return;
   const timingText = showPerModeTimes ? modeTimes.join(",") : "...";
-  const suffix = showPerModeTimes ? ` ${chalk.dim(`(${modes.join(",")})`)}` : "";
+  const suffix = showPerModeTimes
+    ? ` ${chalk.dim(`(${modes.join(",")})`)}`
+    : "";
   const line = `${chalk.bgBlackBright.white(" .... ")} ${file} ${chalk.dim(timingText)}${suffix}`;
   process.stdout.write(`\r\x1b[2K${line}`);
 }
@@ -845,7 +882,9 @@ function formatMatrixAverageTime(results: RunResult[]): string {
   if (!results.length) return "0.0ms";
   let total = 0;
   for (const result of results) {
-    total += Number.isFinite(result.stats.time) ? Math.max(0, result.stats.time) : 0;
+    total += Number.isFinite(result.stats.time)
+      ? Math.max(0, result.stats.time)
+      : 0;
   }
   return `${(total / results.length).toFixed(1)}ms`;
 }
@@ -981,7 +1020,9 @@ function resolveInputPatterns(
   configured: string[] | string,
   selectors: string[],
 ): string[] {
-  const configuredInputs = Array.isArray(configured) ? configured : [configured];
+  const configuredInputs = Array.isArray(configured)
+    ? configured
+    : [configured];
   if (!selectors.length) return configuredInputs;
 
   const patterns = new Set<string>();
@@ -990,7 +1031,9 @@ function resolveInputPatterns(
     if (isBareSuiteSelector(selector)) {
       const base = stripSuiteSuffix(selector);
       for (const configuredInput of configuredInputs) {
-        patterns.add(path.join(path.dirname(configuredInput), `${base}.spec.ts`));
+        patterns.add(
+          path.join(path.dirname(configuredInput), `${base}.spec.ts`),
+        );
       }
       continue;
     }
@@ -1035,6 +1078,43 @@ function isBareSuiteSelector(selector: string): boolean {
 
 function stripSuiteSuffix(selector: string): string {
   return selector.replace(/\.spec\.ts$/, "").replace(/\.ts$/, "");
+}
+
+function resolveDuplicateSpecBasenames(files: string[]): Set<string> {
+  const counts = new Map<string, number>();
+  for (const file of files) {
+    const base = path.basename(file);
+    counts.set(base, (counts.get(base) ?? 0) + 1);
+  }
+  const duplicates = new Set<string>();
+  for (const [base, count] of counts) {
+    if (count > 1) duplicates.add(base);
+  }
+  return duplicates;
+}
+
+function resolvePerFileArtifactKey(
+  file: string,
+  duplicateSpecBasenames: Set<string>,
+): string {
+  const base = path.basename(file);
+  let raw = base;
+  if (duplicateSpecBasenames.has(base)) {
+    const disambiguator = resolvePerFileDisambiguator(file);
+    if (disambiguator.length) {
+      raw = `${base}.${disambiguator}`;
+    }
+  }
+  return raw.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+function resolvePerFileDisambiguator(file: string): string {
+  const relDir = path.dirname(path.relative(process.cwd(), file));
+  if (!relDir.length || relDir == ".") return "";
+  return relDir
+    .replace(/[\\/]+/g, "__")
+    .replace(/[^A-Za-z0-9._-]/g, "_")
+    .replace(/^_+|_+$/g, "");
 }
 
 function aggregateRunResults(results: RunResult[]): {
@@ -1111,7 +1191,8 @@ function aggregateRunResults(results: RunResult[]): {
     snapshotSummary.updated += result.snapshotSummary.updated;
     snapshotSummary.failed += result.snapshotSummary.failed;
 
-    coverageSummary.enabled = coverageSummary.enabled || result.coverageSummary.enabled;
+    coverageSummary.enabled =
+      coverageSummary.enabled || result.coverageSummary.enabled;
     coverageSummary.showPoints =
       coverageSummary.showPoints || result.coverageSummary.showPoints;
     for (const fileCoverage of result.coverageSummary.files) {
@@ -1137,7 +1218,10 @@ function aggregateRunResults(results: RunResult[]): {
   }
 
   if (uniqueCoveragePoints.size > 0) {
-    const byFile = new Map<string, CoverageSummary["files"][number]["points"]>();
+    const byFile = new Map<
+      string,
+      CoverageSummary["files"][number]["points"]
+    >();
     for (const point of uniqueCoveragePoints.values()) {
       if (!byFile.has(point.file)) byFile.set(point.file, []);
       byFile.get(point.file)!.push(point);

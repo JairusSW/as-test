@@ -87,7 +87,7 @@ class Channel {
 Channel.MAGIC = Buffer.from("WIPC");
 Channel.HEADER_SIZE = 9;
 class SnapshotStore {
-    constructor(specFile, snapshotDir) {
+    constructor(specFile, snapshotDir, duplicateSpecBasenames = new Set()) {
         this.dirty = false;
         this.created = 0;
         this.updated = 0;
@@ -95,12 +95,22 @@ class SnapshotStore {
         this.failed = 0;
         this.warnedMissing = new Set();
         const base = path.basename(specFile, ".ts");
+        const disambiguator = resolveDisambiguator(specFile, duplicateSpecBasenames);
+        const snapshotBase = disambiguator.length
+            ? `${base}.${disambiguator}`
+            : base;
         const dir = path.join(process.cwd(), snapshotDir);
         if (!existsSync(dir))
             mkdirSync(dir, { recursive: true });
-        this.filePath = path.join(dir, `${base}.snap.json`);
-        this.data = existsSync(this.filePath)
-            ? JSON.parse(readFileSync(this.filePath, "utf8"))
+        this.filePath = path.join(dir, `${snapshotBase}.snap.json`);
+        const legacyFilePath = path.join(dir, `${base}.snap.json`);
+        const sourcePath = existsSync(this.filePath)
+            ? this.filePath
+            : existsSync(legacyFilePath)
+                ? legacyFilePath
+                : null;
+        this.data = sourcePath
+            ? JSON.parse(readFileSync(sourcePath, "utf8"))
             : {};
     }
     assert(key, actual, allowSnapshot, updateSnapshots) {
@@ -151,6 +161,7 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
     const config = mode.config;
     const inputPatterns = resolveInputPatterns(config.input, selectors);
     const inputFiles = (await glob(inputPatterns)).sort((a, b) => a.localeCompare(b));
+    const duplicateSpecBasenames = await resolveDuplicateSpecBasenames(config.input);
     const snapshotEnabled = flags.snapshot !== false;
     const updateSnapshots = Boolean(flags.updateSnapshots);
     const cleanOutput = Boolean(flags.clean);
@@ -199,7 +210,7 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
     };
     for (let i = 0; i < inputFiles.length; i++) {
         const file = inputFiles[i];
-        const outFile = path.join(config.outDir, resolveArtifactFileName(file, config.buildOptions.target, options.modeName));
+        const outFile = path.join(config.outDir, resolveArtifactFileName(file, config.buildOptions.target, options.modeName, duplicateSpecBasenames));
         const fileBase = file
             .slice(file.lastIndexOf("/") + 1)
             .replace(".ts", "")
@@ -212,7 +223,7 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
         else {
             cmd = cmd.replace("<file>", outFile);
         }
-        const snapshotStore = new SnapshotStore(file, config.snapshotDir);
+        const snapshotStore = new SnapshotStore(file, config.snapshotDir, duplicateSpecBasenames);
         let report;
         try {
             report = await runProcess(cmd, snapshotStore, snapshotEnabled, updateSnapshots, reporter, reporterKind == "tap", mode.env);
@@ -360,7 +371,8 @@ function fallbackToDefaultRuntime(runtimeRun, target, emitWarnings) {
     if (!fallback)
         return runtimeRun;
     const resolvedFallbackPath = path.join(process.cwd(), fallback.scriptPath);
-    if (resolvedScriptPath == resolvedFallbackPath || scriptPath == fallback.scriptPath) {
+    if (resolvedScriptPath == resolvedFallbackPath ||
+        scriptPath == fallback.scriptPath) {
         return runtimeRun;
     }
     if (emitWarnings) {
@@ -521,15 +533,50 @@ try {
     }
     return null;
 }
-function resolveArtifactFileName(file, target, modeName) {
+function resolveArtifactFileName(file, target, modeName, duplicateSpecBasenames = new Set()) {
     const base = path
         .basename(file)
         .replace(/\.spec\.ts$/, "")
         .replace(/\.ts$/, "");
-    if (!modeName) {
-        return `${path.basename(file).replace(".ts", ".wasm")}`;
+    const legacy = !modeName
+        ? `${path.basename(file).replace(".ts", ".wasm")}`
+        : `${base}.${modeName}.${target}.wasm`;
+    if (!duplicateSpecBasenames.has(path.basename(file))) {
+        return legacy;
     }
-    return `${base}.${modeName}.${target}.wasm`;
+    const disambiguator = resolveDisambiguator(file, duplicateSpecBasenames);
+    if (!disambiguator.length) {
+        return legacy;
+    }
+    const ext = path.extname(legacy);
+    const stem = ext.length ? legacy.slice(0, -ext.length) : legacy;
+    return `${stem}.${disambiguator}${ext}`;
+}
+async function resolveDuplicateSpecBasenames(configured) {
+    const patterns = Array.isArray(configured) ? configured : [configured];
+    const files = await glob(patterns);
+    const counts = new Map();
+    for (const file of files) {
+        const base = path.basename(file);
+        counts.set(base, (counts.get(base) ?? 0) + 1);
+    }
+    const duplicates = new Set();
+    for (const [base, count] of counts) {
+        if (count > 1)
+            duplicates.add(base);
+    }
+    return duplicates;
+}
+function resolveDisambiguator(file, duplicateSpecBasenames) {
+    if (!duplicateSpecBasenames.has(path.basename(file)))
+        return "";
+    const relDir = path.dirname(path.relative(process.cwd(), file));
+    if (!relDir.length || relDir == ".")
+        return "";
+    return relDir
+        .replace(/[\\/]+/g, "__")
+        .replace(/[^A-Za-z0-9._-]/g, "_")
+        .replace(/^_+|_+$/g, "");
 }
 function resolveBindingsHelperPath(wasmPath) {
     const bindingsPath = wasmPath.replace(/\.wasm$/, ".bindings.js");
@@ -541,7 +588,10 @@ function resolveBindingsHelperPath(wasmPath) {
     return bindingsPath;
 }
 function extractRuntimeScriptPath(runtimeRun) {
-    const tokens = runtimeRun.trim().split(/\s+/).filter((token) => token.length > 0);
+    const tokens = runtimeRun
+        .trim()
+        .split(/\s+/)
+        .filter((token) => token.length > 0);
     if (tokens.length < 2)
         return null;
     const execToken = path.basename(tokens[0]).toLowerCase();
@@ -614,7 +664,9 @@ function runtimeNameFromCommand(command) {
     return token && token.length ? token : "runtime";
 }
 function resolveInputPatterns(configured, selectors) {
-    const configuredInputs = Array.isArray(configured) ? configured : [configured];
+    const configuredInputs = Array.isArray(configured)
+        ? configured
+        : [configured];
     if (!selectors.length)
         return configuredInputs;
     const patterns = new Set();

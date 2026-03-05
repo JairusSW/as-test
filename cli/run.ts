@@ -189,16 +189,30 @@ class SnapshotStore {
   public failed = 0;
   private warnedMissing = new Set<string>();
 
-  constructor(specFile: string, snapshotDir: string) {
+  constructor(
+    specFile: string,
+    snapshotDir: string,
+    duplicateSpecBasenames: Set<string> = new Set<string>(),
+  ) {
     const base = path.basename(specFile, ".ts");
+    const disambiguator = resolveDisambiguator(
+      specFile,
+      duplicateSpecBasenames,
+    );
+    const snapshotBase = disambiguator.length
+      ? `${base}.${disambiguator}`
+      : base;
     const dir = path.join(process.cwd(), snapshotDir);
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    this.filePath = path.join(dir, `${base}.snap.json`);
-    this.data = existsSync(this.filePath)
-      ? (JSON.parse(readFileSync(this.filePath, "utf8")) as Record<
-          string,
-          string
-        >)
+    this.filePath = path.join(dir, `${snapshotBase}.snap.json`);
+    const legacyFilePath = path.join(dir, `${base}.snap.json`);
+    const sourcePath = existsSync(this.filePath)
+      ? this.filePath
+      : existsSync(legacyFilePath)
+        ? legacyFilePath
+        : null;
+    this.data = sourcePath
+      ? (JSON.parse(readFileSync(sourcePath, "utf8")) as Record<string, string>)
       : {};
   }
 
@@ -262,6 +276,9 @@ export async function run(
   const inputPatterns = resolveInputPatterns(config.input, selectors);
   const inputFiles = (await glob(inputPatterns)).sort((a, b) =>
     a.localeCompare(b),
+  );
+  const duplicateSpecBasenames = await resolveDuplicateSpecBasenames(
+    config.input,
   );
   const snapshotEnabled = flags.snapshot !== false;
   const updateSnapshots = Boolean(flags.updateSnapshots);
@@ -329,7 +346,12 @@ export async function run(
     const file = inputFiles[i]!;
     const outFile = path.join(
       config.outDir,
-      resolveArtifactFileName(file, config.buildOptions.target, options.modeName),
+      resolveArtifactFileName(
+        file,
+        config.buildOptions.target,
+        options.modeName,
+        duplicateSpecBasenames,
+      ),
     );
 
     const fileBase = file
@@ -343,7 +365,11 @@ export async function run(
     } else {
       cmd = cmd.replace("<file>", outFile);
     }
-    const snapshotStore = new SnapshotStore(file, config.snapshotDir);
+    const snapshotStore = new SnapshotStore(
+      file,
+      config.snapshotDir,
+      duplicateSpecBasenames,
+    );
     let report: any;
     try {
       report = await runProcess(
@@ -562,7 +588,10 @@ function fallbackToDefaultRuntime(
   if (!fallback) return runtimeRun;
 
   const resolvedFallbackPath = path.join(process.cwd(), fallback.scriptPath);
-  if (resolvedScriptPath == resolvedFallbackPath || scriptPath == fallback.scriptPath) {
+  if (
+    resolvedScriptPath == resolvedFallbackPath ||
+    scriptPath == fallback.scriptPath
+  ) {
     return runtimeRun;
   }
 
@@ -746,15 +775,55 @@ function resolveArtifactFileName(
   file: string,
   target: string,
   modeName?: string,
+  duplicateSpecBasenames: Set<string> = new Set<string>(),
 ): string {
   const base = path
     .basename(file)
     .replace(/\.spec\.ts$/, "")
     .replace(/\.ts$/, "");
-  if (!modeName) {
-    return `${path.basename(file).replace(".ts", ".wasm")}`;
+  const legacy = !modeName
+    ? `${path.basename(file).replace(".ts", ".wasm")}`
+    : `${base}.${modeName}.${target}.wasm`;
+  if (!duplicateSpecBasenames.has(path.basename(file))) {
+    return legacy;
   }
-  return `${base}.${modeName}.${target}.wasm`;
+  const disambiguator = resolveDisambiguator(file, duplicateSpecBasenames);
+  if (!disambiguator.length) {
+    return legacy;
+  }
+  const ext = path.extname(legacy);
+  const stem = ext.length ? legacy.slice(0, -ext.length) : legacy;
+  return `${stem}.${disambiguator}${ext}`;
+}
+
+async function resolveDuplicateSpecBasenames(
+  configured: string[] | string,
+): Promise<Set<string>> {
+  const patterns = Array.isArray(configured) ? configured : [configured];
+  const files = await glob(patterns);
+  const counts = new Map<string, number>();
+  for (const file of files) {
+    const base = path.basename(file);
+    counts.set(base, (counts.get(base) ?? 0) + 1);
+  }
+  const duplicates = new Set<string>();
+  for (const [base, count] of counts) {
+    if (count > 1) duplicates.add(base);
+  }
+  return duplicates;
+}
+
+function resolveDisambiguator(
+  file: string,
+  duplicateSpecBasenames: Set<string>,
+): string {
+  if (!duplicateSpecBasenames.has(path.basename(file))) return "";
+  const relDir = path.dirname(path.relative(process.cwd(), file));
+  if (!relDir.length || relDir == ".") return "";
+  return relDir
+    .replace(/[\\/]+/g, "__")
+    .replace(/[^A-Za-z0-9._-]/g, "_")
+    .replace(/^_+|_+$/g, "");
 }
 
 function resolveBindingsHelperPath(wasmPath: string): string {
@@ -766,7 +835,10 @@ function resolveBindingsHelperPath(wasmPath: string): string {
 }
 
 function extractRuntimeScriptPath(runtimeRun: string): string | null {
-  const tokens = runtimeRun.trim().split(/\s+/).filter((token) => token.length > 0);
+  const tokens = runtimeRun
+    .trim()
+    .split(/\s+/)
+    .filter((token) => token.length > 0);
   if (tokens.length < 2) return null;
 
   const execToken = path.basename(tokens[0]!).toLowerCase();
@@ -838,7 +910,9 @@ function resolveInputPatterns(
   configured: string[] | string,
   selectors: string[],
 ): string[] {
-  const configuredInputs = Array.isArray(configured) ? configured : [configured];
+  const configuredInputs = Array.isArray(configured)
+    ? configured
+    : [configured];
   if (!selectors.length) return configuredInputs;
 
   const patterns = new Set<string>();
@@ -847,7 +921,9 @@ function resolveInputPatterns(
     if (isBareSuiteSelector(selector)) {
       const base = stripSuiteSuffix(selector);
       for (const configuredInput of configuredInputs) {
-        patterns.add(path.join(path.dirname(configuredInput), `${base}.spec.ts`));
+        patterns.add(
+          path.join(path.dirname(configuredInput), `${base}.spec.ts`),
+        );
       }
       continue;
     }
@@ -995,7 +1071,9 @@ function collectCoverageSummary(
       executed: boolean;
     }
   >();
-  const hasDetailedPoints = reports.some((report) => report.coverage.points.length > 0);
+  const hasDetailedPoints = reports.some(
+    (report) => report.coverage.points.length > 0,
+  );
 
   for (const report of reports) {
     for (const point of report.coverage.points) {
@@ -1278,7 +1356,9 @@ async function runProcess(
     child.on("close", (exitCode) => resolve(exitCode ?? 1));
   });
   if (stderrBuffer.length) {
-    if (!shouldSuppressWasiWarningLine(stderrBuffer, suppressTraceWarningLine)) {
+    if (
+      !shouldSuppressWasiWarningLine(stderrBuffer, suppressTraceWarningLine)
+    ) {
       process.stderr.write(stderrBuffer);
     }
   }
@@ -1418,7 +1498,10 @@ export async function createRunReporter(
   const loadedConfig = loadConfig(resolvedConfigPath);
   const mode = applyMode(loadedConfig, modeName);
   const config = mode.config;
-  const selection = resolveReporterSelection(reporterPath, config.runOptions.reporter);
+  const selection = resolveReporterSelection(
+    reporterPath,
+    config.runOptions.reporter,
+  );
   const reporter = await loadReporter(selection, resolvedConfigPath, {
     stdout: process.stdout,
     stderr: process.stderr,
@@ -1482,7 +1565,10 @@ function resolveReporterSelection(
   configValue: unknown,
 ): ReporterSelection {
   const parsed = parseReporterConfig(configValue);
-  const raw = resolveCliReporter(process.argv.slice(2), cliValue ?? parsed.name);
+  const raw = resolveCliReporter(
+    process.argv.slice(2),
+    cliValue ?? parsed.name,
+  );
   const normalized = raw.trim();
   const canonical = normalized.toLowerCase();
 

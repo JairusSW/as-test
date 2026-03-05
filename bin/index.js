@@ -306,9 +306,7 @@ function resolveCommandTokens(rawArgs, command) {
 async function runTestSequential(runFlags, configPath, selectors, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal, modeName) {
     const files = await resolveSelectedFiles(configPath, selectors);
     if (!files.length) {
-        const scope = selectors.length > 0
-            ? selectors.join(", ")
-            : "configured input patterns";
+        const scope = selectors.length > 0 ? selectors.join(", ") : "configured input patterns";
         throw new Error(`No test files matched: ${scope}`);
     }
     const reporterSession = await createRunReporter(configPath, undefined, modeName);
@@ -323,9 +321,10 @@ async function runTestSequential(runFlags, configPath, selectors, buildFeatureTo
     });
     const results = [];
     let failed = false;
+    const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
     for (const file of files) {
         await build(configPath, [file], modeName, buildFeatureToggles);
-        const artifactKey = path.basename(file).replace(/[^a-zA-Z0-9._-]/g, "_");
+        const artifactKey = resolvePerFileArtifactKey(file, duplicateSpecBasenames);
         const result = await run(runFlags, configPath, [file], false, {
             reporter,
             emitRunStart: false,
@@ -381,9 +380,7 @@ async function runRuntimeModes(runFlags, configPath, selectors, modes) {
 async function runRuntimeMatrix(runFlags, configPath, selectors, modes, modeSummaryTotal, fileSummaryTotal) {
     const files = await resolveSelectedFiles(configPath, selectors);
     if (!files.length) {
-        const scope = selectors.length > 0
-            ? selectors.join(", ")
-            : "configured input patterns";
+        const scope = selectors.length > 0 ? selectors.join(", ") : "configured input patterns";
         throw new Error(`No test files matched: ${scope}`);
     }
     const reporterSession = await createRunReporter(configPath);
@@ -409,6 +406,7 @@ async function runRuntimeMatrix(runFlags, configPath, selectors, modes, modeSumm
         failed: false,
         passed: false,
     }));
+    const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
     for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
         const file = files[fileIndex];
         const fileName = path.basename(file);
@@ -420,7 +418,7 @@ async function runRuntimeMatrix(runFlags, configPath, selectors, modes, modeSumm
         for (let i = 0; i < modes.length; i++) {
             const modeName = modes[i];
             try {
-                const artifactKey = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+                const artifactKey = resolvePerFileArtifactKey(file, duplicateSpecBasenames);
                 const result = await run(runFlags, configPath, [file], false, {
                     reporter: silentReporter,
                     reporterKind: "default",
@@ -490,9 +488,7 @@ async function runTestModes(runFlags, configPath, selectors, modes, buildFeature
 async function runTestMatrix(runFlags, configPath, selectors, modes, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal) {
     const files = await resolveSelectedFiles(configPath, selectors);
     if (!files.length) {
-        const scope = selectors.length > 0
-            ? selectors.join(", ")
-            : "configured input patterns";
+        const scope = selectors.length > 0 ? selectors.join(", ") : "configured input patterns";
         throw new Error(`No test files matched: ${scope}`);
     }
     const reporterSession = await createRunReporter(configPath);
@@ -518,6 +514,7 @@ async function runTestMatrix(runFlags, configPath, selectors, modes, buildFeatur
         failed: false,
         passed: false,
     }));
+    const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
     for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
         const file = files[fileIndex];
         const fileName = path.basename(file);
@@ -530,7 +527,7 @@ async function runTestMatrix(runFlags, configPath, selectors, modes, buildFeatur
             const modeName = modes[i];
             try {
                 await build(configPath, [file], modeName, buildFeatureToggles);
-                const artifactKey = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+                const artifactKey = resolvePerFileArtifactKey(file, duplicateSpecBasenames);
                 const result = await run(runFlags, configPath, [file], false, {
                     reporter: silentReporter,
                     reporterKind: "default",
@@ -590,7 +587,9 @@ function renderMatrixFileResult(file, modes, results, modeTimes, liveMatrix, sho
             : chalk.bgBlackBright.white(" SKIP ");
     const avg = formatMatrixAverageTime(results);
     const timingText = showPerModeTimes ? modeTimes.join(",") : avg;
-    const suffix = showPerModeTimes ? ` ${chalk.dim(`(${modes.join(",")})`)}` : "";
+    const suffix = showPerModeTimes
+        ? ` ${chalk.dim(`(${modes.join(",")})`)}`
+        : "";
     const line = `${badge} ${file} ${chalk.dim(timingText)}${suffix}`;
     if (liveMatrix)
         clearLiveLine();
@@ -616,7 +615,9 @@ function renderMatrixLiveLine(file, modes, modeTimes, showPerModeTimes) {
     if (!canRewriteStdout())
         return;
     const timingText = showPerModeTimes ? modeTimes.join(",") : "...";
-    const suffix = showPerModeTimes ? ` ${chalk.dim(`(${modes.join(",")})`)}` : "";
+    const suffix = showPerModeTimes
+        ? ` ${chalk.dim(`(${modes.join(",")})`)}`
+        : "";
     const line = `${chalk.bgBlackBright.white(" .... ")} ${file} ${chalk.dim(timingText)}${suffix}`;
     process.stdout.write(`\r\x1b[2K${line}`);
 }
@@ -629,7 +630,9 @@ function formatMatrixAverageTime(results) {
         return "0.0ms";
     let total = 0;
     for (const result of results) {
-        total += Number.isFinite(result.stats.time) ? Math.max(0, result.stats.time) : 0;
+        total += Number.isFinite(result.stats.time)
+            ? Math.max(0, result.stats.time)
+            : 0;
     }
     return `${(total / results.length).toFixed(1)}ms`;
 }
@@ -720,7 +723,9 @@ async function resolveSelectedFiles(configPath, selectors) {
     return [...new Set(specs)].sort((a, b) => a.localeCompare(b));
 }
 function resolveInputPatterns(configured, selectors) {
-    const configuredInputs = Array.isArray(configured) ? configured : [configured];
+    const configuredInputs = Array.isArray(configured)
+        ? configured
+        : [configured];
     if (!selectors.length)
         return configuredInputs;
     const patterns = new Set();
@@ -769,6 +774,39 @@ function isBareSuiteSelector(selector) {
 }
 function stripSuiteSuffix(selector) {
     return selector.replace(/\.spec\.ts$/, "").replace(/\.ts$/, "");
+}
+function resolveDuplicateSpecBasenames(files) {
+    const counts = new Map();
+    for (const file of files) {
+        const base = path.basename(file);
+        counts.set(base, (counts.get(base) ?? 0) + 1);
+    }
+    const duplicates = new Set();
+    for (const [base, count] of counts) {
+        if (count > 1)
+            duplicates.add(base);
+    }
+    return duplicates;
+}
+function resolvePerFileArtifactKey(file, duplicateSpecBasenames) {
+    const base = path.basename(file);
+    let raw = base;
+    if (duplicateSpecBasenames.has(base)) {
+        const disambiguator = resolvePerFileDisambiguator(file);
+        if (disambiguator.length) {
+            raw = `${base}.${disambiguator}`;
+        }
+    }
+    return raw.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+function resolvePerFileDisambiguator(file) {
+    const relDir = path.dirname(path.relative(process.cwd(), file));
+    if (!relDir.length || relDir == ".")
+        return "";
+    return relDir
+        .replace(/[\\/]+/g, "__")
+        .replace(/[^A-Za-z0-9._-]/g, "_")
+        .replace(/^_+|_+$/g, "");
 }
 function aggregateRunResults(results) {
     const stats = {
@@ -821,7 +859,8 @@ function aggregateRunResults(results) {
         snapshotSummary.created += result.snapshotSummary.created;
         snapshotSummary.updated += result.snapshotSummary.updated;
         snapshotSummary.failed += result.snapshotSummary.failed;
-        coverageSummary.enabled = coverageSummary.enabled || result.coverageSummary.enabled;
+        coverageSummary.enabled =
+            coverageSummary.enabled || result.coverageSummary.enabled;
         coverageSummary.showPoints =
             coverageSummary.showPoints || result.coverageSummary.showPoints;
         for (const fileCoverage of result.coverageSummary.files) {
