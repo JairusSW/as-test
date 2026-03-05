@@ -1,7 +1,7 @@
 import chalk from "chalk";
 import { spawn } from "child_process";
 import { glob } from "glob";
-import { applyMode, getExec, loadConfig } from "./util.js";
+import { applyMode, getExec, loadConfig, tokenizeCommand } from "./util.js";
 import * as path from "path";
 import { pathToFileURL } from "url";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
@@ -126,6 +126,11 @@ type RunExecutionOptions = {
   emitRunComplete?: boolean;
   logFileName?: string;
   coverageFileName?: string;
+};
+
+type RuntimeInvocation = {
+  command: string;
+  args: string[];
 };
 
 type ReporterKind = "default" | "tap" | "custom";
@@ -306,7 +311,11 @@ export async function run(
       stderr: process.stderr,
     }));
 
-  const command = runtimeCommand.split(" ")[0];
+  const runtimeTokens = tokenizeCommand(runtimeCommand);
+  if (!runtimeTokens.length) {
+    throw new Error("runtime command is empty");
+  }
+  const command = runtimeTokens[0]!;
   const execPath = getExec(command);
 
   if (!execPath) {
@@ -358,13 +367,19 @@ export async function run(
       .slice(file.lastIndexOf("/") + 1)
       .replace(".ts", "")
       .replace(".spec", "");
-    let cmd = runtimeCommand.replace(command, execPath);
-    cmd = cmd.replace("<name>", fileBase);
-    if (config.buildOptions.target == "bindings" && !cmd.includes("<file>")) {
-      cmd = cmd.replace("<file>", resolveBindingsHelperPath(outFile));
-    } else {
-      cmd = cmd.replace("<file>", outFile);
-    }
+    const fileToken =
+      config.buildOptions.target == "bindings" &&
+      !runtimeTokens.some((token) => token.includes("<file>"))
+        ? resolveBindingsHelperPath(outFile)
+        : outFile;
+    const invocation: RuntimeInvocation = {
+      command: execPath,
+      args: runtimeTokens
+        .slice(1)
+        .map((token) =>
+          token.replace(/<name>/g, fileBase).replace(/<file>/g, fileToken),
+        ),
+    };
     const snapshotStore = new SnapshotStore(
       file,
       config.snapshotDir,
@@ -373,7 +388,7 @@ export async function run(
     let report: any;
     try {
       report = await runProcess(
-        cmd,
+        invocation,
         snapshotStore,
         snapshotEnabled,
         updateSnapshots,
@@ -1225,7 +1240,7 @@ function compareCoveragePoints(
 }
 
 async function runProcess(
-  cmd: string,
+  invocation: RuntimeInvocation,
   snapshots: SnapshotStore,
   snapshotEnabled: boolean,
   updateSnapshots: boolean,
@@ -1233,15 +1248,20 @@ async function runProcess(
   tapMode: boolean = false,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<any> {
-  const child = spawn(cmd, {
+  const child = spawn(invocation.command, invocation.args, {
     stdio: ["pipe", "pipe", "pipe"],
-    shell: true,
+    shell: false,
     env,
   });
   let report: any = null;
   let parseError: string | null = null;
   let stderrBuffer = "";
   let suppressTraceWarningLine = false;
+  let spawnError: Error | null = null;
+
+  child.on("error", (error) => {
+    spawnError = error;
+  });
 
   child.stderr.on("data", (chunk) => {
     stderrBuffer += chunk.toString("utf8");
@@ -1361,6 +1381,9 @@ async function runProcess(
     ) {
       process.stderr.write(stderrBuffer);
     }
+  }
+  if (spawnError) {
+    throw spawnError;
   }
 
   if (parseError) {

@@ -55,10 +55,7 @@ export function loadConfig(CONFIG_PATH: string, warn: boolean = false): Config {
       string,
       unknown
     >;
-    const config = Object.assign(
-      new Config(),
-      raw,
-    ) as Config;
+    const config = Object.assign(new Config(), raw) as Config;
     config.env = parseEnvMap(raw.env);
     const runOptionsRaw =
       (raw.runOptions as Record<string, unknown> | undefined) ?? {};
@@ -69,16 +66,16 @@ export function loadConfig(CONFIG_PATH: string, warn: boolean = false): Config {
     config.buildOptions.cmd =
       typeof config.buildOptions.cmd == "string" ? config.buildOptions.cmd : "";
     config.buildOptions.args = Array.isArray(config.buildOptions.args)
-      ? config.buildOptions.args.filter((item): item is string => typeof item == "string")
+      ? config.buildOptions.args.filter(
+          (item): item is string => typeof item == "string",
+        )
       : [];
     config.buildOptions.target =
-      typeof config.buildOptions.target == "string" && config.buildOptions.target.length
+      typeof config.buildOptions.target == "string" &&
+      config.buildOptions.target.length
         ? config.buildOptions.target
         : "wasi";
-    config.runOptions = Object.assign(
-      new RunOptions(),
-      runOptionsRaw,
-    );
+    config.runOptions = Object.assign(new RunOptions(), runOptionsRaw);
     const reporterRaw = runOptionsRaw.reporter;
     if (typeof reporterRaw == "string") {
       config.runOptions.reporter = reporterRaw;
@@ -90,7 +87,9 @@ export function loadConfig(CONFIG_PATH: string, warn: boolean = false): Config {
       reporterConfig.name =
         typeof reporterConfig.name == "string" ? reporterConfig.name : "";
       reporterConfig.options = Array.isArray(reporterConfig.options)
-        ? reporterConfig.options.filter((value): value is string => typeof value == "string")
+        ? reporterConfig.options.filter(
+            (value): value is string => typeof value == "string",
+          )
         : [];
       reporterConfig.outDir =
         typeof reporterConfig.outDir == "string" ? reporterConfig.outDir : "";
@@ -101,7 +100,9 @@ export function loadConfig(CONFIG_PATH: string, warn: boolean = false): Config {
       config.runOptions.reporter = "";
     }
 
-    const runtimeRaw = runOptionsRaw.runtime as Record<string, unknown> | undefined;
+    const runtimeRaw = runOptionsRaw.runtime as
+      | Record<string, unknown>
+      | undefined;
     const runtime = new Runtime();
     const legacyRun =
       typeof runOptionsRaw.run == "string" && runOptionsRaw.run.length
@@ -117,7 +118,7 @@ export function loadConfig(CONFIG_PATH: string, warn: boolean = false): Config {
           ? runtimeRaw.run
           : legacyRun
             ? legacyRun
-          : runtime.cmd;
+            : runtime.cmd;
     runtime.cmd = cmd;
     config.runOptions.runtime = runtime;
     config.modes = parseModes(raw.modes);
@@ -141,16 +142,10 @@ function parseModes(raw: unknown): Record<string, ModeConfig> {
     if (typeof modeRaw.logs == "string" && modeRaw.logs.length) {
       mode.logs = modeRaw.logs;
     }
-    if (
-      typeof modeRaw.coverageDir == "string" &&
-      modeRaw.coverageDir.length
-    ) {
+    if (typeof modeRaw.coverageDir == "string" && modeRaw.coverageDir.length) {
       mode.coverageDir = modeRaw.coverageDir;
     }
-    if (
-      typeof modeRaw.snapshotDir == "string" &&
-      modeRaw.snapshotDir.length
-    ) {
+    if (typeof modeRaw.snapshotDir == "string" && modeRaw.snapshotDir.length) {
       mode.snapshotDir = modeRaw.snapshotDir;
     }
     if (typeof modeRaw.config == "string" && modeRaw.config.length) {
@@ -192,10 +187,7 @@ function parseModes(raw: unknown): Record<string, ModeConfig> {
         const runtime = new Runtime();
         if (typeof runtimeRaw.cmd == "string" && runtimeRaw.cmd.length) {
           runtime.cmd = runtimeRaw.cmd;
-        } else if (
-          typeof runtimeRaw.run == "string" &&
-          runtimeRaw.run.length
-        ) {
+        } else if (typeof runtimeRaw.run == "string" && runtimeRaw.run.length) {
           runtime.cmd = runtimeRaw.run;
         } else {
           runtime.cmd = "";
@@ -277,7 +269,10 @@ function appendModeTokens(out: string[], value: string): void {
   }
 }
 
-export function applyMode(config: Config, modeName?: string): {
+export function applyMode(
+  config: Config,
+  modeName?: string,
+): {
   config: Config;
   env: NodeJS.ProcessEnv;
   modeName?: string;
@@ -304,7 +299,10 @@ export function applyMode(config: Config, modeName?: string): {
   const merged = Object.assign(new Config(), config) as Config;
   merged.buildOptions = Object.assign(new BuildOptions(), config.buildOptions);
   merged.runOptions = Object.assign(new RunOptions(), config.runOptions);
-  merged.runOptions.runtime = Object.assign(new Runtime(), config.runOptions.runtime);
+  merged.runOptions.runtime = Object.assign(
+    new Runtime(),
+    config.runOptions.runtime,
+  );
 
   if (mode.outDir) merged.outDir = mode.outDir;
   else merged.outDir = appendPathSegment(config.outDir, modeName);
@@ -321,8 +319,10 @@ export function applyMode(config: Config, modeName?: string): {
   if (mode.config) merged.config = mode.config;
   if (mode.coverage != undefined) merged.coverage = mode.coverage;
 
-  if (mode.buildOptions.target) merged.buildOptions.target = mode.buildOptions.target;
-  if (mode.buildOptions.cmd != undefined) merged.buildOptions.cmd = mode.buildOptions.cmd;
+  if (mode.buildOptions.target)
+    merged.buildOptions.target = mode.buildOptions.target;
+  if (mode.buildOptions.cmd != undefined)
+    merged.buildOptions.cmd = mode.buildOptions.cmd;
   if (mode.buildOptions.args) {
     merged.buildOptions.args = [
       ...merged.buildOptions.args,
@@ -392,4 +392,68 @@ export function getExec(exec: string): string | null {
     }
   }
   return null;
+}
+
+export function tokenizeCommand(command: string): string[] {
+  const out: string[] = [];
+  let current = "";
+  let quote: '"' | "'" | null = null;
+  let escaping = false;
+
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i]!;
+
+    if (escaping) {
+      current += ch;
+      escaping = false;
+      continue;
+    }
+
+    if (ch == "\\") {
+      if (quote == "'") {
+        current += ch;
+      } else {
+        escaping = true;
+      }
+      continue;
+    }
+
+    if (quote) {
+      if (ch == quote) {
+        quote = null;
+      } else {
+        current += ch;
+      }
+      continue;
+    }
+
+    if (ch == '"' || ch == "'") {
+      quote = ch;
+      continue;
+    }
+
+    if (/\s/.test(ch)) {
+      if (current.length) {
+        out.push(current);
+        current = "";
+      }
+      continue;
+    }
+
+    current += ch;
+  }
+
+  if (escaping) {
+    current += "\\";
+  }
+
+  if (quote) {
+    throw new Error(`unterminated quote in command: ${command}`);
+  }
+
+  if (current.length) {
+    out.push(current);
+  }
+
+  return out;
 }

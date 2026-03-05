@@ -44,7 +44,8 @@ export function loadConfig(CONFIG_PATH, warn = false) {
             ? config.buildOptions.args.filter((item) => typeof item == "string")
             : [];
         config.buildOptions.target =
-            typeof config.buildOptions.target == "string" && config.buildOptions.target.length
+            typeof config.buildOptions.target == "string" &&
+                config.buildOptions.target.length
                 ? config.buildOptions.target
                 : "wasi";
         config.runOptions = Object.assign(new RunOptions(), runOptionsRaw);
@@ -104,12 +105,10 @@ function parseModes(raw) {
         if (typeof modeRaw.logs == "string" && modeRaw.logs.length) {
             mode.logs = modeRaw.logs;
         }
-        if (typeof modeRaw.coverageDir == "string" &&
-            modeRaw.coverageDir.length) {
+        if (typeof modeRaw.coverageDir == "string" && modeRaw.coverageDir.length) {
             mode.coverageDir = modeRaw.coverageDir;
         }
-        if (typeof modeRaw.snapshotDir == "string" &&
-            modeRaw.snapshotDir.length) {
+        if (typeof modeRaw.snapshotDir == "string" && modeRaw.snapshotDir.length) {
             mode.snapshotDir = modeRaw.snapshotDir;
         }
         if (typeof modeRaw.config == "string" && modeRaw.config.length) {
@@ -144,8 +143,7 @@ function parseModes(raw) {
                 if (typeof runtimeRaw.cmd == "string" && runtimeRaw.cmd.length) {
                     runtime.cmd = runtimeRaw.cmd;
                 }
-                else if (typeof runtimeRaw.run == "string" &&
-                    runtimeRaw.run.length) {
+                else if (typeof runtimeRaw.run == "string" && runtimeRaw.run.length) {
                     runtime.cmd = runtimeRaw.run;
                 }
                 else {
@@ -323,4 +321,58 @@ export function getExec(exec) {
         }
     }
     return null;
+}
+export function tokenizeCommand(command) {
+    const out = [];
+    let current = "";
+    let quote = null;
+    let escaping = false;
+    for (let i = 0; i < command.length; i++) {
+        const ch = command[i];
+        if (escaping) {
+            current += ch;
+            escaping = false;
+            continue;
+        }
+        if (ch == "\\") {
+            if (quote == "'") {
+                current += ch;
+            }
+            else {
+                escaping = true;
+            }
+            continue;
+        }
+        if (quote) {
+            if (ch == quote) {
+                quote = null;
+            }
+            else {
+                current += ch;
+            }
+            continue;
+        }
+        if (ch == '"' || ch == "'") {
+            quote = ch;
+            continue;
+        }
+        if (/\s/.test(ch)) {
+            if (current.length) {
+                out.push(current);
+                current = "";
+            }
+            continue;
+        }
+        current += ch;
+    }
+    if (escaping) {
+        current += "\\";
+    }
+    if (quote) {
+        throw new Error(`unterminated quote in command: ${command}`);
+    }
+    if (current.length) {
+        out.push(current);
+    }
+    return out;
 }

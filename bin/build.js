@@ -1,9 +1,9 @@
 import { existsSync } from "fs";
 import { glob } from "glob";
 import chalk from "chalk";
-import { execSync } from "child_process";
+import { spawnSync } from "child_process";
 import * as path from "path";
-import { applyMode, getPkgRunner, loadConfig } from "./util.js";
+import { applyMode, getPkgRunner, loadConfig, tokenizeCommand, } from "./util.js";
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 export async function build(configPath = DEFAULT_CONFIG_PATH, selectors = [], modeName, featureToggles = {}) {
     const loadedConfig = loadConfig(configPath, false);
@@ -23,13 +23,13 @@ export async function build(configPath = DEFAULT_CONFIG_PATH, selectors = [], mo
     };
     for (const file of inputFiles) {
         const outFile = `${config.outDir}/${resolveArtifactFileName(file, config.buildOptions.target, modeName, duplicateSpecBasenames)}`;
-        const cmd = getBuildCommand(config, pkgRunner, file, outFile, modeName, featureToggles);
+        const invocation = getBuildCommand(config, pkgRunner, file, outFile, modeName, featureToggles);
         try {
-            buildFile(cmd, buildEnv);
+            buildFile(invocation, buildEnv);
         }
         catch (error) {
             const modeLabel = modeName ?? "default";
-            throw new Error(`Failed to build ${path.basename(file)} in mode ${modeLabel} with ${getBuildStderr(error)}\nBuild command: ${cmd}`);
+            throw new Error(`Failed to build ${path.basename(file)} in mode ${modeLabel} with ${getBuildStderr(error)}\nBuild command: ${formatInvocation(invocation)}`);
         }
     }
 }
@@ -39,21 +39,27 @@ function hasCustomBuildCommand(config) {
 function getBuildCommand(config, pkgRunner, file, outFile, modeName, featureToggles = {}) {
     const userArgs = getUserBuildArgs(config);
     if (hasCustomBuildCommand(config)) {
-        return `${expandBuildCommand(config.buildOptions.cmd, file, outFile, config.buildOptions.target, modeName)}${userArgs}`;
+        const tokens = tokenizeCommand(expandBuildCommand(config.buildOptions.cmd, file, outFile, config.buildOptions.target, modeName));
+        if (!tokens.length) {
+            throw new Error("custom build command is empty");
+        }
+        return {
+            command: tokens[0],
+            args: [...tokens.slice(1), ...userArgs],
+        };
     }
     const defaultArgs = getDefaultBuildArgs(config, featureToggles);
-    let cmd = `${pkgRunner} asc ${file}${userArgs}${defaultArgs}`;
-    if (config.outDir) {
-        cmd += " -o " + outFile;
+    const args = ["asc", file, ...userArgs, ...defaultArgs];
+    if (config.outDir.length) {
+        args.push("-o", outFile);
     }
-    return cmd;
+    return {
+        command: pkgRunner,
+        args,
+    };
 }
 function getUserBuildArgs(config) {
-    const args = config.buildOptions.args.filter((value) => value.length > 0);
-    if (args.length) {
-        return " " + args.join(" ");
-    }
-    return "";
+    return config.buildOptions.args.filter((value) => value.length > 0);
 }
 function expandBuildCommand(template, file, outFile, target, modeName) {
     const name = path
@@ -171,12 +177,27 @@ function ensureDeps(config) {
         }
     }
 }
-function buildFile(command, env) {
-    execSync(command, {
+function buildFile(invocation, env) {
+    const result = spawnSync(invocation.command, invocation.args, {
         stdio: ["ignore", "pipe", "pipe"],
         encoding: "utf8",
         env,
+        shell: false,
     });
+    if (result.error)
+        throw result.error;
+    if (result.status !== 0) {
+        const error = new Error(result.stderr?.trim() ||
+            result.stdout?.trim() ||
+            `command exited with code ${result.status}`);
+        error.stderr = result.stderr ?? "";
+        throw error;
+    }
+}
+function formatInvocation(invocation) {
+    return [invocation.command, ...invocation.args]
+        .map((token) => (/\s/.test(token) ? JSON.stringify(token) : token))
+        .join(" ");
 }
 function getBuildStderr(error) {
     const err = error;
@@ -195,27 +216,24 @@ function getBuildStderr(error) {
     return message || "unknown error";
 }
 function getDefaultBuildArgs(config, featureToggles) {
-    let buildArgs = "";
+    const buildArgs = [];
     const tryAsEnabled = resolveTryAsEnabled(featureToggles.tryAs);
-    buildArgs += " --transform as-test/transform";
+    buildArgs.push("--transform", "as-test/transform");
     if (tryAsEnabled) {
-        buildArgs += " --transform try-as/transform";
+        buildArgs.push("--transform", "try-as/transform");
     }
     if (config.config && config.config !== "none") {
-        buildArgs += " --config " + config.config;
+        buildArgs.push("--config", config.config);
     }
     if (tryAsEnabled) {
-        buildArgs += " --use AS_TEST_TRY_AS=1";
+        buildArgs.push("--use", "AS_TEST_TRY_AS=1");
     }
     // Should also strip any bindings-enabling from asconfig
     if (config.buildOptions.target == "bindings") {
-        buildArgs += " --use AS_TEST_BINDINGS=1";
-        buildArgs += " --bindings raw --exportRuntime --exportStart _start";
+        buildArgs.push("--use", "AS_TEST_BINDINGS=1", "--bindings", "raw", "--exportRuntime", "--exportStart", "_start");
     }
     else if (config.buildOptions.target == "wasi") {
-        buildArgs += " --use AS_TEST_WASI=1";
-        buildArgs +=
-            " --config ./node_modules/@assemblyscript/wasi-shim/asconfig.json";
+        buildArgs.push("--use", "AS_TEST_WASI=1", "--config", "./node_modules/@assemblyscript/wasi-shim/asconfig.json");
     }
     else {
         console.log(`${chalk.bgRed(" ERROR ")}${chalk.dim(":")} could not determine target in config! Set target to 'bindings' or 'wasi'`);

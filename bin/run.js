@@ -1,7 +1,7 @@
 import chalk from "chalk";
 import { spawn } from "child_process";
 import { glob } from "glob";
-import { applyMode, getExec, loadConfig } from "./util.js";
+import { applyMode, getExec, loadConfig, tokenizeCommand } from "./util.js";
 import * as path from "path";
 import { pathToFileURL } from "url";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
@@ -180,7 +180,11 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
             stdout: process.stdout,
             stderr: process.stderr,
         }));
-    const command = runtimeCommand.split(" ")[0];
+    const runtimeTokens = tokenizeCommand(runtimeCommand);
+    if (!runtimeTokens.length) {
+        throw new Error("runtime command is empty");
+    }
+    const command = runtimeTokens[0];
     const execPath = getExec(command);
     if (!execPath) {
         const message = `${chalk.bgRed(" ERROR ")}${chalk.dim(":")} could not locate ${command} in PATH variable!`;
@@ -215,18 +219,20 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
             .slice(file.lastIndexOf("/") + 1)
             .replace(".ts", "")
             .replace(".spec", "");
-        let cmd = runtimeCommand.replace(command, execPath);
-        cmd = cmd.replace("<name>", fileBase);
-        if (config.buildOptions.target == "bindings" && !cmd.includes("<file>")) {
-            cmd = cmd.replace("<file>", resolveBindingsHelperPath(outFile));
-        }
-        else {
-            cmd = cmd.replace("<file>", outFile);
-        }
+        const fileToken = config.buildOptions.target == "bindings" &&
+            !runtimeTokens.some((token) => token.includes("<file>"))
+            ? resolveBindingsHelperPath(outFile)
+            : outFile;
+        const invocation = {
+            command: execPath,
+            args: runtimeTokens
+                .slice(1)
+                .map((token) => token.replace(/<name>/g, fileBase).replace(/<file>/g, fileToken)),
+        };
         const snapshotStore = new SnapshotStore(file, config.snapshotDir, duplicateSpecBasenames);
         let report;
         try {
-            report = await runProcess(cmd, snapshotStore, snapshotEnabled, updateSnapshots, reporter, reporterKind == "tap", mode.env);
+            report = await runProcess(invocation, snapshotStore, snapshotEnabled, updateSnapshots, reporter, reporterKind == "tap", mode.env);
         }
         catch (error) {
             const modeLabel = options.modeName ?? "default";
@@ -923,16 +929,20 @@ function compareCoveragePoints(a, b) {
         return a.type.localeCompare(b.type);
     return a.hash.localeCompare(b.hash);
 }
-async function runProcess(cmd, snapshots, snapshotEnabled, updateSnapshots, reporter, tapMode = false, env = process.env) {
-    const child = spawn(cmd, {
+async function runProcess(invocation, snapshots, snapshotEnabled, updateSnapshots, reporter, tapMode = false, env = process.env) {
+    const child = spawn(invocation.command, invocation.args, {
         stdio: ["pipe", "pipe", "pipe"],
-        shell: true,
+        shell: false,
         env,
     });
     let report = null;
     let parseError = null;
     let stderrBuffer = "";
     let suppressTraceWarningLine = false;
+    let spawnError = null;
+    child.on("error", (error) => {
+        spawnError = error;
+    });
     child.stderr.on("data", (chunk) => {
         stderrBuffer += chunk.toString("utf8");
         let newline = stderrBuffer.indexOf("\n");
@@ -1039,6 +1049,9 @@ async function runProcess(cmd, snapshots, snapshotEnabled, updateSnapshots, repo
         if (!shouldSuppressWasiWarningLine(stderrBuffer, suppressTraceWarningLine)) {
             process.stderr.write(stderrBuffer);
         }
+    }
+    if (spawnError) {
+        throw spawnError;
     }
     if (parseError) {
         throw new Error(`could not parse report payload: ${parseError}`);
