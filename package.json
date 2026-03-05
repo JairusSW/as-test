@@ -67,7 +67,7 @@
     "lint": "eslint transform/src/**/*.ts tools/**/*.js eslint.config.js",
     "build:transform": "tsc -p ./transform",
     "build:cli": "tsc -p cli",
-    "build:run": "tsc -p run",
+    "build:run": "npm run build:cli",
     "prettier": "prettier -w .",
     "release:check": "npm run build:cli && npm run build:transform && npm run test && npm pack --dry-run --cache /tmp/as-test-npm-cache",
     "prepublishOnly": "npm run build:cli && npm run build:transform && npm run test"
