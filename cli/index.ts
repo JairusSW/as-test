@@ -5,7 +5,12 @@ import { build, BuildFeatureToggles } from "./build.js";
 import { createRunReporter, run, RunResult } from "./run.js";
 import { init } from "./init.js";
 import { doctor } from "./doctor.js";
-import { getCliVersion, loadConfig, resolveModeNames } from "./util.js";
+import {
+  applyMode,
+  getCliVersion,
+  loadConfig,
+  resolveModeNames,
+} from "./util.js";
 import * as path from "path";
 import { glob } from "glob";
 import { CoverageSummary, RunStats, TestReporter } from "./reporters/types.js";
@@ -18,6 +23,10 @@ const COMMANDS: string[] = ["run", "build", "test", "init", "doctor"];
 type CliFeatureToggles = {
   coverage?: boolean;
   tryAs?: boolean;
+};
+type CliListFlags = {
+  list: boolean;
+  listModes: boolean;
 };
 
 const version = getCliVersion();
@@ -39,6 +48,7 @@ if (!args.length) {
   try {
     const command = args.shift();
     const commandArgs = resolveCommandArgs(_args, command ?? "");
+    const listFlags = resolveListFlags(_args, command ?? "");
     const featureToggles = resolveFeatureToggles(_args, command ?? "");
     const buildFeatureToggles: BuildFeatureToggles = {
       tryAs: featureToggles.tryAs,
@@ -54,35 +64,74 @@ if (!args.length) {
     };
     if (command === "build") {
       const modeTargets = resolveExecutionModes(configPath, selectedModes);
-      runBuildModes(
-        configPath,
-        commandArgs,
-        modeTargets,
-        buildFeatureToggles,
-      ).catch((error) => {
-        printCliError(error);
-        process.exit(1);
-      });
-    } else if (command === "run") {
-      const modeTargets = resolveExecutionModes(configPath, selectedModes);
-      runRuntimeModes(runFlags, configPath, commandArgs, modeTargets).catch(
-        (error) => {
+      if (listFlags.list || listFlags.listModes) {
+        listExecutionPlan(
+          "build",
+          configPath,
+          commandArgs,
+          modeTargets,
+          listFlags,
+        ).catch((error) => {
           printCliError(error);
           process.exit(1);
-        },
-      );
+        });
+      } else {
+        runBuildModes(
+          configPath,
+          commandArgs,
+          modeTargets,
+          buildFeatureToggles,
+        ).catch((error) => {
+          printCliError(error);
+          process.exit(1);
+        });
+      }
+    } else if (command === "run") {
+      const modeTargets = resolveExecutionModes(configPath, selectedModes);
+      if (listFlags.list || listFlags.listModes) {
+        listExecutionPlan(
+          "run",
+          configPath,
+          commandArgs,
+          modeTargets,
+          listFlags,
+        ).catch((error) => {
+          printCliError(error);
+          process.exit(1);
+        });
+      } else {
+        runRuntimeModes(runFlags, configPath, commandArgs, modeTargets).catch(
+          (error) => {
+            printCliError(error);
+            process.exit(1);
+          },
+        );
+      }
     } else if (command === "test") {
       const modeTargets = resolveExecutionModes(configPath, selectedModes);
-      runTestModes(
-        runFlags,
-        configPath,
-        commandArgs,
-        modeTargets,
-        buildFeatureToggles,
-      ).catch((error) => {
-        printCliError(error);
-        process.exit(1);
-      });
+      if (listFlags.list || listFlags.listModes) {
+        listExecutionPlan(
+          "test",
+          configPath,
+          commandArgs,
+          modeTargets,
+          listFlags,
+        ).catch((error) => {
+          printCliError(error);
+          process.exit(1);
+        });
+      } else {
+        runTestModes(
+          runFlags,
+          configPath,
+          commandArgs,
+          modeTargets,
+          buildFeatureToggles,
+        ).catch((error) => {
+          printCliError(error);
+          process.exit(1);
+        });
+      }
     } else if (command === "init") {
       const commandTokens = resolveCommandTokens(_args, command ?? "");
       init(commandTokens).catch((error) => {
@@ -237,6 +286,18 @@ function info(): void {
       "        " +
       "Use built-in reporter (default|tap) or custom module path",
   );
+  console.log(
+    "   " +
+      chalk.bold.blue("--list") +
+      "                        " +
+      "Preview resolved files/modes/artifacts without running",
+  );
+  console.log(
+    "   " +
+      chalk.bold.blue("--list-modes") +
+      "                  " +
+      "Preview configured and selected mode names",
+  );
   console.log("");
 
   console.log(
@@ -358,6 +419,28 @@ function resolveFeatureToggles(
         applyFeatureToggle(out, value, enabled);
       }
     }
+  }
+  return out;
+}
+
+function resolveListFlags(rawArgs: string[], command: string): CliListFlags {
+  const out: CliListFlags = {
+    list: false,
+    listModes: false,
+  };
+  if (command !== "build" && command !== "run" && command !== "test") {
+    return out;
+  }
+
+  let seenCommand = false;
+  for (let i = 0; i < rawArgs.length; i++) {
+    const arg = rawArgs[i]!;
+    if (!seenCommand) {
+      if (arg == command) seenCommand = true;
+      continue;
+    }
+    if (arg == "--list") out.list = true;
+    if (arg == "--list-modes") out.listModes = true;
   }
   return out;
 }
@@ -1129,6 +1212,125 @@ function resolvePerFileDisambiguator(file: string): string {
     .replace(/[\\/]+/g, "__")
     .replace(/[^A-Za-z0-9._-]/g, "_")
     .replace(/^_+|_+$/g, "");
+}
+
+function resolveArtifactFileNameForPreview(
+  file: string,
+  target: string,
+  modeName: string | undefined,
+  duplicateSpecBasenames: Set<string>,
+): string {
+  const base = path
+    .basename(file)
+    .replace(/\.spec\.ts$/, "")
+    .replace(/\.ts$/, "");
+  const legacy = !modeName
+    ? `${path.basename(file).replace(".ts", ".wasm")}`
+    : `${base}.${modeName}.${target}.wasm`;
+  if (!duplicateSpecBasenames.has(path.basename(file))) {
+    return legacy;
+  }
+  const disambiguator = resolvePerFileDisambiguator(file);
+  if (!disambiguator.length) {
+    return legacy;
+  }
+  const ext = path.extname(legacy);
+  const stem = ext.length ? legacy.slice(0, -ext.length) : legacy;
+  return `${stem}.${disambiguator}${ext}`;
+}
+
+async function listExecutionPlan(
+  command: "build" | "run" | "test",
+  configPath: string | undefined,
+  selectors: string[],
+  modes: (string | undefined)[],
+  listFlags: CliListFlags,
+): Promise<void> {
+  const resolvedConfigPath =
+    configPath ?? path.join(process.cwd(), "./as-test.config.json");
+  const config = loadConfig(resolvedConfigPath, true);
+  const configuredModes = Object.keys(config.modes);
+  const configuredModeLabels = configuredModes.length
+    ? configuredModes
+    : ["default"];
+  const selectedModeLabels = modes.map((modeName) => modeName ?? "default");
+  const unknownModes = modes.filter((modeName): modeName is string =>
+    Boolean(modeName && !configuredModes.includes(modeName)),
+  );
+  if (unknownModes.length) {
+    throw new Error(
+      `unknown mode "${unknownModes[0]}". Available modes: ${configuredModes.join(", ") || "(none)"}`,
+    );
+  }
+
+  process.stdout.write(chalk.bold.blueBright("as-test plan") + "\n");
+  process.stdout.write(chalk.dim(`command: ${command}`) + "\n");
+  process.stdout.write(chalk.dim(`config: ${resolvedConfigPath}`) + "\n");
+  process.stdout.write(
+    chalk.dim(
+      `selectors: ${selectors.length ? selectors.join(", ") : "(configured input patterns)"}`,
+    ) + "\n\n",
+  );
+
+  if (listFlags.listModes) {
+    process.stdout.write(chalk.bold("Configured modes:\n"));
+    for (const modeName of configuredModeLabels) {
+      process.stdout.write(`  - ${modeName}\n`);
+    }
+    process.stdout.write(chalk.bold("\nSelected modes:\n"));
+    for (const modeName of selectedModeLabels) {
+      process.stdout.write(`  - ${modeName}\n`);
+    }
+    process.stdout.write("\n");
+  }
+
+  if (!listFlags.list) return;
+
+  const files = await resolveSelectedFiles(configPath, selectors);
+  if (!files.length) {
+    const scope =
+      selectors.length > 0 ? selectors.join(", ") : "configured input patterns";
+    throw new Error(`No test files matched: ${scope}`);
+  }
+  const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
+
+  process.stdout.write(chalk.bold("Resolved files:\n"));
+  for (const file of files) {
+    process.stdout.write(`  - ${file}\n`);
+  }
+  process.stdout.write("\n");
+
+  for (const modeName of modes) {
+    const applied = applyMode(config, modeName);
+    const active = applied.config;
+    const modeLabel = modeName ?? "default";
+    process.stdout.write(chalk.bold(`Mode: ${modeLabel}\n`));
+    process.stdout.write(`  target: ${active.buildOptions.target}\n`);
+    process.stdout.write(`  outDir: ${active.outDir}\n`);
+    if (command != "build") {
+      process.stdout.write(`  runtime: ${active.runOptions.runtime.cmd}\n`);
+    }
+    const envOverrides = modeName
+      ? (config.modes[modeName]?.env ?? {})
+      : config.env;
+    const envKeys = Object.keys(envOverrides);
+    process.stdout.write(
+      `  env overrides: ${envKeys.length}${
+        envKeys.length ? ` (${envKeys.join(", ")})` : ""
+      }\n`,
+    );
+    process.stdout.write("  artifacts:\n");
+    for (const file of files) {
+      const artifactName = resolveArtifactFileNameForPreview(
+        file,
+        active.buildOptions.target,
+        modeName,
+        duplicateSpecBasenames,
+      );
+      process.stdout.write(`    - ${path.join(active.outDir, artifactName)}\n`);
+    }
+    process.stdout.write("\n");
+  }
 }
 
 function aggregateRunResults(results: RunResult[]): {

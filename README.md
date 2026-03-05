@@ -131,12 +131,23 @@ No test files matched: ...
 - `--disable <feature>`: disable as-test feature (`coverage`, `try-as`)
 - `--verbose`: keep expanded suite/test lines and update running `....` statuses in place
 - `--clean`: disable in-place TTY updates and print only final per-file verdict lines. Useful for CI/CD.
+- `--list`: show resolved files, per-mode artifacts, and runtime command without executing
+- `--list-modes`: show configured and selected modes without executing
 
 Example:
 
 ```bash
 ast build --enable try-as
 ast test --disable coverage
+```
+
+Preview execution plan:
+
+```bash
+ast test --list
+ast test --list-modes
+ast run sleep --list --mode wasi
+ast build --list --mode wasi,bindings
 ```
 
 ## Setup Diagnostics
