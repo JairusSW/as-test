@@ -334,18 +334,41 @@ export class Expectation<T> extends Tests {
   }
 
   /**
-   * Tests if an array contains an element
+   * Tests if an array or string contains a value
    */
   // @ts-ignore
   toContain(value: valueof<T>): void {
-    // @ts-ignore
-    const passed = isArray<T>() && this._left.includes(value);
-    this._resolve(
-      passed,
-      "toContain",
-      q("includes value"),
-      q("does not include value"),
-    );
+    if (isString<T>()) {
+      // @ts-ignore
+      const left = this._left as string;
+      // @ts-ignore
+      const needle = value as string;
+      const passed = left.indexOf(needle) >= 0;
+      this._resolve(passed, "toContain", q(left), q(needle));
+      return;
+    }
+
+    if (isArray<T>()) {
+      // @ts-ignore
+      const passed = this._left.includes(value);
+      this._resolve(
+        passed,
+        "toContain",
+        stringifyValue<T>(this._left),
+        stringifyValue<valueof<T>>(value),
+      );
+      return;
+    }
+
+    ERROR("toContain() can only be used on string and array types!");
+  }
+
+  /**
+   * Alias for toContain().
+   */
+  // @ts-ignore
+  toContains(value: valueof<T>): void {
+    this.toContain(value);
   }
 
   /**

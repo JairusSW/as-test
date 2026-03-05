@@ -15,6 +15,7 @@
 - [Coverage](#coverage)
 - [Custom Reporters](#custom-reporters)
 - [Assertions](#assertions)
+- [CLI Style Guide](#cli-style-guide)
 - [License](#license)
 - [Contact](#contact)
 
@@ -61,6 +62,11 @@ Full runnable examples live in `examples/`, including:
 - a dedicated config you can run directly
 
 See `examples/README.md` for the walkthrough.
+
+## CLI Style Guide
+
+Contributor-facing CLI conventions are documented in `CLI_STYLE_GUIDE.md`.
+It mirrors the existing command/help formatting style in `cli/index.ts`.
 
 ## Writing Tests
 
@@ -561,7 +567,7 @@ Available matchers:
 - `toStartWith(prefix)`
 - `toEndWith(suffix)`
 - `toHaveLength(length)`
-- `toContain(item)`
+- `toContain(itemOrSubstring)` (`toContains` alias supported)
 - `toThrow()` (with `try-as`)
 - `toMatchSnapshot(name?)`
 

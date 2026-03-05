@@ -29,6 +29,8 @@ describe("Expectation helpers", () => {
   test("close-to and string matchers", () => {
     expect(3.14159).toBeCloseTo(3.14, 2);
     expect("AssemblyScript testing").toMatch("testing");
+    expect("AssemblyScript testing").toContain("testing");
+    expect("AssemblyScript testing").toContains("Assembly");
     expect("as-test").toStartWith("as");
     expect("as-test").toEndWith("test");
     expect("as-test").not.toStartWith("ts");

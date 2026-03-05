@@ -18,6 +18,7 @@ type InitOptions = {
   yes: boolean;
   force: boolean;
   dir: string;
+  dirExplicit: boolean;
 };
 
 type ApplySummary = {
@@ -28,7 +29,6 @@ type ApplySummary = {
 
 export async function init(rawArgs: string[]) {
   const options = parseInitArgs(rawArgs);
-  const root = path.resolve(process.cwd(), options.dir);
   const rl = options.yes
     ? null
     : createInterface({
@@ -37,38 +37,52 @@ export async function init(rawArgs: string[]) {
       });
 
   try {
-    console.log(chalk.bold(`as-test init v${getCliVersion()}`) + "\n");
+    printOnboardingHeader();
 
-    const target =
-      options.target ?? (await askChoice("Select target", TARGETS, rl, "wasi"));
+    const answers = options.yes
+      ? {
+          root: path.resolve(process.cwd(), options.dir),
+          target: options.target ?? "wasi",
+          example: options.example ?? "minimal",
+          installDependenciesNow: options.install ?? false,
+        }
+      : await runInteractiveOnboarding(options, rl);
 
-    const example =
-      options.example ??
-      (await askChoice("Select example mode", EXAMPLE_MODES, rl, "minimal"));
+    if (!answers) {
+      console.log(chalk.bold.red("◆  Cancelled"));
+      return;
+    }
 
-    const installDependenciesNow =
-      options.install ??
-      (await askYesNo("Install dependencies now? [y/N] ", rl, false));
-
-    printPlan(root, target, example, installDependenciesNow);
+    printPlan(
+      answers.root,
+      answers.target,
+      answers.example,
+      answers.installDependenciesNow,
+    );
 
     if (!options.yes) {
-      const cont = (await ask("Continue? [Y/n] ", rl)).toLowerCase().trim();
-      if (["n", "no"].includes(cont)) {
-        console.log("Exiting.");
+      const cont = await askYesNo("Continue with these changes?", rl, true);
+      if (!cont) {
+        console.log(chalk.bold.red("◆  Cancelled"));
         return;
       }
     }
 
-    const summary = applyInit(root, target, example, options.force);
+    const summary = applyInit(
+      answers.root,
+      answers.target,
+      answers.example,
+      options.force,
+    );
     printSummary(summary);
-    if (installDependenciesNow) {
-      installDependencies(root);
-      console.log(
-        "\nDependencies installed. Run " + chalk.bold("npm test") + "\n",
-      );
+    console.log(chalk.bold.green("◆  Finished!"));
+    if (answers.installDependenciesNow) {
+      installDependencies(answers.root);
+      console.log("\nNow, run " + chalk.italic.bold("npm test") + "\n");
     } else {
-      console.log("\nNow, run " + chalk.bold("npm i && npm test") + "\n");
+      console.log(
+        "\nNow, run " + chalk.italic.bold("npm i && npm test") + "\n",
+      );
     }
   } finally {
     rl?.close();
@@ -76,7 +90,12 @@ export async function init(rawArgs: string[]) {
 }
 
 function parseInitArgs(rawArgs: string[]): InitOptions {
-  const options: InitOptions = { yes: false, force: false, dir: "." };
+  const options: InitOptions = {
+    yes: false,
+    force: false,
+    dir: ".",
+    dirExplicit: false,
+  };
   const positional: string[] = [];
 
   for (let i = 0; i < rawArgs.length; i++) {
@@ -123,6 +142,7 @@ function parseInitArgs(rawArgs: string[]): InitOptions {
       const next = rawArgs[i + 1];
       if (next && !next.startsWith("-")) {
         options.dir = next;
+        options.dirExplicit = true;
         i++;
         continue;
       }
@@ -130,6 +150,7 @@ function parseInitArgs(rawArgs: string[]): InitOptions {
     }
     if (arg.startsWith("--dir=")) {
       options.dir = arg.slice("--dir=".length);
+      options.dirExplicit = true;
       continue;
     }
     if (arg.startsWith("-")) {
@@ -141,6 +162,7 @@ function parseInitArgs(rawArgs: string[]): InitOptions {
   // First positional argument is always the target directory.
   if (positional.length > 0) {
     options.dir = positional.shift()!;
+    options.dirExplicit = true;
   }
 
   if (!options.target && positional.length > 0 && isTarget(positional[0]!)) {
@@ -161,6 +183,209 @@ function parseInitArgs(rawArgs: string[]): InitOptions {
   }
 
   return options;
+}
+
+type InteractiveAnswers = {
+  root: string;
+  target: Target;
+  example: ExampleMode;
+  installDependenciesNow: boolean;
+};
+
+type MenuOption<T extends string> = {
+  value: T;
+  label: string;
+};
+
+async function runInteractiveOnboarding(
+  options: InitOptions,
+  face: Interface | null,
+): Promise<InteractiveAnswers | null> {
+  printOnboardingIntro();
+  const acknowledged = await askYesNo(
+    "I understand this command writes files and can run package manager installs. Continue?",
+    face,
+    true,
+  );
+  if (!acknowledged) return null;
+
+  const onboardingMode = await askMenuChoice(
+    "Onboarding mode",
+    [
+      { value: "manual", label: "Manual (guided prompts)" },
+      { value: "quick", label: "Quick (sensible defaults)" },
+    ],
+    face,
+    "manual",
+  );
+  const workspacePrompt = "What do you want to set up? (default: ./)";
+
+  const defaultRoot = options.dir;
+  let selectedDir = defaultRoot;
+  if (options.dirExplicit || onboardingMode == "quick") {
+    selectedDir = options.dir;
+  } else {
+    const defaultDisplay = defaultRoot == "." ? "./" : defaultRoot;
+    const enteredDir = (
+      await ask(
+        `${chalk.bold.blue(`◇  ${workspacePrompt}`)}\n│  `,
+        face,
+        defaultDisplay,
+      )
+    ).trim();
+    selectedDir = enteredDir.length ? enteredDir : defaultRoot;
+  }
+  const resolvedRoot = path.resolve(process.cwd(), selectedDir);
+  if (options.dirExplicit || onboardingMode == "quick") {
+    printPromptAndSelectionLine(workspacePrompt, resolvedRoot);
+  } else {
+    printSelectionLine(resolvedRoot);
+  }
+
+  const target =
+    options.target ??
+    (onboardingMode == "quick"
+      ? "wasi"
+      : await askMenuChoice(
+          "Build target",
+          [
+            {
+              value: "wasi",
+              label:
+                "wasi (default runner: node .as-test/runners/default.wasi.js)",
+            },
+            {
+              value: "bindings",
+              label:
+                "bindings (default runner: node .as-test/runners/default.bindings.js)",
+            },
+          ],
+          face,
+          "wasi",
+        ));
+  if (options.target || onboardingMode == "quick") {
+    printPromptAndSelectionLine("Build target", target);
+  }
+
+  const example =
+    options.example ??
+    (onboardingMode == "quick"
+      ? "minimal"
+      : await askMenuChoice(
+          "Example template",
+          [
+            { value: "minimal", label: "minimal (one short starter spec)" },
+            { value: "full", label: "full (hooks, assertions, logs, suites)" },
+            { value: "none", label: "none (config/runners only)" },
+          ],
+          face,
+          "minimal",
+        ));
+  if (options.example || onboardingMode == "quick") {
+    printPromptAndSelectionLine("Example template", example);
+  }
+
+  const installDependenciesNow =
+    options.install ??
+    (onboardingMode == "quick"
+      ? false
+      : await askYesNo("Install dependencies now?", face, false));
+  if (options.install !== undefined || onboardingMode == "quick") {
+    printPromptAndSelectionLine(
+      "Install dependencies now?",
+      installDependenciesNow ? "Yes" : "No",
+    );
+  }
+
+  return {
+    root: resolvedRoot,
+    target,
+    example,
+    installDependenciesNow,
+  };
+}
+
+function printOnboardingHeader(): void {
+  // console.log(
+  //   chalk.bold.cyan(
+  //     `as-test ${getCliVersion()} — AssemblyScript testing without runtime guesswork.`,
+  //   ) + "\n",
+  // );
+}
+
+function printOnboardingIntro(): void {
+  console.log(chalk.cyan("╔═╗ ╔═╗    ╔═╗ ╔═╗ ╔═╗ ╔═╗"));
+  console.log(chalk.cyan("╠═╣ ╚═╗ ══  ║  ╠═  ╚═╗  ║ "));
+  console.log(chalk.cyan("╩ ╩ ╚═╝     ╩  ╚═╝ ╚═╝  ╩ "));
+  console.log("");
+  // console.log(chalk.bold("┌") + " " + chalk.bold.blueBright(""));
+  // console.log("│");
+  // printPanel("Security", [
+  //   "Security warning — please read.",
+  //   "",
+  //   "as-test is a local developer tool and executes build/runtime commands from your project config.",
+  //   "If the config is untrusted, those commands can run arbitrary programs on your machine.",
+  //   "",
+  //   "Recommended baseline:",
+  //   "- Keep this tool scoped to trusted repositories.",
+  //   "- Review runOptions.runtime.cmd and buildOptions.cmd before running.",
+  //   "- Prefer least-privilege shells/environments for shared machines and CI.",
+  //   "",
+  //   "Run regularly: ast doctor and ast test --list",
+  //   "Read docs: README.md (Configuration + Setup Diagnostics sections).",
+  // ]);
+  // console.log("│");
+}
+
+// function printPanel(title: string, lines: string[]): void {
+//   const innerWidth = Math.max(32, (process.stdout.columns ?? 80) - 6);
+//   const heading = `◇  ${title} `;
+//   const rule = "─".repeat(Math.max(8, innerWidth - heading.length));
+//   console.log(chalk.bold.blue(`${heading}${rule}`));
+//   for (const line of lines) {
+//     if (!line.length) {
+//       console.log("│");
+//       continue;
+//     }
+//     for (const wrapped of wrapText(line, innerWidth)) {
+//       console.log(`│ ${wrapped}`);
+//     }
+//   }
+//   console.log(`├${"─".repeat(Math.max(8, innerWidth))}`);
+// }
+
+// function wrapText(value: string, width: number): string[] {
+//   if (width < 1) return [value];
+//   const words = value.split(/\s+/).filter((part) => part.length > 0);
+//   if (!words.length) return [""];
+//   const lines: string[] = [];
+//   let current = "";
+//   for (const word of words) {
+//     if (!current.length) {
+//       current = word;
+//       continue;
+//     }
+//     if (current.length + 1 + word.length <= width) {
+//       current += ` ${word}`;
+//       continue;
+//     }
+//     lines.push(current);
+//     current = word;
+//   }
+//   if (current.length) {
+//     lines.push(current);
+//   }
+//   return lines;
+// }
+
+function printPromptAndSelectionLine(prompt: string, answer: string): void {
+  console.log(chalk.bold.blue(`◇  ${prompt}`));
+  printSelectionLine(answer);
+}
+
+function printSelectionLine(answer: string): void {
+  console.log(`│  ${chalk.gray(answer)}`);
+  console.log("│");
 }
 
 function parseTarget(value: string): Target {
@@ -193,34 +418,127 @@ function printPlan(
   example: ExampleMode,
   install: boolean,
 ): void {
-  console.log(chalk.dim("Planned changes:\n"));
-  console.log(chalk.dim(`  target: ${target}`));
-  console.log(chalk.dim(`  example: ${example}`));
-  console.log(chalk.dim("  add assemblyscript devDependency: yes"));
-  console.log(chalk.dim(`  install dependencies: ${install ? "yes" : "no"}`));
-  console.log(chalk.dim(`  root: ${root}\n`));
+  type TreeEntry = {
+    path: string;
+    isDir: boolean;
+  };
+  type TreeNode = {
+    name: string;
+    relPath: string;
+    isDir: boolean;
+    children: TreeNode[];
+  };
 
-  console.log(chalk.dim("  directories:"));
-  console.log(chalk.dim("    .as-test/build"));
-  console.log(chalk.dim("    .as-test/logs"));
-  console.log(chalk.dim("    .as-test/coverage"));
-  console.log(chalk.dim("    .as-test/snapshots"));
-  console.log(chalk.dim("    assembly/__tests__"));
+  const displayRoot = (): string => {
+    const rel = path.relative(process.cwd(), root).split(path.sep).join("/");
+    if (!rel || rel == ".") return "./";
+    if (rel.startsWith("..")) return rel;
+    return `./${rel}`;
+  };
+  const statusColor = (relPath: string) =>
+    existsSync(path.join(root, relPath)) ? chalk.hex("#d29922") : chalk.green;
+  const paintNode = (node: TreeNode): string =>
+    statusColor(node.relPath)(node.isDir ? `${node.name}/` : node.name);
+  const ensureChild = (
+    parent: TreeNode,
+    name: string,
+    relPath: string,
+    isDir: boolean,
+  ): TreeNode => {
+    let child = parent.children.find((entry) => entry.name == name);
+    if (!child) {
+      child = { name, relPath, isDir, children: [] };
+      parent.children.push(child);
+      return child;
+    }
+    if (isDir) {
+      child.isDir = true;
+    }
+    return child;
+  };
+  const buildTree = (entries: readonly TreeEntry[]): TreeNode => {
+    const rootNode: TreeNode = {
+      name: "",
+      relPath: "",
+      isDir: true,
+      children: [],
+    };
+    for (const entry of entries) {
+      const parts = entry.path.split("/").filter((part) => part.length > 0);
+      let cursor = rootNode;
+      let relPath = "";
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i]!;
+        relPath = relPath ? `${relPath}/${part}` : part;
+        const isLeaf = i == parts.length - 1;
+        cursor = ensureChild(
+          cursor,
+          part,
+          relPath,
+          isLeaf ? entry.isDir : true,
+        );
+      }
+    }
+    return rootNode;
+  };
+  const renderBranch = (nodes: readonly TreeNode[], prefix: string): void => {
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i]!;
+      const isLast = i == nodes.length - 1;
+      const branch = isLast ? "└── " : "├── ";
+      const treeGlyphs = chalk.dim(`${prefix}${branch}`);
+      console.log(`│  ${treeGlyphs}${paintNode(node)}`);
+      if (node.children.length > 0) {
+        const childPrefix = `${prefix}${isLast ? "    " : "│   "}`;
+        renderBranch(node.children, childPrefix);
+      }
+    }
+  };
+
+  const fileEntries: TreeEntry[] = [
+    { path: ".as-test", isDir: true },
+    { path: ".as-test/build", isDir: true },
+    { path: ".as-test/logs", isDir: true },
+    { path: ".as-test/coverage", isDir: true },
+    { path: ".as-test/snapshots", isDir: true },
+    { path: "assembly", isDir: true },
+    { path: "assembly/__tests__", isDir: true },
+    { path: "as-test.config.json", isDir: false },
+    { path: "package.json", isDir: false },
+  ];
   if (target == "wasi" || target == "bindings") {
-    console.log(chalk.dim("    .as-test/runners"));
+    fileEntries.push({ path: ".as-test/runners", isDir: true });
+    fileEntries.push({
+      path: ".as-test/runners/default.bindings.js",
+      isDir: false,
+    });
+    fileEntries.push({
+      path: ".as-test/runners/default.wasi.js",
+      isDir: false,
+    });
   }
-
-  console.log(chalk.dim("\n  files:"));
-  console.log(chalk.dim("    as-test.config.json"));
   if (example != "none") {
-    console.log(chalk.dim("    assembly/__tests__/example.spec.ts"));
+    fileEntries.push({
+      path: "assembly/__tests__/example.spec.ts",
+      isDir: false,
+    });
   }
-  if (target == "wasi" || target == "bindings") {
-    console.log(chalk.dim("    .as-test/runners/default.wasi.js"));
-    console.log(chalk.dim("    .as-test/runners/default.bindings.js"));
+
+  const treeRoot = buildTree(fileEntries);
+
+  console.log(chalk.bold.blue("◇  Planned Changes"));
+  console.log("│" + chalk.dim(`  - Target: ${target}`));
+  console.log("│" + chalk.dim(`  - Example: ${example}`));
+  console.log("│" + chalk.dim(`  - Directory: ${displayRoot()}`));
+  console.log(
+    "│" + chalk.dim(`  - Install dependencies: ${install ? "yes" : "no"}`),
+  );
+  console.log("│" + chalk.bold.blue("  File Changes"));
+  for (const topLevelNode of treeRoot.children) {
+    console.log(`│  ${paintNode(topLevelNode)}`);
+    renderBranch(topLevelNode.children, "");
   }
-  console.log(chalk.dim("    package.json"));
-  console.log("");
+  console.log("│");
 }
 
 function applyInit(
@@ -431,28 +749,33 @@ function writeManagedFile(
 }
 
 function printSummary(summary: ApplySummary): void {
-  console.log("");
+  console.log("│");
   if (summary.created.length) {
-    console.log(chalk.bold("Created:"));
+    console.log(chalk.bold("│  Created:"));
     for (const item of summary.created) {
-      console.log(`  + ${item}`);
+      console.log(`│    + ${item}`);
     }
   }
   if (summary.updated.length) {
-    console.log(chalk.bold("Updated:"));
+    console.log(chalk.bold("│  Updated:"));
     for (const item of summary.updated) {
-      console.log(`  ~ ${item}`);
+      console.log(`│    ~ ${item}`);
     }
   }
   if (summary.skipped.length) {
-    console.log(chalk.bold("Skipped (exists, use --force to overwrite):"));
+    console.log(chalk.bold("│  Skipped (exists, use --force to overwrite):"));
     for (const item of summary.skipped) {
-      console.log(`  = ${item}`);
+      console.log(`│    = ${item}`);
     }
   }
+  console.log("│");
 }
 
-function ask(question: string, face: Interface | null): Promise<string> {
+function ask(
+  question: string,
+  face: Interface | null,
+  initialValue?: string,
+): Promise<string> {
   if (!face) {
     throw new Error(
       "interactive input is unavailable; pass --yes with options",
@@ -460,8 +783,17 @@ function ask(question: string, face: Interface | null): Promise<string> {
   }
   return new Promise<string>((res) => {
     face.question(question, (answer) => {
+      const stdout = process.stdout as NodeJS.WriteStream;
+      if (stdout.isTTY) {
+        stdout.write("\x1b[1A");
+        stdout.write("\x1b[2K");
+        stdout.write("\r");
+      }
       res(answer);
     });
+    if (initialValue && initialValue.length) {
+      face.write(initialValue);
+    }
   });
 }
 
@@ -475,7 +807,11 @@ async function askChoice<T extends string>(
     return fallback;
   }
   const answer = (
-    await ask(`${label} [${choices.join("/")}] (${fallback}) -> `, face)
+    await ask(
+      `${label} [${choices.join("/")}] (${fallback}) -> `,
+      face,
+      fallback,
+    )
   )
     .trim()
     .toLowerCase();
@@ -484,17 +820,218 @@ async function askChoice<T extends string>(
   throw new Error(`Invalid choice "${answer}" for ${label}`);
 }
 
+async function askMenuChoice<T extends string>(
+  label: string,
+  choices: readonly MenuOption<T>[],
+  face: Interface | null,
+  fallback: T,
+): Promise<T> {
+  const fallbackValue = choices.some((choice) => choice.value == fallback)
+    ? fallback
+    : choices[0]!.value;
+  if (!face) return fallbackValue;
+  if (!canUseArrowMenu(face)) {
+    const values = choices.map((choice) => choice.value) as T[];
+    return askChoice(label, values, face, fallbackValue);
+  }
+  return askMenuChoiceWithArrows(label, choices, face, fallbackValue);
+}
+
 async function askYesNo(
   label: string,
   face: Interface | null,
   fallback: boolean,
 ): Promise<boolean> {
   if (!face) return fallback;
-  const answer = (await ask(label, face)).trim().toLowerCase();
+  if (canUseArrowMenu(face)) {
+    const selected = await askMenuChoice(
+      label,
+      [
+        { value: "yes", label: "Yes" },
+        { value: "no", label: "No" },
+      ],
+      face,
+      fallback ? "yes" : "no",
+    );
+    return selected == "yes";
+  }
+  const suffix = fallback ? "[Y/n]" : "[y/N]";
+  const defaultValue = fallback ? "yes" : "no";
+  const answer = (await ask(`${label} ${suffix} `, face, defaultValue))
+    .trim()
+    .toLowerCase();
   if (!answer.length) return fallback;
   if (answer == "y" || answer == "yes") return true;
   if (answer == "n" || answer == "no") return false;
   throw new Error(`Invalid answer "${answer}". Expected yes or no.`);
+}
+
+function canUseArrowMenu(face: Interface | null): boolean {
+  if (!face) return false;
+  const stdin = process.stdin as NodeJS.ReadStream;
+  const stdout = process.stdout as NodeJS.WriteStream;
+  return (
+    Boolean(stdin.isTTY) &&
+    Boolean(stdout.isTTY) &&
+    typeof stdin.setRawMode == "function"
+  );
+}
+
+async function askMenuChoiceWithArrows<T extends string>(
+  label: string,
+  choices: readonly MenuOption<T>[],
+  face: Interface,
+  fallback: T,
+): Promise<T> {
+  const stdin = process.stdin as NodeJS.ReadStream;
+  const stdout = process.stdout as NodeJS.WriteStream;
+  const fallbackIndex = choices.findIndex((choice) => choice.value == fallback);
+  let selectedIndex = fallbackIndex == -1 ? 0 : fallbackIndex;
+  let renderedLineCount = 0;
+  const previousRawMode = Boolean((stdin as { isRaw?: boolean }).isRaw);
+  const lineWidth = Math.max(20, (stdout.columns ?? 80) - 2);
+
+  const clamp = (value: string, max: number): string => {
+    if (value.length <= max) return value;
+    if (max <= 1) return value.slice(0, max);
+    return `${value.slice(0, max - 1)}…`;
+  };
+
+  const titleLine = (): string =>
+    chalk.bold.blue(`◆  ${clamp(label, Math.max(8, lineWidth - 3))}`);
+
+  const menuLines = (): string[] => {
+    const lines: string[] = [titleLine()];
+    for (let i = 0; i < choices.length; i++) {
+      const choice = choices[i]!;
+      const marker = i == selectedIndex ? chalk.blue("●") : chalk.dim("○");
+      lines.push(
+        `│  ${marker} ${clamp(choice.label, Math.max(8, lineWidth - 6))}`,
+      );
+    }
+    lines.push("│");
+    return lines;
+  };
+
+  const collapsedLines = (): string[] => {
+    const selected = choices[selectedIndex]!;
+    return [
+      `│  ${chalk.gray(clamp(selected.label, Math.max(8, lineWidth - 4)))}`,
+    ];
+  };
+
+  const writeLines = (lines: string[], collapse: boolean = false): void => {
+    if (renderedLineCount > 0) {
+      process.stdout.write(`\x1b[${renderedLineCount}A`);
+    }
+    const totalLineCount = Math.max(lines.length, renderedLineCount);
+    for (let i = 0; i < totalLineCount; i++) {
+      process.stdout.write("\x1b[2K");
+      if (i < lines.length) {
+        process.stdout.write(lines[i]!);
+      }
+      process.stdout.write("\n");
+    }
+    renderedLineCount = lines.length;
+    if (collapse) {
+      renderedLineCount = 0;
+    }
+  };
+
+  const collapseInPlace = (): void => {
+    const lines = collapsedLines();
+    if (renderedLineCount > 0) {
+      process.stdout.write(`\x1b[${renderedLineCount}A`);
+    }
+    const totalLineCount = Math.max(renderedLineCount, lines.length);
+    for (let i = 0; i < totalLineCount; i++) {
+      process.stdout.write("\r\x1b[2K");
+      if (i < lines.length) {
+        process.stdout.write(lines[i]!);
+      }
+      process.stdout.write("\n");
+    }
+    const extraLines = totalLineCount - lines.length;
+    if (extraLines > 0) {
+      process.stdout.write(`\x1b[${extraLines}A`);
+    }
+    renderedLineCount = 0;
+  };
+
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const cleanup = (): void => {
+      stdin.off("data", onData);
+      if (stdin.isTTY) {
+        stdin.setRawMode(previousRawMode);
+      }
+      const isClosed = Boolean((face as { closed?: boolean }).closed);
+      if (!isClosed) {
+        try {
+          face.resume();
+        } catch {
+          // noop: readline may already be closed during shutdown/cancel paths.
+        }
+      }
+    };
+
+    const finish = (value: T): void => {
+      if (settled) return;
+      settled = true;
+      collapseInPlace();
+      cleanup();
+      resolve(value);
+    };
+
+    const fail = (error: Error): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+
+    const onData = (chunk: Buffer | string): void => {
+      const input = typeof chunk == "string" ? chunk : chunk.toString("utf8");
+      if (!input.length) return;
+
+      if (input == "\u0003") {
+        fail(new Error(chalk.bold.red("◆  Cancelled")));
+        return;
+      }
+      if (
+        input == "\x1b[A" ||
+        input == "\x1bOA" ||
+        input == "\x1b[D" ||
+        input == "\x1bOD"
+      ) {
+        selectedIndex = (selectedIndex - 1 + choices.length) % choices.length;
+        writeLines(menuLines());
+        return;
+      }
+      if (
+        input == "\x1b[B" ||
+        input == "\x1bOB" ||
+        input == "\x1b[C" ||
+        input == "\x1bOC"
+      ) {
+        selectedIndex = (selectedIndex + 1) % choices.length;
+        writeLines(menuLines());
+        return;
+      }
+      if (input == "\r" || input == "\n") {
+        finish(choices[selectedIndex]!.value);
+        return;
+      }
+    };
+
+    face.pause();
+    if (stdin.isTTY) {
+      stdin.setRawMode(true);
+    }
+    stdin.resume();
+    stdin.on("data", onData);
+    writeLines(menuLines());
+  });
 }
 
 function installDependencies(root: string): void {
