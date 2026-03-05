@@ -1,4 +1,5 @@
 import chalk from "chalk";
+import { spawnSync } from "child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import * as path from "path";
 import { createInterface } from "readline";
@@ -16,11 +17,12 @@ export async function init(rawArgs) {
         });
     try {
         console.log(chalk.bold(`as-test init v${getCliVersion()}`) + "\n");
-        const target = options.target ??
-            (await askChoice("Select target", TARGETS, rl, "wasi"));
+        const target = options.target ?? (await askChoice("Select target", TARGETS, rl, "wasi"));
         const example = options.example ??
             (await askChoice("Select example mode", EXAMPLE_MODES, rl, "minimal"));
-        printPlan(root, target, example);
+        const installDependenciesNow = options.install ??
+            (await askYesNo("Install dependencies now? [y/N] ", rl, false));
+        printPlan(root, target, example, installDependenciesNow);
         if (!options.yes) {
             const cont = (await ask("Continue? [Y/n] ", rl)).toLowerCase().trim();
             if (["n", "no"].includes(cont)) {
@@ -30,17 +32,20 @@ export async function init(rawArgs) {
         }
         const summary = applyInit(root, target, example, options.force);
         printSummary(summary);
+        if (installDependenciesNow) {
+            installDependencies(root);
+            console.log("\nDependencies installed. Run " + chalk.bold("npm test") + "\n");
+        }
+        else {
+            console.log("\nNow, run " + chalk.bold("npm i && npm test") + "\n");
+        }
     }
     finally {
         rl?.close();
     }
 }
 function parseInitArgs(rawArgs) {
-    const options = {
-        yes: false,
-        force: false,
-        dir: ".",
-    };
+    const options = { yes: false, force: false, dir: "." };
     const positional = [];
     for (let i = 0; i < rawArgs.length; i++) {
         const arg = rawArgs[i];
@@ -50,6 +55,10 @@ function parseInitArgs(rawArgs) {
         }
         if (arg == "--force") {
             options.force = true;
+            continue;
+        }
+        if (arg == "--install") {
+            options.install = true;
             continue;
         }
         if (arg == "--target") {
@@ -103,11 +112,13 @@ function parseInitArgs(rawArgs) {
     if (!options.target && positional.length > 0 && isTarget(positional[0])) {
         options.target = positional.shift();
     }
-    if (!options.example && positional.length > 0 && isExampleMode(positional[0])) {
+    if (!options.example &&
+        positional.length > 0 &&
+        isExampleMode(positional[0])) {
         options.example = positional.shift();
     }
     if (positional.length > 0) {
-        throw new Error(`Unknown init argument(s): ${positional.join(", ")}. Usage: init [dir] [--target wasi|bindings] [--example minimal|full|none] [--yes] [--force] [--dir <path>]`);
+        throw new Error(`Unknown init argument(s): ${positional.join(", ")}. Usage: init [dir] [--target wasi|bindings] [--example minimal|full|none] [--install] [--yes] [--force] [--dir <path>]`);
     }
     return options;
 }
@@ -129,10 +140,12 @@ function isTarget(value) {
 function isExampleMode(value) {
     return EXAMPLE_MODES.includes(value);
 }
-function printPlan(root, target, example) {
+function printPlan(root, target, example, install) {
     console.log(chalk.dim("Planned changes:\n"));
     console.log(chalk.dim(`  target: ${target}`));
     console.log(chalk.dim(`  example: ${example}`));
+    console.log(chalk.dim("  add assemblyscript devDependency: yes"));
+    console.log(chalk.dim(`  install dependencies: ${install ? "yes" : "no"}`));
     console.log(chalk.dim(`  root: ${root}\n`));
     console.log(chalk.dim("  directories:"));
     console.log(chalk.dim("    .as-test/build"));
@@ -176,10 +189,12 @@ function applyInit(root, target, example, force) {
     config.buildOptions.target = target;
     config.runOptions.reporter = "default";
     if (target == "wasi") {
-        config.runOptions.runtime.cmd = "node ./.as-test/runners/default.wasi.js <file>";
+        config.runOptions.runtime.cmd =
+            "node ./.as-test/runners/default.wasi.js <file>";
     }
     else {
-        config.runOptions.runtime.cmd = "node ./.as-test/runners/default.bindings.js <file>";
+        config.runOptions.runtime.cmd =
+            "node ./.as-test/runners/default.bindings.js <file>";
     }
     writeJson(configPath, config, summary, "as-test.config.json");
     if (example != "none") {
@@ -204,7 +219,7 @@ function applyInit(root, target, example, force) {
     }
     const scripts = pkg.scripts;
     if (!scripts.test) {
-        scripts.test = "as-test test";
+        scripts.test = "ast test";
     }
     if (!pkg.type) {
         pkg.type = "module";
@@ -216,6 +231,9 @@ function applyInit(root, target, example, force) {
     if (!devDependencies["as-test"]) {
         devDependencies["as-test"] = "^" + getCliVersion();
     }
+    if (!hasDependency(pkg, "assemblyscript")) {
+        devDependencies["assemblyscript"] = "^0.28.9";
+    }
     if (target == "wasi" && !devDependencies["@assemblyscript/wasi-shim"]) {
         devDependencies["@assemblyscript/wasi-shim"] = "^0.1.0";
     }
@@ -224,6 +242,17 @@ function applyInit(root, target, example, force) {
     }
     writeJson(pkgPath, pkg, summary, "package.json");
     return summary;
+}
+function hasDependency(pkg, dependency) {
+    const sections = ["dependencies", "devDependencies", "peerDependencies"];
+    for (const section of sections) {
+        const value = pkg[section];
+        if (!value || typeof value != "object" || Array.isArray(value))
+            continue;
+        if (dependency in value)
+            return true;
+    }
+    return false;
 }
 function ensureDir(root, rel, summary) {
     const full = path.join(root, rel);
@@ -245,9 +274,7 @@ function ensureGitignoreIncludesAsTestDirs(root, summary) {
     }
     const eol = source.includes("\r\n") ? "\r\n" : "\n";
     let output = source;
-    if (output.length &&
-        !output.endsWith("\n") &&
-        !output.endsWith("\r\n")) {
+    if (output.length && !output.endsWith("\n") && !output.endsWith("\r\n")) {
         output += eol;
     }
     output += missing.join(eol) + eol;
@@ -307,7 +334,6 @@ function printSummary(summary) {
             console.log(`  = ${item}`);
         }
     }
-    console.log("\nNow, install dependencies and run " + chalk.bold("as-test test") + "\n");
 }
 function ask(question, face) {
     if (!face) {
@@ -331,6 +357,57 @@ async function askChoice(label, choices, face, fallback) {
     if (choices.includes(answer))
         return answer;
     throw new Error(`Invalid choice "${answer}" for ${label}`);
+}
+async function askYesNo(label, face, fallback) {
+    if (!face)
+        return fallback;
+    const answer = (await ask(label, face)).trim().toLowerCase();
+    if (!answer.length)
+        return fallback;
+    if (answer == "y" || answer == "yes")
+        return true;
+    if (answer == "n" || answer == "no")
+        return false;
+    throw new Error(`Invalid answer "${answer}". Expected yes or no.`);
+}
+function installDependencies(root) {
+    const install = resolveInstallCommand(root);
+    console.log("\n" +
+        chalk.dim(`Installing dependencies with: ${install.command} ${install.args.join(" ")}`));
+    const child = spawnSync(install.command, install.args, {
+        cwd: root,
+        stdio: "inherit",
+        shell: process.platform == "win32",
+    });
+    if (child.error) {
+        throw new Error(`failed to run dependency install: ${child.error.message}`);
+    }
+    if (child.status !== 0) {
+        throw new Error(`dependency installation failed with exit code ${String(child.status)}`);
+    }
+}
+function resolveInstallCommand(root) {
+    if (existsSync(path.join(root, "pnpm-lock.yaml"))) {
+        return { command: "pnpm", args: ["install"] };
+    }
+    if (existsSync(path.join(root, "yarn.lock"))) {
+        return { command: "yarn", args: ["install"] };
+    }
+    if (existsSync(path.join(root, "bun.lockb")) ||
+        existsSync(path.join(root, "bun.lock"))) {
+        return { command: "bun", args: ["install"] };
+    }
+    const userAgent = process.env.npm_config_user_agent ?? "";
+    if (userAgent.startsWith("pnpm")) {
+        return { command: "pnpm", args: ["install"] };
+    }
+    if (userAgent.startsWith("yarn")) {
+        return { command: "yarn", args: ["install"] };
+    }
+    if (userAgent.startsWith("bun")) {
+        return { command: "bun", args: ["install"] };
+    }
+    return { command: "npm", args: ["install"] };
 }
 function buildMinimalExampleSpec() {
     return `import { describe, expect, test, run } from "as-test";

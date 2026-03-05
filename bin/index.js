@@ -31,22 +31,18 @@ if (!args.length) {
 else if (COMMANDS.includes(args[0])) {
     try {
         const command = args.shift();
-        const commandArgs = resolveCommandArgs(_args, command ?? "");
-        const listFlags = resolveListFlags(_args, command ?? "");
-        const featureToggles = resolveFeatureToggles(_args, command ?? "");
-        const buildFeatureToggles = {
-            tryAs: featureToggles.tryAs,
-            coverage: featureToggles.coverage,
-        };
-        const runFlags = {
-            snapshot: !flags.includes("--no-snapshot"),
-            updateSnapshots: flags.includes("--update-snapshots"),
-            clean: flags.includes("--clean"),
-            showCoverage: flags.includes("--show-coverage"),
-            verbose: flags.includes("--verbose"),
-            coverage: featureToggles.coverage,
-        };
-        if (command === "build") {
+        const normalizedCommand = command ?? "";
+        if (shouldShowCommandHelp(_args, normalizedCommand)) {
+            printCommandHelp(normalizedCommand);
+        }
+        else if (command === "build") {
+            const commandArgs = resolveCommandArgs(_args, command);
+            const listFlags = resolveListFlags(_args, command);
+            const featureToggles = resolveFeatureToggles(_args, command);
+            const buildFeatureToggles = {
+                tryAs: featureToggles.tryAs,
+                coverage: featureToggles.coverage,
+            };
             const modeTargets = resolveExecutionModes(configPath, selectedModes);
             if (listFlags.list || listFlags.listModes) {
                 listExecutionPlan("build", configPath, commandArgs, modeTargets, listFlags).catch((error) => {
@@ -62,6 +58,17 @@ else if (COMMANDS.includes(args[0])) {
             }
         }
         else if (command === "run") {
+            const commandArgs = resolveCommandArgs(_args, command);
+            const listFlags = resolveListFlags(_args, command);
+            const featureToggles = resolveFeatureToggles(_args, command);
+            const runFlags = {
+                snapshot: !flags.includes("--no-snapshot"),
+                updateSnapshots: flags.includes("--update-snapshots"),
+                clean: flags.includes("--clean"),
+                showCoverage: flags.includes("--show-coverage"),
+                verbose: flags.includes("--verbose"),
+                coverage: featureToggles.coverage,
+            };
             const modeTargets = resolveExecutionModes(configPath, selectedModes);
             if (listFlags.list || listFlags.listModes) {
                 listExecutionPlan("run", configPath, commandArgs, modeTargets, listFlags).catch((error) => {
@@ -77,6 +84,21 @@ else if (COMMANDS.includes(args[0])) {
             }
         }
         else if (command === "test") {
+            const commandArgs = resolveCommandArgs(_args, command);
+            const listFlags = resolveListFlags(_args, command);
+            const featureToggles = resolveFeatureToggles(_args, command);
+            const buildFeatureToggles = {
+                tryAs: featureToggles.tryAs,
+                coverage: featureToggles.coverage,
+            };
+            const runFlags = {
+                snapshot: !flags.includes("--no-snapshot"),
+                updateSnapshots: flags.includes("--update-snapshots"),
+                clean: flags.includes("--clean"),
+                showCoverage: flags.includes("--show-coverage"),
+                verbose: flags.includes("--verbose"),
+                coverage: featureToggles.coverage,
+            };
             const modeTargets = resolveExecutionModes(configPath, selectedModes);
             if (listFlags.list || listFlags.listModes) {
                 listExecutionPlan("test", configPath, commandArgs, modeTargets, listFlags).catch((error) => {
@@ -92,7 +114,7 @@ else if (COMMANDS.includes(args[0])) {
             }
         }
         else if (command === "init") {
-            const commandTokens = resolveCommandTokens(_args, command ?? "");
+            const commandTokens = resolveCommandTokens(_args, command);
             init(commandTokens).catch((error) => {
                 printCliError(error);
                 process.exit(1);
@@ -192,11 +214,11 @@ function info() {
         "Print all coverage points with line:column refs");
     console.log("   " +
         chalk.bold.blue("--enable <feature>") +
-        "           " +
+        "            " +
         "Enable as-test feature (coverage|try-as)");
     console.log("   " +
         chalk.bold.blue("--disable <feature>") +
-        "          " +
+        "           " +
         "Disable as-test feature (coverage|try-as)");
     console.log("   " +
         chalk.bold.blue("--verbose") +
@@ -214,6 +236,7 @@ function info() {
         chalk.bold.blue("--list-modes") +
         "                  " +
         "Preview configured and selected mode names");
+    console.log("   " + chalk.bold.blue("--help, -h") + "                    Show help");
     console.log("");
     console.log(chalk.dim("If your using this, consider dropping a star, it would help a lot!") + "\n");
     console.log("View the repo:                   " +
@@ -222,6 +245,102 @@ function info() {
     //   "View the docs:                   " +
     //     chalk.blue("https://docs.jairus.dev/as-test"),
     // );
+}
+function isHelpFlag(value) {
+    return value == "--help" || value == "-h";
+}
+function shouldShowCommandHelp(rawArgs, command) {
+    if (!command.length)
+        return false;
+    const commandIndex = rawArgs.indexOf(command);
+    if (commandIndex == -1)
+        return false;
+    for (let i = 0; i < rawArgs.length; i++) {
+        if (i == commandIndex)
+            continue;
+        if (!isHelpFlag(rawArgs[i]))
+            continue;
+        return true;
+    }
+    return false;
+}
+function printCommandHelp(command) {
+    if (command == "build") {
+        process.stdout.write(chalk.bold("Usage: ast build [selectors...] [flags]\n\n"));
+        process.stdout.write("Compile selected specs into wasm artifacts.\n\n");
+        process.stdout.write(chalk.bold("Flags:\n"));
+        process.stdout.write("  --config <path>          Use a specific config file\n");
+        process.stdout.write("  --mode <name[,name...]>  Run one or multiple named config modes\n");
+        process.stdout.write("  --enable <feature>       Enable build feature (coverage|try-as)\n");
+        process.stdout.write("  --disable <feature>      Disable build feature (coverage|try-as)\n");
+        process.stdout.write("  --list                   Preview resolved files/artifacts without building\n");
+        process.stdout.write("  --list-modes             Preview configured and selected mode names\n");
+        process.stdout.write("  --help, -h               Show this help\n");
+        return;
+    }
+    if (command == "run") {
+        process.stdout.write(chalk.bold("Usage: ast run [selectors...] [flags]\n\n"));
+        process.stdout.write("Run compiled specs with the configured runtime.\n\n");
+        process.stdout.write(chalk.bold("Flags:\n"));
+        process.stdout.write("  --config <path>          Use a specific config file\n");
+        process.stdout.write("  --mode <name[,name...]>  Run one or multiple named config modes\n");
+        process.stdout.write("  --update-snapshots       Create/update snapshot files on mismatch\n");
+        process.stdout.write("  --no-snapshot            Disable snapshot assertions for this run\n");
+        process.stdout.write("  --show-coverage          Print uncovered coverage point details\n");
+        process.stdout.write("  --enable <feature>       Enable feature (coverage|try-as)\n");
+        process.stdout.write("  --disable <feature>      Disable feature (coverage|try-as)\n");
+        process.stdout.write("  --reporter <name|path>   Use built-in reporter (default|tap) or custom module path\n");
+        process.stdout.write("  --tap                    Shortcut for --reporter tap\n");
+        process.stdout.write("  --verbose                Keep expanded suite/test lines and live updates\n");
+        process.stdout.write("  --clean                  Disable in-place TTY updates; print final lines only\n");
+        process.stdout.write("  --list                   Preview resolved files/artifacts/runtime without running\n");
+        process.stdout.write("  --list-modes             Preview configured and selected mode names\n");
+        process.stdout.write("  --help, -h               Show this help\n");
+        return;
+    }
+    if (command == "test") {
+        process.stdout.write(chalk.bold("Usage: ast test [selectors...] [flags]\n\n"));
+        process.stdout.write("Build selected specs, run them, and print a final summary.\n\n");
+        process.stdout.write(chalk.bold("Flags:\n"));
+        process.stdout.write("  --config <path>          Use a specific config file\n");
+        process.stdout.write("  --mode <name[,name...]>  Run one or multiple named config modes\n");
+        process.stdout.write("  --update-snapshots       Create/update snapshot files on mismatch\n");
+        process.stdout.write("  --no-snapshot            Disable snapshot assertions for this run\n");
+        process.stdout.write("  --show-coverage          Print uncovered coverage point details\n");
+        process.stdout.write("  --enable <feature>       Enable feature (coverage|try-as)\n");
+        process.stdout.write("  --disable <feature>      Disable feature (coverage|try-as)\n");
+        process.stdout.write("  --reporter <name|path>   Use built-in reporter (default|tap) or custom module path\n");
+        process.stdout.write("  --tap                    Shortcut for --reporter tap\n");
+        process.stdout.write("  --verbose                Keep expanded suite/test lines and live updates\n");
+        process.stdout.write("  --clean                  Disable in-place TTY updates; print final lines only\n");
+        process.stdout.write("  --list                   Preview resolved files/artifacts/runtime without running\n");
+        process.stdout.write("  --list-modes             Preview configured and selected mode names\n");
+        process.stdout.write("  --help, -h               Show this help\n");
+        return;
+    }
+    if (command == "init") {
+        process.stdout.write(chalk.bold("Usage: ast init [dir] [flags]\n\n"));
+        process.stdout.write("Initialize as-test config, default runners, and example specs.\n\n");
+        process.stdout.write(chalk.bold("Flags:\n"));
+        process.stdout.write("  --target <wasi|bindings>                Set build target\n");
+        process.stdout.write("  --example <minimal|full|none>           Set example template\n");
+        process.stdout.write("  --install                               Install dependencies after scaffolding\n");
+        process.stdout.write("  --yes, -y                               Non-interactive setup with defaults\n");
+        process.stdout.write("  --force                                 Overwrite managed files\n");
+        process.stdout.write("  --dir <path>                            Target output directory\n");
+        process.stdout.write("  --help, -h                              Show this help\n");
+        return;
+    }
+    if (command == "doctor") {
+        process.stdout.write(chalk.bold("Usage: ast doctor [flags]\n\n"));
+        process.stdout.write("Validate config, dependencies, runtime command, and spec discovery.\n\n");
+        process.stdout.write(chalk.bold("Flags:\n"));
+        process.stdout.write("  --config <path>          Use a specific config file\n");
+        process.stdout.write("  --mode <name[,name...]>  Run checks for one or multiple named modes\n");
+        process.stdout.write("  --help, -h               Show this help\n");
+        return;
+    }
+    info();
 }
 function resolveConfigPath(rawArgs) {
     for (let i = 0; i < rawArgs.length; i++) {
@@ -375,8 +494,7 @@ function resolveCommandTokens(rawArgs, command) {
 async function runTestSequential(runFlags, configPath, selectors, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal, modeName) {
     const files = await resolveSelectedFiles(configPath, selectors);
     if (!files.length) {
-        const scope = selectors.length > 0 ? selectors.join(", ") : "configured input patterns";
-        throw new Error(`No test files matched: ${scope}`);
+        throw await buildNoTestFilesMatchedError(configPath, selectors);
     }
     const reporterSession = await createRunReporter(configPath, undefined, modeName);
     const reporter = reporterSession.reporter;
@@ -449,8 +567,7 @@ async function runRuntimeModes(runFlags, configPath, selectors, modes) {
 async function runRuntimeMatrix(runFlags, configPath, selectors, modes, modeSummaryTotal, fileSummaryTotal) {
     const files = await resolveSelectedFiles(configPath, selectors);
     if (!files.length) {
-        const scope = selectors.length > 0 ? selectors.join(", ") : "configured input patterns";
-        throw new Error(`No test files matched: ${scope}`);
+        throw await buildNoTestFilesMatchedError(configPath, selectors);
     }
     const reporterSession = await createRunReporter(configPath);
     const reporter = reporterSession.reporter;
@@ -557,8 +674,7 @@ async function runTestModes(runFlags, configPath, selectors, modes, buildFeature
 async function runTestMatrix(runFlags, configPath, selectors, modes, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal) {
     const files = await resolveSelectedFiles(configPath, selectors);
     if (!files.length) {
-        const scope = selectors.length > 0 ? selectors.join(", ") : "configured input patterns";
-        throw new Error(`No test files matched: ${scope}`);
+        throw await buildNoTestFilesMatchedError(configPath, selectors);
     }
     const reporterSession = await createRunReporter(configPath);
     const reporter = reporterSession.reporter;
@@ -783,13 +899,100 @@ function resolveExecutionModes(configPath, selectedModes) {
         return [undefined];
     return configuredModes;
 }
-async function resolveSelectedFiles(configPath, selectors) {
+async function resolveSelectedFiles(configPath, selectors, warn = true) {
     const resolvedConfigPath = configPath ?? path.join(process.cwd(), "./as-test.config.json");
-    const config = loadConfig(resolvedConfigPath, true);
+    const config = loadConfig(resolvedConfigPath, warn);
     const patterns = resolveInputPatterns(config.input, selectors);
     const matches = await glob(patterns);
     const specs = matches.filter((file) => file.endsWith(".spec.ts"));
     return [...new Set(specs)].sort((a, b) => a.localeCompare(b));
+}
+async function buildNoTestFilesMatchedError(configPath, selectors) {
+    const scope = selectors.length > 0 ? selectors.join(", ") : "configured input patterns";
+    const lines = [`No test files matched: ${scope}`];
+    const configuredFiles = await resolveSelectedFiles(configPath, [], false);
+    if (!selectors.length) {
+        lines.push('No specs were discovered from configured input patterns. Check "input" in config or run "ast doctor".');
+        return new Error(lines.join("\n"));
+    }
+    const suggestions = suggestClosestSuites(selectors, configuredFiles);
+    if (suggestions.length) {
+        lines.push(`Closest suite names: ${suggestions.join(", ")}`);
+    }
+    if (configuredFiles.length) {
+        const sample = configuredFiles
+            .slice(0, 5)
+            .map((file) => path.basename(file))
+            .join(", ");
+        lines.push(`Configured specs (${configuredFiles.length}): ${sample}${configuredFiles.length > 5 ? ", ..." : ""}`);
+    }
+    else {
+        lines.push('No specs were discovered from configured input patterns. Check "input" in config.');
+    }
+    lines.push('Run "ast test --list" to inspect resolved files.');
+    return new Error(lines.join("\n"));
+}
+function suggestClosestSuites(selectors, files) {
+    const suites = [
+        ...new Set(files.map((file) => stripSuiteSuffix(path.basename(file)))),
+    ];
+    if (!suites.length)
+        return [];
+    const out = new Set();
+    for (const selector of expandSelectors(selectors)) {
+        if (!isBareSuiteSelector(selector))
+            continue;
+        const query = stripSuiteSuffix(path.basename(selector));
+        const closest = resolveClosestSuiteName(query, suites);
+        if (closest)
+            out.add(closest);
+    }
+    return [...out].slice(0, 3);
+}
+function resolveClosestSuiteName(value, candidates) {
+    if (!value.length)
+        return null;
+    let best = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    const lowered = value.toLowerCase();
+    for (const candidate of candidates) {
+        if (candidate == value)
+            return null;
+        const normalized = candidate.toLowerCase();
+        if (normalized.startsWith(lowered) || normalized.includes(lowered)) {
+            return candidate;
+        }
+        const distance = levenshteinDistance(lowered, normalized);
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            best = candidate;
+        }
+    }
+    if (best && bestDistance <= 3)
+        return best;
+    return null;
+}
+function levenshteinDistance(left, right) {
+    if (left == right)
+        return 0;
+    if (!left.length)
+        return right.length;
+    if (!right.length)
+        return left.length;
+    const matrix = [];
+    for (let i = 0; i <= left.length; i++) {
+        matrix[i] = [i];
+    }
+    for (let j = 0; j <= right.length; j++) {
+        matrix[0][j] = j;
+    }
+    for (let i = 1; i <= left.length; i++) {
+        for (let j = 1; j <= right.length; j++) {
+            const cost = left[i - 1] == right[j - 1] ? 0 : 1;
+            matrix[i][j] = Math.min(matrix[i - 1][j] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j - 1] + cost);
+        }
+    }
+    return matrix[left.length][right.length];
 }
 function resolveInputPatterns(configured, selectors) {
     const configuredInputs = Array.isArray(configured)

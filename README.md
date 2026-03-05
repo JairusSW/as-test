@@ -41,6 +41,11 @@ The installation script will set everything up for you:
 npx as-test init --dir ./path-to-install
 ```
 
+To scaffold and install dependencies in one step:
+```bash
+npx as-test init --dir ./path-to-install --install
+```
+
 Alternatively, you can install it manually:
 ```bash
 npm install as-test --save-dev
@@ -133,6 +138,7 @@ No test files matched: ...
 - `--clean`: disable in-place TTY updates and print only final per-file verdict lines. Useful for CI/CD.
 - `--list`: show resolved files, per-mode artifacts, and runtime command without executing
 - `--list-modes`: show configured and selected modes without executing
+- `--help` / `-h`: show command-specific help (`ast test --help`, `ast init --help`, etc.)
 
 Example:
 

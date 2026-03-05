@@ -1,4 +1,5 @@
 import chalk from "chalk";
+import { spawnSync } from "child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import * as path from "path";
 import { createInterface, Interface } from "readline";
@@ -13,6 +14,7 @@ type ExampleMode = (typeof EXAMPLE_MODES)[number];
 type InitOptions = {
   target?: Target;
   example?: ExampleMode;
+  install?: boolean;
   yes: boolean;
   force: boolean;
   dir: string;
@@ -38,24 +40,17 @@ export async function init(rawArgs: string[]) {
     console.log(chalk.bold(`as-test init v${getCliVersion()}`) + "\n");
 
     const target =
-      options.target ??
-      (await askChoice(
-        "Select target",
-        TARGETS,
-        rl,
-        "wasi",
-      ));
+      options.target ?? (await askChoice("Select target", TARGETS, rl, "wasi"));
 
     const example =
       options.example ??
-      (await askChoice(
-        "Select example mode",
-        EXAMPLE_MODES,
-        rl,
-        "minimal",
-      ));
+      (await askChoice("Select example mode", EXAMPLE_MODES, rl, "minimal"));
 
-    printPlan(root, target, example);
+    const installDependenciesNow =
+      options.install ??
+      (await askYesNo("Install dependencies now? [y/N] ", rl, false));
+
+    printPlan(root, target, example, installDependenciesNow);
 
     if (!options.yes) {
       const cont = (await ask("Continue? [Y/n] ", rl)).toLowerCase().trim();
@@ -67,17 +62,21 @@ export async function init(rawArgs: string[]) {
 
     const summary = applyInit(root, target, example, options.force);
     printSummary(summary);
+    if (installDependenciesNow) {
+      installDependencies(root);
+      console.log(
+        "\nDependencies installed. Run " + chalk.bold("npm test") + "\n",
+      );
+    } else {
+      console.log("\nNow, run " + chalk.bold("npm i && npm test") + "\n");
+    }
   } finally {
     rl?.close();
   }
 }
 
 function parseInitArgs(rawArgs: string[]): InitOptions {
-  const options: InitOptions = {
-    yes: false,
-    force: false,
-    dir: ".",
-  };
+  const options: InitOptions = { yes: false, force: false, dir: "." };
   const positional: string[] = [];
 
   for (let i = 0; i < rawArgs.length; i++) {
@@ -88,6 +87,10 @@ function parseInitArgs(rawArgs: string[]): InitOptions {
     }
     if (arg == "--force") {
       options.force = true;
+      continue;
+    }
+    if (arg == "--install") {
+      options.install = true;
       continue;
     }
     if (arg == "--target") {
@@ -143,13 +146,17 @@ function parseInitArgs(rawArgs: string[]): InitOptions {
   if (!options.target && positional.length > 0 && isTarget(positional[0]!)) {
     options.target = positional.shift() as Target;
   }
-  if (!options.example && positional.length > 0 && isExampleMode(positional[0]!)) {
+  if (
+    !options.example &&
+    positional.length > 0 &&
+    isExampleMode(positional[0]!)
+  ) {
     options.example = positional.shift() as ExampleMode;
   }
 
   if (positional.length > 0) {
     throw new Error(
-      `Unknown init argument(s): ${positional.join(", ")}. Usage: init [dir] [--target wasi|bindings] [--example minimal|full|none] [--yes] [--force] [--dir <path>]`,
+      `Unknown init argument(s): ${positional.join(", ")}. Usage: init [dir] [--target wasi|bindings] [--example minimal|full|none] [--install] [--yes] [--force] [--dir <path>]`,
     );
   }
 
@@ -180,10 +187,17 @@ function isExampleMode(value: string): value is ExampleMode {
   return EXAMPLE_MODES.includes(value as ExampleMode);
 }
 
-function printPlan(root: string, target: Target, example: ExampleMode): void {
+function printPlan(
+  root: string,
+  target: Target,
+  example: ExampleMode,
+  install: boolean,
+): void {
   console.log(chalk.dim("Planned changes:\n"));
   console.log(chalk.dim(`  target: ${target}`));
   console.log(chalk.dim(`  example: ${example}`));
+  console.log(chalk.dim("  add assemblyscript devDependency: yes"));
+  console.log(chalk.dim(`  install dependencies: ${install ? "yes" : "no"}`));
   console.log(chalk.dim(`  root: ${root}\n`));
 
   console.log(chalk.dim("  directories:"));
@@ -237,9 +251,11 @@ function applyInit(
   config.buildOptions.target = target;
   config.runOptions.reporter = "default";
   if (target == "wasi") {
-    config.runOptions.runtime.cmd = "node ./.as-test/runners/default.wasi.js <file>";
+    config.runOptions.runtime.cmd =
+      "node ./.as-test/runners/default.wasi.js <file>";
   } else {
-    config.runOptions.runtime.cmd = "node ./.as-test/runners/default.bindings.js <file>";
+    config.runOptions.runtime.cmd =
+      "node ./.as-test/runners/default.bindings.js <file>";
   }
   writeJson(configPath, config, summary, "as-test.config.json");
 
@@ -288,7 +304,7 @@ function applyInit(
   }
   const scripts = pkg.scripts as Record<string, string>;
   if (!scripts.test) {
-    scripts.test = "as-test test";
+    scripts.test = "ast test";
   }
 
   if (!pkg.type) {
@@ -302,6 +318,9 @@ function applyInit(
   if (!devDependencies["as-test"]) {
     devDependencies["as-test"] = "^" + getCliVersion();
   }
+  if (!hasDependency(pkg, "assemblyscript")) {
+    devDependencies["assemblyscript"] = "^0.28.9";
+  }
   if (target == "wasi" && !devDependencies["@assemblyscript/wasi-shim"]) {
     devDependencies["@assemblyscript/wasi-shim"] = "^0.1.0";
   }
@@ -311,6 +330,19 @@ function applyInit(
 
   writeJson(pkgPath, pkg, summary, "package.json");
   return summary;
+}
+
+function hasDependency(
+  pkg: Record<string, unknown>,
+  dependency: string,
+): boolean {
+  const sections = ["dependencies", "devDependencies", "peerDependencies"];
+  for (const section of sections) {
+    const value = pkg[section];
+    if (!value || typeof value != "object" || Array.isArray(value)) continue;
+    if (dependency in (value as Record<string, unknown>)) return true;
+  }
+  return false;
 }
 
 function ensureDir(root: string, rel: string, summary: ApplySummary): void {
@@ -338,11 +370,7 @@ function ensureGitignoreIncludesAsTestDirs(
   }
   const eol = source.includes("\r\n") ? "\r\n" : "\n";
   let output = source;
-  if (
-    output.length &&
-    !output.endsWith("\n") &&
-    !output.endsWith("\r\n")
-  ) {
+  if (output.length && !output.endsWith("\n") && !output.endsWith("\r\n")) {
     output += eol;
   }
   output += missing.join(eol) + eol;
@@ -412,12 +440,13 @@ function printSummary(summary: ApplySummary): void {
       console.log(`  = ${item}`);
     }
   }
-  console.log("\nNow, install dependencies and run " + chalk.bold("as-test test") + "\n");
 }
 
 function ask(question: string, face: Interface | null): Promise<string> {
   if (!face) {
-    throw new Error("interactive input is unavailable; pass --yes with options");
+    throw new Error(
+      "interactive input is unavailable; pass --yes with options",
+    );
   }
   return new Promise<string>((res) => {
     face.question(question, (answer) => {
@@ -443,6 +472,71 @@ async function askChoice<T extends string>(
   if (!answer.length) return fallback;
   if (choices.includes(answer as T)) return answer as T;
   throw new Error(`Invalid choice "${answer}" for ${label}`);
+}
+
+async function askYesNo(
+  label: string,
+  face: Interface | null,
+  fallback: boolean,
+): Promise<boolean> {
+  if (!face) return fallback;
+  const answer = (await ask(label, face)).trim().toLowerCase();
+  if (!answer.length) return fallback;
+  if (answer == "y" || answer == "yes") return true;
+  if (answer == "n" || answer == "no") return false;
+  throw new Error(`Invalid answer "${answer}". Expected yes or no.`);
+}
+
+function installDependencies(root: string): void {
+  const install = resolveInstallCommand(root);
+  console.log(
+    "\n" +
+      chalk.dim(
+        `Installing dependencies with: ${install.command} ${install.args.join(" ")}`,
+      ),
+  );
+  const child = spawnSync(install.command, install.args, {
+    cwd: root,
+    stdio: "inherit",
+    shell: process.platform == "win32",
+  });
+  if (child.error) {
+    throw new Error(`failed to run dependency install: ${child.error.message}`);
+  }
+  if (child.status !== 0) {
+    throw new Error(
+      `dependency installation failed with exit code ${String(child.status)}`,
+    );
+  }
+}
+
+function resolveInstallCommand(root: string): {
+  command: string;
+  args: string[];
+} {
+  if (existsSync(path.join(root, "pnpm-lock.yaml"))) {
+    return { command: "pnpm", args: ["install"] };
+  }
+  if (existsSync(path.join(root, "yarn.lock"))) {
+    return { command: "yarn", args: ["install"] };
+  }
+  if (
+    existsSync(path.join(root, "bun.lockb")) ||
+    existsSync(path.join(root, "bun.lock"))
+  ) {
+    return { command: "bun", args: ["install"] };
+  }
+  const userAgent = process.env.npm_config_user_agent ?? "";
+  if (userAgent.startsWith("pnpm")) {
+    return { command: "pnpm", args: ["install"] };
+  }
+  if (userAgent.startsWith("yarn")) {
+    return { command: "yarn", args: ["install"] };
+  }
+  if (userAgent.startsWith("bun")) {
+    return { command: "bun", args: ["install"] };
+  }
+  return { command: "npm", args: ["install"] };
 }
 
 function buildMinimalExampleSpec(): string {
