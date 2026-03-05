@@ -1,5 +1,5 @@
 import { existsSync } from "fs";
-import { Config } from "./types.js";
+import { Config } from "../types.js";
 import { glob } from "glob";
 import chalk from "chalk";
 import { spawnSync } from "child_process";
@@ -9,7 +9,7 @@ import {
   getPkgRunner,
   loadConfig,
   tokenizeCommand,
-} from "./util.js";
+} from "../util.js";
 
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 

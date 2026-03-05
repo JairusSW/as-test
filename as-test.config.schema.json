@@ -17,6 +17,37 @@
       },
       "default": ["./assembly/__tests__/*.spec.ts"]
     },
+    "output": {
+      "description": "Output alias. Use a root string or a per-artifact object. Legacy fields (outDir/logs/coverageDir/snapshotDir) still work and override this alias when both are set.",
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "Root output directory. Expands to build/logs/coverage/snapshots subdirectories."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "build": {
+              "type": "string",
+              "description": "Build artifact output directory (maps to outDir)."
+            },
+            "logs": {
+              "type": "string",
+              "description": "Log artifact output directory (maps to logs). Use \"none\" to disable."
+            },
+            "coverage": {
+              "type": "string",
+              "description": "Coverage artifact output directory (maps to coverageDir). Use \"none\" to disable."
+            },
+            "snapshots": {
+              "type": "string",
+              "description": "Snapshot output directory (maps to snapshotDir)."
+            }
+          }
+        }
+      ]
+    },
     "outDir": {
       "type": "string",
       "description": "Directory where compiled artifacts are written.",

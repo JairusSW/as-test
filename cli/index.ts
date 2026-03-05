@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 
 import chalk from "chalk";
-import { build, BuildFeatureToggles } from "./build.js";
-import { createRunReporter, run, RunResult } from "./run.js";
-import { init } from "./init.js";
-import { doctor } from "./doctor.js";
+import { build, BuildFeatureToggles } from "./commands/build.js";
+import { createRunReporter, run, RunResult } from "./commands/run.js";
+import { executeBuildCommand } from "./commands/build.js";
+import { executeRunCommand } from "./commands/run.js";
+import { executeTestCommand } from "./commands/test.js";
+import { executeInitCommand } from "./commands/init.js";
+import { executeDoctorCommand } from "./commands/doctor.js";
 import {
   applyMode,
   getCliVersion,
@@ -51,116 +54,50 @@ if (!args.length) {
     if (shouldShowCommandHelp(_args, normalizedCommand)) {
       printCommandHelp(normalizedCommand);
     } else if (command === "build") {
-      const commandArgs = resolveCommandArgs(_args, command);
-      const listFlags = resolveListFlags(_args, command);
-      const featureToggles = resolveFeatureToggles(_args, command);
-      const buildFeatureToggles: BuildFeatureToggles = {
-        tryAs: featureToggles.tryAs,
-        coverage: featureToggles.coverage,
-      };
-      const modeTargets = resolveExecutionModes(configPath, selectedModes);
-      if (listFlags.list || listFlags.listModes) {
-        listExecutionPlan(
-          "build",
-          configPath,
-          commandArgs,
-          modeTargets,
-          listFlags,
-        ).catch((error) => {
-          printCliError(error);
-          process.exit(1);
-        });
-      } else {
-        runBuildModes(
-          configPath,
-          commandArgs,
-          modeTargets,
-          buildFeatureToggles,
-        ).catch((error) => {
-          printCliError(error);
-          process.exit(1);
-        });
-      }
+      executeBuildCommand(_args, configPath, selectedModes, {
+        resolveCommandArgs,
+        resolveListFlags,
+        resolveFeatureToggles,
+        resolveExecutionModes,
+        listExecutionPlan,
+        runBuildModes,
+      }).catch((error) => {
+        printCliError(error);
+        process.exit(1);
+      });
     } else if (command === "run") {
-      const commandArgs = resolveCommandArgs(_args, command);
-      const listFlags = resolveListFlags(_args, command);
-      const featureToggles = resolveFeatureToggles(_args, command);
-      const runFlags = {
-        snapshot: !flags.includes("--no-snapshot"),
-        updateSnapshots: flags.includes("--update-snapshots"),
-        clean: flags.includes("--clean"),
-        showCoverage: flags.includes("--show-coverage"),
-        verbose: flags.includes("--verbose"),
-        coverage: featureToggles.coverage,
-      };
-      const modeTargets = resolveExecutionModes(configPath, selectedModes);
-      if (listFlags.list || listFlags.listModes) {
-        listExecutionPlan(
-          "run",
-          configPath,
-          commandArgs,
-          modeTargets,
-          listFlags,
-        ).catch((error) => {
-          printCliError(error);
-          process.exit(1);
-        });
-      } else {
-        runRuntimeModes(runFlags, configPath, commandArgs, modeTargets).catch(
-          (error) => {
-            printCliError(error);
-            process.exit(1);
-          },
-        );
-      }
+      executeRunCommand(_args, flags, configPath, selectedModes, {
+        resolveCommandArgs,
+        resolveListFlags,
+        resolveFeatureToggles,
+        resolveExecutionModes,
+        listExecutionPlan,
+        runRuntimeModes,
+      }).catch((error) => {
+        printCliError(error);
+        process.exit(1);
+      });
     } else if (command === "test") {
-      const commandArgs = resolveCommandArgs(_args, command);
-      const listFlags = resolveListFlags(_args, command);
-      const featureToggles = resolveFeatureToggles(_args, command);
-      const buildFeatureToggles: BuildFeatureToggles = {
-        tryAs: featureToggles.tryAs,
-        coverage: featureToggles.coverage,
-      };
-      const runFlags = {
-        snapshot: !flags.includes("--no-snapshot"),
-        updateSnapshots: flags.includes("--update-snapshots"),
-        clean: flags.includes("--clean"),
-        showCoverage: flags.includes("--show-coverage"),
-        verbose: flags.includes("--verbose"),
-        coverage: featureToggles.coverage,
-      };
-      const modeTargets = resolveExecutionModes(configPath, selectedModes);
-      if (listFlags.list || listFlags.listModes) {
-        listExecutionPlan(
-          "test",
-          configPath,
-          commandArgs,
-          modeTargets,
-          listFlags,
-        ).catch((error) => {
-          printCliError(error);
-          process.exit(1);
-        });
-      } else {
-        runTestModes(
-          runFlags,
-          configPath,
-          commandArgs,
-          modeTargets,
-          buildFeatureToggles,
-        ).catch((error) => {
-          printCliError(error);
-          process.exit(1);
-        });
-      }
+      executeTestCommand(_args, flags, configPath, selectedModes, {
+        resolveCommandArgs,
+        resolveListFlags,
+        resolveFeatureToggles,
+        resolveExecutionModes,
+        listExecutionPlan,
+        runTestModes,
+      }).catch((error) => {
+        printCliError(error);
+        process.exit(1);
+      });
     } else if (command === "init") {
-      const commandTokens = resolveCommandTokens(_args, command);
-      init(commandTokens).catch((error) => {
+      executeInitCommand(_args, {
+        resolveCommandTokens,
+      }).catch((error) => {
         printCliError(error);
         process.exit(1);
       });
     } else if (command === "doctor") {
-      doctor(configPath, selectedModes).catch((error) => {
+      executeDoctorCommand(configPath, selectedModes).catch((error) => {
         printCliError(error);
         process.exit(1);
       });

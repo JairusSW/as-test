@@ -3,7 +3,7 @@ import { spawnSync } from "child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import * as path from "path";
 import { createInterface } from "readline";
-import { getCliVersion, loadConfig } from "./util.js";
+import { getCliVersion, loadConfig } from "../util.js";
 const TARGETS = ["wasi", "bindings"];
 const EXAMPLE_MODES = ["minimal", "full", "none"];
 export async function init(rawArgs) {

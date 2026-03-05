@@ -290,10 +290,7 @@ Example:
 {
   "$schema": "./as-test.config.schema.json",
   "input": ["./assembly/__tests__/*.spec.ts"],
-  "outDir": "./.as-test/build",
-  "logs": "./.as-test/logs",
-  "coverageDir": "./.as-test/coverage",
-  "snapshotDir": "./.as-test/snapshots",
+  "output": "./.as-test/",
   "config": "none",
   "coverage": true,
   "env": {},
@@ -315,10 +312,12 @@ Example:
 Key fields:
 
 - `input`: glob list of spec files
+- `output`: output alias. Use a root string (`"./.as-test/"`) or object (`{ "build": "...", "logs": "...", "coverage": "...", "snapshots": "..." }`)
 - `outDir`: compiled wasm output dir
 - `logs`: log output dir or `"none"`
 - `coverageDir`: coverage output dir or `"none"`
 - `snapshotDir`: snapshot storage dir
+- `outDir`, `logs`, `coverageDir`, and `snapshotDir` still work; when both are set, these explicit fields override `output`
 - `env`: environment variables injected into build and runtime processes
 - `buildOptions.cmd`: optional custom build command template; when set it replaces default build command and flags. Supports `<file>`, `<name>`, `<outFile>`, `<target>`, `<mode>`
 - `buildOptions.target`: `wasi` or `bindings`

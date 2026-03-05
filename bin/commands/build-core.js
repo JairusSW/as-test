@@ -3,7 +3,7 @@ import { glob } from "glob";
 import chalk from "chalk";
 import { spawnSync } from "child_process";
 import * as path from "path";
-import { applyMode, getPkgRunner, loadConfig, tokenizeCommand, } from "./util.js";
+import { applyMode, getPkgRunner, loadConfig, tokenizeCommand, } from "../util.js";
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 export async function build(configPath = DEFAULT_CONFIG_PATH, selectors = [], modeName, featureToggles = {}) {
     const loadedConfig = loadConfig(configPath, false);

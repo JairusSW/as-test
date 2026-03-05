@@ -2,8 +2,8 @@ import chalk from "chalk";
 import { existsSync } from "fs";
 import { glob } from "glob";
 import * as path from "path";
-import { applyMode, getExec, loadConfig, tokenizeCommand } from "./util.js";
-import { Config } from "./types.js";
+import { applyMode, getExec, loadConfig, tokenizeCommand } from "../util.js";
+import { Config } from "../types.js";
 
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 
@@ -87,7 +87,10 @@ export async function doctor(
   }
 }
 
-function tryLoadConfig(configPath: string): { loaded: boolean; config: Config } {
+function tryLoadConfig(configPath: string): {
+  loaded: boolean;
+  config: Config;
+} {
   try {
     return { loaded: true, config: loadConfig(configPath, false) };
   } catch {
@@ -142,7 +145,7 @@ function checkRuntimeCommand(
       status: "error",
       scope,
       label: "Runtime command missing",
-      details: 'runOptions.runtime.cmd is empty.',
+      details: "runOptions.runtime.cmd is empty.",
       fix: 'Set "runOptions.runtime.cmd" in as-test.config.json (for example: node ./.as-test/runners/default.wasi.js <file>).',
     });
     return checks;

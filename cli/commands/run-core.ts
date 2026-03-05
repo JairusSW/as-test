@@ -1,7 +1,7 @@
 import chalk from "chalk";
 import { spawn } from "child_process";
 import { glob } from "glob";
-import { applyMode, getExec, loadConfig, tokenizeCommand } from "./util.js";
+import { applyMode, getExec, loadConfig, tokenizeCommand } from "../util.js";
 import * as path from "path";
 import { pathToFileURL } from "url";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
@@ -11,10 +11,10 @@ import {
   ReporterFactory,
   RunStats,
   TestReporter,
-} from "./reporters/types.js";
-import { createReporter as createDefaultReporter } from "./reporters/default.js";
-import { createTapReporter } from "./reporters/tap.js";
-import type { TapReporterConfig } from "./reporters/tap.js";
+} from "../reporters/types.js";
+import { createReporter as createDefaultReporter } from "../reporters/default.js";
+import { createTapReporter } from "../reporters/tap.js";
+import type { TapReporterConfig } from "../reporters/tap.js";
 
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 

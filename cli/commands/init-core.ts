@@ -3,7 +3,7 @@ import { spawnSync } from "child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import * as path from "path";
 import { createInterface, Interface } from "readline";
-import { getCliVersion, loadConfig } from "./util.js";
+import { getCliVersion, loadConfig } from "../util.js";
 
 const TARGETS = ["wasi", "bindings"] as const;
 type Target = (typeof TARGETS)[number];

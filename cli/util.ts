@@ -69,6 +69,7 @@ export function loadConfig(CONFIG_PATH: string, warn: boolean = false): Config {
     const raw = parsed as Record<string, unknown>;
     validateConfig(raw, CONFIG_PATH);
     const config = Object.assign(new Config(), raw) as Config;
+    applyOutputConfig(raw.output, raw, config);
     config.env = parseEnvMap(raw.env);
     const runOptionsRaw =
       (raw.runOptions as Record<string, unknown> | undefined) ?? {};
@@ -148,6 +149,7 @@ type ValidationIssue = {
 const TOP_LEVEL_KEYS = new Set([
   "$schema",
   "input",
+  "output",
   "outDir",
   "logs",
   "coverageDir",
@@ -164,6 +166,7 @@ const BUILD_OPTION_KEYS = new Set(["cmd", "args", "target"]);
 const RUN_OPTION_KEYS = new Set(["runtime", "reporter", "run"]); // includes legacy "run"
 const RUNTIME_OPTION_KEYS = new Set(["cmd", "run"]); // includes legacy "run"
 const REPORTER_OPTION_KEYS = new Set(["name", "options", "outDir", "outFile"]);
+const OUTPUT_OPTION_KEYS = new Set(["build", "logs", "coverage", "snapshots"]);
 const MODE_KEYS = new Set([
   "outDir",
   "logs",
@@ -185,6 +188,7 @@ function validateConfig(
 
   validateStringField(raw, "$schema", "$", issues);
   validateInputField(raw, "input", "$", issues);
+  validateOutputField(raw, "output", "$", issues);
   validateStringField(raw, "outDir", "$", issues);
   validateStringField(raw, "logs", "$", issues);
   validateStringField(raw, "coverageDir", "$", issues);
@@ -273,6 +277,66 @@ function validateStringField(
       path: `${pathPrefix}.${key}`,
       message: "must be a string",
       fix: `set "${key}" to a string value`,
+    });
+  }
+}
+
+function validateOutputField(
+  raw: Record<string, unknown>,
+  key: string,
+  pathPrefix: string,
+  issues: ValidationIssue[],
+): void {
+  if (!(key in raw) || raw[key] == undefined) return;
+  const value = raw[key];
+  if (typeof value == "string") {
+    if (!value.length) {
+      issues.push({
+        path: `${pathPrefix}.${key}`,
+        message: "must not be an empty string",
+        fix: 'example: "output": "./.as-test/"',
+      });
+    }
+    return;
+  }
+  if (!value || typeof value != "object" || Array.isArray(value)) {
+    issues.push({
+      path: `${pathPrefix}.${key}`,
+      message: "must be a string or object",
+      fix: 'example: "output": { "logs": "./.as-test/logs", "coverage": "./.as-test/coverage" }',
+    });
+    return;
+  }
+  const out = value as Record<string, unknown>;
+  validateUnknownKeys(out, OUTPUT_OPTION_KEYS, `${pathPrefix}.${key}`, issues);
+  if ("build" in out && (typeof out.build != "string" || !out.build.length)) {
+    issues.push({
+      path: `${pathPrefix}.${key}.build`,
+      message: "must be a non-empty string",
+    });
+  }
+  if (
+    "snapshots" in out &&
+    (typeof out.snapshots != "string" || !out.snapshots.length)
+  ) {
+    issues.push({
+      path: `${pathPrefix}.${key}.snapshots`,
+      message: "must be a non-empty string",
+    });
+  }
+  if ("logs" in out && (typeof out.logs != "string" || !out.logs.length)) {
+    issues.push({
+      path: `${pathPrefix}.${key}.logs`,
+      message: 'must be a non-empty string or "none"',
+    });
+  }
+  if (
+    "coverage" in out &&
+    (typeof out.coverage != "string" || !out.coverage.length)
+  ) {
+    issues.push({
+      path: `${pathPrefix}.${key}.coverage`,
+      message: 'must be a non-empty string or "none"',
     });
   }
 }
@@ -590,6 +654,77 @@ function levenshteinDistance(left: string, right: string): number {
   }
 
   return matrix[left.length]![right.length]!;
+}
+
+function applyOutputConfig(
+  rawOutput: unknown,
+  rawConfig: Record<string, unknown>,
+  config: Config,
+): void {
+  if (rawOutput == undefined) return;
+
+  if (typeof rawOutput == "string") {
+    applyOutputRoot(rawOutput, rawConfig, config);
+    return;
+  }
+
+  if (!rawOutput || typeof rawOutput != "object" || Array.isArray(rawOutput)) {
+    return;
+  }
+
+  const output = rawOutput as Record<string, unknown>;
+  if (
+    "build" in output &&
+    typeof output.build == "string" &&
+    output.build.length &&
+    !("outDir" in rawConfig)
+  ) {
+    config.outDir = output.build;
+  }
+  if (
+    "logs" in output &&
+    typeof output.logs == "string" &&
+    output.logs.length &&
+    !("logs" in rawConfig)
+  ) {
+    config.logs = output.logs;
+  }
+  if (
+    "coverage" in output &&
+    typeof output.coverage == "string" &&
+    output.coverage.length &&
+    !("coverageDir" in rawConfig)
+  ) {
+    config.coverageDir = output.coverage;
+  }
+  if (
+    "snapshots" in output &&
+    typeof output.snapshots == "string" &&
+    output.snapshots.length &&
+    !("snapshotDir" in rawConfig)
+  ) {
+    config.snapshotDir = output.snapshots;
+  }
+}
+
+function applyOutputRoot(
+  root: string,
+  rawConfig: Record<string, unknown>,
+  config: Config,
+): void {
+  if (!root.length) return;
+  if (!("outDir" in rawConfig)) {
+    config.outDir = join(root, "build");
+  }
+  if (!("logs" in rawConfig)) {
+    config.logs = join(root, "logs");
+  }
+  if (!("coverageDir" in rawConfig)) {
+    config.coverageDir = join(root, "coverage");
+  }
+  if (!("snapshotDir" in rawConfig)) {
+    config.snapshotDir = join(root, "snapshots");
+  }
 }
 
 function parseModes(raw: unknown): Record<string, ModeConfig> {
