@@ -63,6 +63,8 @@
   },
   "scripts": {
     "test": "node ./bin/index.js test",
+    "typecheck": "tsc -p cli --noEmit && tsc -p transform --noEmit",
+    "lint": "eslint transform/src/**/*.ts tools/**/*.js eslint.config.js",
     "build:transform": "tsc -p ./transform",
     "build:cli": "tsc -p cli",
     "build:run": "tsc -p run",
