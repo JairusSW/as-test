@@ -3,7 +3,7 @@ import { spawnSync } from "child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import * as path from "path";
 import { createInterface, Interface } from "readline";
-import { getCliVersion, loadConfig } from "../util.js";
+import { getCliVersion } from "../util.js";
 
 const TARGETS = ["wasi", "bindings"] as const;
 type Target = (typeof TARGETS)[number];
@@ -246,17 +246,27 @@ function applyInit(
   ensureGitignoreIncludesAsTestDirs(root, summary);
 
   const configPath = path.join(root, "as-test.config.json");
-  const config = loadConfig(configPath, false);
-  config.$schema = "./node_modules/as-test/as-test.config.schema.json";
-  config.buildOptions.target = target;
-  config.runOptions.reporter = "default";
-  if (target == "wasi") {
-    config.runOptions.runtime.cmd =
-      "node ./.as-test/runners/default.wasi.js <file>";
-  } else {
-    config.runOptions.runtime.cmd =
-      "node ./.as-test/runners/default.bindings.js <file>";
-  }
+  const config = {
+    $schema: "node_modules/as-test/as-test.config.schema.json",
+    input: ["assembly/__tests__/*.spec.ts"],
+    output: ".as-test/",
+    config: "none",
+    coverage: true,
+    env: {},
+    buildOptions: {
+      target,
+    },
+    runOptions: {
+      runtime: {
+        cmd:
+          target == "wasi"
+            ? "node .as-test/runners/default.wasi.js <file>"
+            : "node .as-test/runners/default.bindings.js <file>",
+      },
+      reporter: "default",
+    },
+    modes: {},
+  };
   writeJson(configPath, config, summary, "as-test.config.json");
 
   if (example != "none") {
