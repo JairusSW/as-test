@@ -4,6 +4,7 @@ import chalk from "chalk";
 import { build, BuildFeatureToggles } from "./build.js";
 import { createRunReporter, run, RunResult } from "./run.js";
 import { init } from "./init.js";
+import { doctor } from "./doctor.js";
 import { getCliVersion, loadConfig, resolveModeNames } from "./util.js";
 import * as path from "path";
 import { glob } from "glob";
@@ -13,7 +14,7 @@ const _args = process.argv.slice(2);
 const flags: string[] = [];
 const args: string[] = [];
 
-const COMMANDS: string[] = ["run", "build", "test", "init"];
+const COMMANDS: string[] = ["run", "build", "test", "init", "doctor"];
 type CliFeatureToggles = {
   coverage?: boolean;
   tryAs?: boolean;
@@ -88,6 +89,11 @@ if (!args.length) {
         printCliError(error);
         process.exit(1);
       });
+    } else if (command === "doctor") {
+      doctor(configPath, selectedModes).catch((error) => {
+        printCliError(error);
+        process.exit(1);
+      });
     }
   } catch (error) {
     printCliError(error);
@@ -158,6 +164,14 @@ function info(): void {
       chalk.dim("<./dir>") +
       "                " +
       "Initialize an empty testing template",
+  );
+  console.log(
+    "  " +
+      chalk.bold.magentaBright("doctor") +
+      "  " +
+      chalk.dim("<--mode x>") +
+      "             " +
+      "Validate environment/config/runtime setup",
   );
   console.log("");
 

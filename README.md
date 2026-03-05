@@ -9,6 +9,7 @@
 - [Installation](#installation)
 - [Examples](#examples)
 - [Writing Tests](#writing-tests)
+- [Setup Diagnostics](#setup-diagnostics)
 - [Mocking](#mocking)
 - [Snapshots](#snapshots)
 - [Coverage](#coverage)
@@ -137,6 +138,30 @@ Example:
 ast build --enable try-as
 ast test --disable coverage
 ```
+
+## Setup Diagnostics
+
+Use `ast doctor` to validate local setup before running tests.
+
+```bash
+ast doctor
+```
+
+You can also target specific modes and config files:
+
+```bash
+ast doctor --config ./as-test.config.json --mode wasi,bindings
+```
+
+`doctor` checks:
+
+- config file loading and mode resolution
+- required dependencies (for example `assemblyscript`, `@assemblyscript/wasi-shim` for WASI targets)
+- runtime command parsing and executable availability
+- runtime script path existence (for script-host runtimes)
+- test spec file discovery from configured input patterns
+
+If any `ERROR` checks are found, `ast doctor` exits non-zero.
 
 ## Mocking
 

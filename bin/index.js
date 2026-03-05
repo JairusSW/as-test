@@ -3,13 +3,14 @@ import chalk from "chalk";
 import { build } from "./build.js";
 import { createRunReporter, run } from "./run.js";
 import { init } from "./init.js";
+import { doctor } from "./doctor.js";
 import { getCliVersion, loadConfig, resolveModeNames } from "./util.js";
 import * as path from "path";
 import { glob } from "glob";
 const _args = process.argv.slice(2);
 const flags = [];
 const args = [];
-const COMMANDS = ["run", "build", "test", "init"];
+const COMMANDS = ["run", "build", "test", "init", "doctor"];
 const version = getCliVersion();
 const configPath = resolveConfigPath(_args);
 const selectedModes = resolveModeNames(_args);
@@ -72,6 +73,12 @@ else if (COMMANDS.includes(args[0])) {
                 process.exit(1);
             });
         }
+        else if (command === "doctor") {
+            doctor(configPath, selectedModes).catch((error) => {
+                printCliError(error);
+                process.exit(1);
+            });
+        }
     }
     catch (error) {
         printCliError(error);
@@ -126,6 +133,12 @@ function info() {
         chalk.dim("<./dir>") +
         "                " +
         "Initialize an empty testing template");
+    console.log("  " +
+        chalk.bold.magentaBright("doctor") +
+        "  " +
+        chalk.dim("<--mode x>") +
+        "             " +
+        "Validate environment/config/runtime setup");
     console.log("");
     console.log(chalk.bold("Flags:"));
     console.log("   " +
