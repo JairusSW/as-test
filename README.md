@@ -63,11 +63,6 @@ Full runnable examples live in `examples/`, including:
 
 See `examples/README.md` for the walkthrough.
 
-## CLI Style Guide
-
-Contributor-facing CLI conventions are documented in `CLI_STYLE_GUIDE.md`.
-It mirrors the existing command/help formatting style in `cli/index.ts`.
-
 ## Writing Tests
 
 Create `assembly/__tests__/math.spec.ts`:
