@@ -36,9 +36,10 @@ export default class Transformer extends Transform {
           return 0;
         }
       });
-    const entryFile = sources.find(
+    const entrySource = sources.find(
       (v) => v.sourceKind == SourceKind.UserEntry,
-    ).simplePath;
+    );
+    const entryFile = entrySource ? entrySource.simplePath : "unknown";
 
     // Gather mocked import targets across all sources before transform rewrite pass.
     const mockedImportTargets = collectMockImportTargets(sources);
