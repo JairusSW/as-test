@@ -33,7 +33,20 @@ export function loadConfig(CONFIG_PATH, warn = false) {
         return new Config();
     }
     else {
-        const raw = JSON.parse(readFileSync(CONFIG_PATH).toString());
+        const rawText = readFileSync(CONFIG_PATH, "utf8");
+        let parsed;
+        try {
+            parsed = JSON.parse(rawText);
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            throw new Error(`invalid config JSON at ${CONFIG_PATH}\n${message}\nfix JSON syntax and rerun.`);
+        }
+        if (!parsed || typeof parsed != "object" || Array.isArray(parsed)) {
+            throw new Error(`invalid config at ${CONFIG_PATH}\nroot value must be an object. Example: { "input": ["./assembly/__tests__/*.spec.ts"] }`);
+        }
+        const raw = parsed;
+        validateConfig(raw, CONFIG_PATH);
         const config = Object.assign(new Config(), raw);
         config.env = parseEnvMap(raw.env);
         const runOptionsRaw = raw.runOptions ?? {};
@@ -88,6 +101,385 @@ export function loadConfig(CONFIG_PATH, warn = false) {
         config.modes = parseModes(raw.modes);
         return config;
     }
+}
+const TOP_LEVEL_KEYS = new Set([
+    "$schema",
+    "input",
+    "outDir",
+    "logs",
+    "coverageDir",
+    "snapshotDir",
+    "config",
+    "coverage",
+    "env",
+    "buildOptions",
+    "modes",
+    "runOptions",
+]);
+const BUILD_OPTION_KEYS = new Set(["cmd", "args", "target"]);
+const RUN_OPTION_KEYS = new Set(["runtime", "reporter", "run"]); // includes legacy "run"
+const RUNTIME_OPTION_KEYS = new Set(["cmd", "run"]); // includes legacy "run"
+const REPORTER_OPTION_KEYS = new Set(["name", "options", "outDir", "outFile"]);
+const MODE_KEYS = new Set([
+    "outDir",
+    "logs",
+    "coverageDir",
+    "snapshotDir",
+    "config",
+    "coverage",
+    "buildOptions",
+    "runOptions",
+    "env",
+]);
+function validateConfig(raw, configPath) {
+    const issues = [];
+    validateUnknownKeys(raw, TOP_LEVEL_KEYS, "$", issues);
+    validateStringField(raw, "$schema", "$", issues);
+    validateInputField(raw, "input", "$", issues);
+    validateStringField(raw, "outDir", "$", issues);
+    validateStringField(raw, "logs", "$", issues);
+    validateStringField(raw, "coverageDir", "$", issues);
+    validateStringField(raw, "snapshotDir", "$", issues);
+    validateStringField(raw, "config", "$", issues);
+    validateCoverageField(raw, "coverage", "$", issues);
+    validateEnvField(raw, "env", "$", issues);
+    validateBuildOptionsField(raw, "buildOptions", "$", issues);
+    validateRunOptionsField(raw, "runOptions", "$", issues);
+    validateModesField(raw, "modes", "$", issues);
+    if (!issues.length)
+        return;
+    const lines = issues.map((issue, index) => {
+        const suffix = issue.fix ? `\n     fix: ${issue.fix}` : "";
+        return `${index + 1}. ${issue.path}: ${issue.message}${suffix}`;
+    });
+    throw new Error(`invalid config at ${configPath}\n${lines.join("\n")}\nrun "ast doctor" to check your setup.`);
+}
+function validateUnknownKeys(raw, allowed, pathPrefix, issues) {
+    for (const key of Object.keys(raw)) {
+        if (allowed.has(key))
+            continue;
+        const suggestion = resolveClosestKey(key, [...allowed]);
+        issues.push({
+            path: `${pathPrefix}.${key}`,
+            message: "unknown property",
+            fix: suggestion
+                ? `use "${suggestion}" if that was intended, otherwise remove this property`
+                : `remove this property`,
+        });
+    }
+}
+function validateInputField(raw, key, pathPrefix, issues) {
+    if (!(key in raw) || raw[key] == undefined)
+        return;
+    const value = raw[key];
+    if (typeof value == "string") {
+        if (!value.length) {
+            issues.push({
+                path: `${pathPrefix}.${key}`,
+                message: "must not be an empty string",
+                fix: "set to a glob pattern or remove it to use the default input patterns",
+            });
+        }
+        return;
+    }
+    if (!Array.isArray(value)) {
+        issues.push({
+            path: `${pathPrefix}.${key}`,
+            message: "must be a string or array of strings",
+            fix: 'example: "input": ["./assembly/__tests__/*.spec.ts"]',
+        });
+        return;
+    }
+    for (let i = 0; i < value.length; i++) {
+        if (typeof value[i] == "string" && value[i].length)
+            continue;
+        issues.push({
+            path: `${pathPrefix}.${key}[${i}]`,
+            message: "must be a non-empty string",
+            fix: "remove invalid entries or replace them with valid glob strings",
+        });
+    }
+}
+function validateStringField(raw, key, pathPrefix, issues) {
+    if (!(key in raw) || raw[key] == undefined)
+        return;
+    if (typeof raw[key] != "string") {
+        issues.push({
+            path: `${pathPrefix}.${key}`,
+            message: "must be a string",
+            fix: `set "${key}" to a string value`,
+        });
+    }
+}
+function validateCoverageField(raw, key, pathPrefix, issues) {
+    if (!(key in raw) || raw[key] == undefined)
+        return;
+    validateCoverageValue(raw[key], `${pathPrefix}.${key}`, issues);
+}
+function validateCoverageValue(value, path, issues) {
+    if (typeof value == "boolean")
+        return;
+    if (!value || typeof value != "object" || Array.isArray(value)) {
+        issues.push({
+            path,
+            message: "must be a boolean or object",
+            fix: 'use true/false or { "enabled": true, "includeSpecs": false }',
+        });
+        return;
+    }
+    const obj = value;
+    if ("enabled" in obj && typeof obj.enabled != "boolean") {
+        issues.push({
+            path: `${path}.enabled`,
+            message: "must be a boolean",
+            fix: "set to true or false",
+        });
+    }
+    if ("includeSpecs" in obj && typeof obj.includeSpecs != "boolean") {
+        issues.push({
+            path: `${path}.includeSpecs`,
+            message: "must be a boolean",
+            fix: "set to true or false",
+        });
+    }
+}
+function validateEnvField(raw, key, pathPrefix, issues) {
+    if (!(key in raw) || raw[key] == undefined)
+        return;
+    const value = raw[key];
+    if (!value || typeof value != "object" || Array.isArray(value)) {
+        issues.push({
+            path: `${pathPrefix}.${key}`,
+            message: "must be an object of string values",
+            fix: 'example: "env": { "MY_FLAG": "1" }',
+        });
+        return;
+    }
+    for (const [name, item] of Object.entries(value)) {
+        if (typeof item == "string")
+            continue;
+        issues.push({
+            path: `${pathPrefix}.${key}.${name}`,
+            message: "must be a string",
+            fix: "set environment values as strings",
+        });
+    }
+}
+function validateBuildOptionsField(raw, key, pathPrefix, issues) {
+    if (!(key in raw) || raw[key] == undefined)
+        return;
+    const value = raw[key];
+    if (!value || typeof value != "object" || Array.isArray(value)) {
+        issues.push({
+            path: `${pathPrefix}.${key}`,
+            message: "must be an object",
+            fix: 'example: "buildOptions": { "cmd": "", "args": [], "target": "wasi" }',
+        });
+        return;
+    }
+    const obj = value;
+    validateUnknownKeys(obj, BUILD_OPTION_KEYS, `${pathPrefix}.${key}`, issues);
+    if ("cmd" in obj && typeof obj.cmd != "string") {
+        issues.push({
+            path: `${pathPrefix}.${key}.cmd`,
+            message: "must be a string",
+            fix: "set to an empty string or a command template",
+        });
+    }
+    if ("args" in obj && !isStringArray(obj.args)) {
+        issues.push({
+            path: `${pathPrefix}.${key}.args`,
+            message: "must be an array of strings",
+            fix: 'example: "args": ["--optimize"]',
+        });
+    }
+    if ("target" in obj) {
+        if (typeof obj.target != "string") {
+            issues.push({
+                path: `${pathPrefix}.${key}.target`,
+                message: "must be a string",
+                fix: 'set to "wasi" or "bindings"',
+            });
+        }
+        else if (obj.target != "wasi" && obj.target != "bindings") {
+            issues.push({
+                path: `${pathPrefix}.${key}.target`,
+                message: `must be "wasi" or "bindings"`,
+                fix: `received "${obj.target}"`,
+            });
+        }
+    }
+}
+function validateRunOptionsField(raw, key, pathPrefix, issues) {
+    if (!(key in raw) || raw[key] == undefined)
+        return;
+    const value = raw[key];
+    if (!value || typeof value != "object" || Array.isArray(value)) {
+        issues.push({
+            path: `${pathPrefix}.${key}`,
+            message: "must be an object",
+            fix: 'example: "runOptions": { "runtime": { "cmd": "node ... <file>" } }',
+        });
+        return;
+    }
+    const obj = value;
+    validateUnknownKeys(obj, RUN_OPTION_KEYS, `${pathPrefix}.${key}`, issues);
+    if ("run" in obj && typeof obj.run != "string") {
+        issues.push({
+            path: `${pathPrefix}.${key}.run`,
+            message: "must be a string",
+            fix: 'prefer "runtime.cmd"; legacy "run" must still be string',
+        });
+    }
+    if ("runtime" in obj && obj.runtime != undefined) {
+        const runtime = obj.runtime;
+        if (!runtime || typeof runtime != "object" || Array.isArray(runtime)) {
+            issues.push({
+                path: `${pathPrefix}.${key}.runtime`,
+                message: "must be an object",
+                fix: 'example: "runtime": { "cmd": "node ./.as-test/runners/default.wasi.js <file>" }',
+            });
+        }
+        else {
+            const runtimeObj = runtime;
+            validateUnknownKeys(runtimeObj, RUNTIME_OPTION_KEYS, `${pathPrefix}.${key}.runtime`, issues);
+            if ("cmd" in runtimeObj && typeof runtimeObj.cmd != "string") {
+                issues.push({
+                    path: `${pathPrefix}.${key}.runtime.cmd`,
+                    message: "must be a string",
+                    fix: 'set to a runtime command including "<file>"',
+                });
+            }
+            if ("run" in runtimeObj && typeof runtimeObj.run != "string") {
+                issues.push({
+                    path: `${pathPrefix}.${key}.runtime.run`,
+                    message: "must be a string",
+                    fix: 'legacy "run" should be a command string',
+                });
+            }
+        }
+    }
+    if ("reporter" in obj && obj.reporter != undefined) {
+        const reporter = obj.reporter;
+        if (typeof reporter == "string")
+            return;
+        if (!reporter || typeof reporter != "object" || Array.isArray(reporter)) {
+            issues.push({
+                path: `${pathPrefix}.${key}.reporter`,
+                message: "must be a string or object",
+                fix: 'use "default", "tap", or { "name": "...", ... }',
+            });
+            return;
+        }
+        const reporterObj = reporter;
+        validateUnknownKeys(reporterObj, REPORTER_OPTION_KEYS, `${pathPrefix}.${key}.reporter`, issues);
+        if ("name" in reporterObj && typeof reporterObj.name != "string") {
+            issues.push({
+                path: `${pathPrefix}.${key}.reporter.name`,
+                message: "must be a string",
+                fix: 'set to "default", "tap", or module path',
+            });
+        }
+        if (!("name" in reporterObj)) {
+            issues.push({
+                path: `${pathPrefix}.${key}.reporter`,
+                message: 'object reporter config requires "name"',
+                fix: 'example: { "name": "tap", "outDir": "./.as-test/reports" }',
+            });
+        }
+        if ("options" in reporterObj && !isStringArray(reporterObj.options)) {
+            issues.push({
+                path: `${pathPrefix}.${key}.reporter.options`,
+                message: "must be an array of strings",
+                fix: 'example: "options": ["single-file"]',
+            });
+        }
+        if ("outDir" in reporterObj && typeof reporterObj.outDir != "string") {
+            issues.push({
+                path: `${pathPrefix}.${key}.reporter.outDir`,
+                message: "must be a string",
+            });
+        }
+        if ("outFile" in reporterObj && typeof reporterObj.outFile != "string") {
+            issues.push({
+                path: `${pathPrefix}.${key}.reporter.outFile`,
+                message: "must be a string",
+            });
+        }
+    }
+}
+function validateModesField(raw, key, pathPrefix, issues) {
+    if (!(key in raw) || raw[key] == undefined)
+        return;
+    const value = raw[key];
+    if (!value || typeof value != "object" || Array.isArray(value)) {
+        issues.push({
+            path: `${pathPrefix}.${key}`,
+            message: "must be an object",
+            fix: 'example: "modes": { "wasi": { "buildOptions": { "target": "wasi" } } }',
+        });
+        return;
+    }
+    for (const [modeName, modeRaw] of Object.entries(value)) {
+        if (!modeRaw || typeof modeRaw != "object" || Array.isArray(modeRaw)) {
+            issues.push({
+                path: `${pathPrefix}.${key}.${modeName}`,
+                message: "must be an object",
+            });
+            continue;
+        }
+        const modeObj = modeRaw;
+        const modePath = `${pathPrefix}.${key}.${modeName}`;
+        validateUnknownKeys(modeObj, MODE_KEYS, modePath, issues);
+        validateStringField(modeObj, "outDir", modePath, issues);
+        validateStringField(modeObj, "logs", modePath, issues);
+        validateStringField(modeObj, "coverageDir", modePath, issues);
+        validateStringField(modeObj, "snapshotDir", modePath, issues);
+        validateStringField(modeObj, "config", modePath, issues);
+        validateCoverageField(modeObj, "coverage", modePath, issues);
+        validateEnvField(modeObj, "env", modePath, issues);
+        validateBuildOptionsField(modeObj, "buildOptions", modePath, issues);
+        validateRunOptionsField(modeObj, "runOptions", modePath, issues);
+    }
+}
+function isStringArray(value) {
+    return Array.isArray(value) && value.every((item) => typeof item == "string");
+}
+function resolveClosestKey(value, keys) {
+    let best = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (const key of keys) {
+        const distance = levenshteinDistance(value, key);
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            best = key;
+        }
+    }
+    if (best && bestDistance <= 3)
+        return best;
+    return null;
+}
+function levenshteinDistance(left, right) {
+    if (left == right)
+        return 0;
+    if (!left.length)
+        return right.length;
+    if (!right.length)
+        return left.length;
+    const matrix = [];
+    for (let i = 0; i <= left.length; i++) {
+        matrix[i] = [i];
+    }
+    for (let j = 0; j <= right.length; j++) {
+        matrix[0][j] = j;
+    }
+    for (let i = 1; i <= left.length; i++) {
+        for (let j = 1; j <= right.length; j++) {
+            const cost = left[i - 1] == right[j - 1] ? 0 : 1;
+            matrix[i][j] = Math.min(matrix[i - 1][j] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j - 1] + cost);
+        }
+    }
+    return matrix[left.length][right.length];
 }
 function parseModes(raw) {
     if (!raw || typeof raw != "object" || Array.isArray(raw))

@@ -320,6 +320,25 @@ Key fields:
 - `runOptions.runtime.cmd`: runtime command, supports `<file>` and `<name>`; if its script path is missing, as-test falls back to the default runner for the selected target
 - `runOptions.reporter`: reporter selection as a string or object
 
+Validation behavior:
+
+- Config parsing is strict for `ast build`, `ast run`, `ast test`, and `ast doctor`.
+- Invalid JSON fails early with parser details (`line`/`column` when provided by Node).
+- Unknown properties are rejected and include a nearest-key suggestion when possible.
+- Invalid property types are reported with their JSON path and a short fix hint.
+- On validation failure, the command exits non-zero and prints `run "ast doctor" to check your setup.`
+
+Example validation error:
+
+```text
+invalid config at ./as-test.config.json
+1. $.inpoot: unknown property
+     fix: use "input" if that was intended, otherwise remove this property
+2. $.runOptions.runtime.cmd: must be a string
+     fix: set to a runtime command including "<file>"
+run "ast doctor" to check your setup.
+```
+
 Example multi-runtime matrix:
 
 ```json

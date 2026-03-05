@@ -1,5 +1,18 @@
 # Change Log
 
+## 2026-03-04
+
+### CLI & Config Validation
+
+- feat: validate config shape and field types before applying defaults for all CLI entry points.
+- feat: reject unknown config keys with nearest-key suggestions.
+- feat: show structured validation diagnostics with JSON paths and fix hints.
+- feat: fail fast on invalid config JSON with parser error details.
+
+### Docs
+
+- docs: add README guidance for strict config validation behavior and example error output.
+
 ## 2026-02-25 - v0.5.3
 
 ### CLI, Modes & Matrix
