@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-03-11 - v1.0.1
+
+- patch: automatically tokenize buildOptions.args so that `["--enable simd"]` becomes `["--enable", "simd"]`
+
 ## 2026-03-11 - v1.0.0
 
 ### Docs
