@@ -56,12 +56,18 @@ npm install as-test --save-dev
 
 Full runnable examples live in `examples/`, including:
 
+- one standalone project per example (initialized with `ast init`)
 - complete spec files for core features
 - import mocking and import snapshot patterns
-- mode-based runtime matrix config in `examples/as-test.config.json`
-- a dedicated config you can run directly
 
 See `examples/README.md` for the walkthrough.
+
+Quick validation from this repo:
+
+```bash
+npm test
+npm run test:examples
+```
 
 ## Writing Tests
 

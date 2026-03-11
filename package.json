@@ -1,6 +1,6 @@
 {
   "name": "as-test",
-  "version": "0.5.4",
+  "version": "1.0.0",
   "author": "Jairus Tanaka",
   "repository": {
     "type": "git",
@@ -59,17 +59,18 @@
   ],
   "license": "MIT",
   "publishConfig": {
-    "@JairusSW:registry": "https://npm.pkg.github.com"
+    "access": "public"
   },
   "scripts": {
     "test": "node ./bin/index.js test",
+    "test:examples": "npm --prefix ./examples run test",
     "typecheck": "tsc -p cli --noEmit && tsc -p transform --noEmit",
     "lint": "eslint transform/src/**/*.ts tools/**/*.js eslint.config.js",
     "build:transform": "tsc -p ./transform",
     "build:cli": "tsc -p cli",
     "build:run": "npm run build:cli",
     "prettier": "prettier -w .",
-    "release:check": "npm run build:cli && npm run build:transform && npm run test && npm pack --dry-run --cache /tmp/as-test-npm-cache",
+    "release:check": "npm run build:cli && npm run build:transform && npm run test && npm run test:examples && npm pack --dry-run --cache /tmp/as-test-npm-cache",
     "prepublishOnly": "npm run build:cli && npm run build:transform && npm run test"
   },
   "type": "module",

@@ -1,0 +1,16 @@
+{
+  "name": "as-test-example-03-matchers",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "npm run test:wasi && npm run test:bindings",
+    "test:wasi": "as-test test --mode wasi",
+    "test:bindings": "as-test test --mode bindings",
+    "test:update-snapshots": "as-test test --mode wasi --update-snapshots && as-test test --mode bindings --update-snapshots"
+  },
+  "devDependencies": {
+    "@assemblyscript/wasi-shim": "^0.1.0",
+    "as-test": "file:../..",
+    "assemblyscript": "^0.28.9"
+  }
+}

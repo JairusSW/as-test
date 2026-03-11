@@ -9,6 +9,7 @@ import {
   getPkgRunner,
   loadConfig,
   tokenizeCommand,
+  resolveProjectModule,
 } from "../util.js";
 
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
@@ -264,7 +265,7 @@ function stripSuiteSuffix(selector: string): string {
 
 function ensureDeps(config: Config): void {
   if (config.buildOptions.target == "wasi") {
-    if (!existsSync("./node_modules/@assemblyscript/wasi-shim/asconfig.json")) {
+    if (!resolveWasiShim()) {
       console.log(
         `${chalk.bgRed(" ERROR ")}${chalk.dim(":")} could not find @assemblyscript/wasi-shim! Add it to your dependencies to run with WASI!`,
       );
@@ -343,12 +344,13 @@ function getDefaultBuildArgs(
       "_start",
     );
   } else if (config.buildOptions.target == "wasi") {
-    buildArgs.push(
-      "--use",
-      "AS_TEST_WASI=1",
-      "--config",
-      "./node_modules/@assemblyscript/wasi-shim/asconfig.json",
-    );
+    const wasiShim = resolveWasiShim();
+    if (!wasiShim) {
+      throw new Error(
+        'WASI target requires package "@assemblyscript/wasi-shim"',
+      );
+    }
+    buildArgs.push("--use", "AS_TEST_WASI=1", "--config", wasiShim.configPath);
   } else {
     console.log(
       `${chalk.bgRed(" ERROR ")}${chalk.dim(":")} could not determine target in config! Set target to 'bindings' or 'wasi'`,
@@ -383,8 +385,26 @@ function resolveCoverageEnabled(
 }
 
 function hasTryAsRuntime(): boolean {
-  return (
-    existsSync(path.join(process.cwd(), "node_modules/try-as")) ||
-    existsSync(path.join(process.cwd(), "node_modules/try-as/package.json"))
-  );
+  return resolveProjectModule("try-as/package.json") != null;
+}
+
+function resolveWasiShim(): { configPath: string } | null {
+  const resolved = resolveProjectModule("@assemblyscript/wasi-shim/asconfig.json");
+  if (!resolved) return null;
+  if (!existsSync(resolved)) return null;
+  const relative = path.relative(process.cwd(), resolved).replace(/\\/g, "/");
+  return {
+    configPath: normalizeCliPath(relative),
+  };
+}
+
+function quoteCliArg(value: string): string {
+  if (!/[\s"]/g.test(value)) return value;
+  return `"${value.replace(/"/g, '\\"')}"`;
+}
+
+function normalizeCliPath(value: string): string {
+  if (!value.length) return ".";
+  if (value.startsWith(".") || value.startsWith("/")) return value;
+  return "./" + value;
 }

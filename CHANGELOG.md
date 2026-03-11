@@ -12,6 +12,16 @@
 ### Docs
 
 - docs: add README guidance for strict config validation behavior and example error output.
+## 2026-03-11 - v1.0.0
+
+### Release Readiness
+
+- fix: resolve `@assemblyscript/wasi-shim` and `try-as` with package resolution instead of assuming a local `./node_modules` folder, so nested example projects and other valid installs run correctly.
+- fix: pass the WASI shim config to `asc` as a cwd-relative path, which avoids nested-project WASI build failures with standalone examples.
+- feat: add root `test:examples` coverage and include full standalone example validation in `release:check`.
+- feat: validate all examples in both `wasi` and `bindings` modes as part of release readiness.
+- docs: update README and examples docs for the standalone example layout and root-level validation flow.
+- chore: promote package version to `1.0.0` and switch `publishConfig` to public npm publishing.
 
 ## 2026-02-25 - v0.5.3
 

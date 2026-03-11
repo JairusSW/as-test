@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "fs";
 import { BuildOptions, Config, CoverageOptions, ModeConfig, ReporterConfig, RunOptions, Runtime, } from "./types.js";
 import chalk from "chalk";
+import { createRequire } from "module";
 import { delimiter, dirname, join } from "path";
 import { fileURLToPath } from "url";
 export function formatTime(ms) {
@@ -874,4 +875,17 @@ export function tokenizeCommand(command) {
         out.push(current);
     }
     return out;
+}
+export function resolveProjectModule(specifier) {
+    const cwdRequire = createRequire(join(process.cwd(), "package.json"));
+    const localRequire = createRequire(import.meta.url);
+    for (const req of [cwdRequire, localRequire]) {
+        try {
+            return req.resolve(specifier);
+        }
+        catch {
+            // try next resolver
+        }
+    }
+    return null;
 }

@@ -3,22 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "npm run test:wasi && npm run test:bindings",
-    "test:modes": "as-test test --config ./as-test.config.json --mode wasi,wasi-env,bindings",
-    "test:01:modes": "as-test test 01-basic --config ./as-test.config.json --mode wasi,wasi-env,bindings",
-    "test:01": "npm run test:01:wasi && npm run test:01:bindings",
-    "test:wasi": "as-test test --config ./as-test.config.json --mode wasi",
-    "test:bindings": "as-test test --config ./as-test.config.json --mode bindings",
-    "test:01:wasi": "as-test test 01-basic --config ./as-test.config.json --mode wasi",
-    "test:01:bindings": "as-test test 01-basic --config ./as-test.config.json --mode bindings",
-    "test:update-snapshots": "npm run test:update-snapshots:wasi && npm run test:update-snapshots:bindings",
-    "test:update-snapshots:wasi": "as-test test --config ./as-test.config.json --mode wasi --update-snapshots",
-    "test:update-snapshots:bindings": "as-test test --config ./as-test.config.json --mode bindings --update-snapshots"
-  },
-  "devDependencies": {
-    "@assemblyscript/wasi-shim": "^0.1.0",
-    "as-test": "file:..",
-    "assemblyscript": "^0.28.9",
-    "json-as": "^1.2.5"
+    "test": "npm run test:01 && npm run test:02 && npm run test:03 && npm run test:04 && npm run test:05 && npm run test:06",
+    "test:01": "npm --prefix ./01-basic test",
+    "test:02": "npm --prefix ./02-hooks test",
+    "test:03": "npm --prefix ./03-matchers test",
+    "test:04": "npm --prefix ./04-snapshots test",
+    "test:05": "npm --prefix ./05-mocking-and-import-snapshots test",
+    "test:06": "npm --prefix ./06-skips test"
   }
 }

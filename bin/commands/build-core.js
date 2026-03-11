@@ -3,7 +3,7 @@ import { glob } from "glob";
 import chalk from "chalk";
 import { spawnSync } from "child_process";
 import * as path from "path";
-import { applyMode, getPkgRunner, loadConfig, tokenizeCommand, } from "../util.js";
+import { applyMode, getPkgRunner, loadConfig, tokenizeCommand, resolveProjectModule, } from "../util.js";
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 export async function build(configPath = DEFAULT_CONFIG_PATH, selectors = [], modeName, featureToggles = {}) {
     const loadedConfig = loadConfig(configPath, false);
@@ -171,7 +171,7 @@ function stripSuiteSuffix(selector) {
 }
 function ensureDeps(config) {
     if (config.buildOptions.target == "wasi") {
-        if (!existsSync("./node_modules/@assemblyscript/wasi-shim/asconfig.json")) {
+        if (!resolveWasiShim()) {
             console.log(`${chalk.bgRed(" ERROR ")}${chalk.dim(":")} could not find @assemblyscript/wasi-shim! Add it to your dependencies to run with WASI!`);
             process.exit(1);
         }
@@ -233,7 +233,11 @@ function getDefaultBuildArgs(config, featureToggles) {
         buildArgs.push("--use", "AS_TEST_BINDINGS=1", "--bindings", "raw", "--exportRuntime", "--exportStart", "_start");
     }
     else if (config.buildOptions.target == "wasi") {
-        buildArgs.push("--use", "AS_TEST_WASI=1", "--config", "./node_modules/@assemblyscript/wasi-shim/asconfig.json");
+        const wasiShim = resolveWasiShim();
+        if (!wasiShim) {
+            throw new Error('WASI target requires package "@assemblyscript/wasi-shim"');
+        }
+        buildArgs.push("--use", "AS_TEST_WASI=1", "--config", wasiShim.configPath);
     }
     else {
         console.log(`${chalk.bgRed(" ERROR ")}${chalk.dim(":")} could not determine target in config! Set target to 'bindings' or 'wasi'`);
@@ -263,6 +267,28 @@ function resolveCoverageEnabled(rawCoverage, override) {
     return true;
 }
 function hasTryAsRuntime() {
-    return (existsSync(path.join(process.cwd(), "node_modules/try-as")) ||
-        existsSync(path.join(process.cwd(), "node_modules/try-as/package.json")));
+    return resolveProjectModule("try-as/package.json") != null;
+}
+function resolveWasiShim() {
+    const resolved = resolveProjectModule("@assemblyscript/wasi-shim/asconfig.json");
+    if (!resolved)
+        return null;
+    if (!existsSync(resolved))
+        return null;
+    const relative = path.relative(process.cwd(), resolved).replace(/\\/g, "/");
+    return {
+        configPath: normalizeCliPath(relative),
+    };
+}
+function quoteCliArg(value) {
+    if (!/[\s"]/g.test(value))
+        return value;
+    return `"${value.replace(/"/g, '\\"')}"`;
+}
+function normalizeCliPath(value) {
+    if (!value.length)
+        return ".";
+    if (value.startsWith(".") || value.startsWith("/"))
+        return value;
+    return "./" + value;
 }
