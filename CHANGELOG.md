@@ -1,6 +1,10 @@
 # Change Log
 
-## 2026-03-04
+## 2026-03-11 - v1.0.0
+
+### Docs
+
+- docs: add README guidance for strict config validation behavior and example error output.
 
 ### CLI & Config Validation
 
@@ -8,12 +12,7 @@
 - feat: reject unknown config keys with nearest-key suggestions.
 - feat: show structured validation diagnostics with JSON paths and fix hints.
 - feat: fail fast on invalid config JSON with parser error details.
-
-### Docs
-
-- docs: add README guidance for strict config validation behavior and example error output.
-## 2026-03-11 - v1.0.0
-
+- 
 ### Release Readiness
 
 - fix: resolve `@assemblyscript/wasi-shim` and `try-as` with package resolution instead of assuming a local `./node_modules` folder, so nested example projects and other valid installs run correctly.
