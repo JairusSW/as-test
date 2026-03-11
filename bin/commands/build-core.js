@@ -59,7 +59,13 @@ function getBuildCommand(config, pkgRunner, file, outFile, modeName, featureTogg
     };
 }
 function getUserBuildArgs(config) {
-
+    const args = [];
+    for (const value of config.buildOptions.args) {
+        if (!value.length)
+            continue;
+        args.push(...tokenizeCommand(value));
+    }
+    return args;
 }
 function expandBuildCommand(template, file, outFile, target, modeName) {
     const name = path
