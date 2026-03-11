@@ -126,7 +126,14 @@ function getBuildCommand(
 }
 
 function getUserBuildArgs(config: Config): string[] {
-  return config.buildOptions.args.filter((value) => value.length > 0);
+  const args: string[] = [];
+
+  for (const value of config.buildOptions.args) {
+    if (!value.length) continue;
+    args.push(...tokenizeCommand(value));
+  }
+
+  return args;
 }
 
 function expandBuildCommand(
