@@ -4,8 +4,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import * as path from "path";
 import { createInterface, Interface } from "readline";
 import { getCliVersion } from "../util.js";
+import { buildWebRunnerSource } from "./web-runner-source.js";
 
-const TARGETS = ["wasi", "bindings"] as const;
+const TARGETS = ["wasi", "bindings", "web"] as const;
 type Target = (typeof TARGETS)[number];
 
 const EXAMPLE_MODES = ["minimal", "full", "none"] as const;
@@ -119,7 +120,7 @@ function parseInitArgs(rawArgs: string[]): InitOptions {
         i++;
         continue;
       }
-      throw new Error("--target requires a value: wasi|bindings");
+      throw new Error("--target requires a value: wasi|bindings|web");
     }
     if (arg.startsWith("--target=")) {
       options.target = parseTarget(arg.slice("--target=".length));
@@ -178,7 +179,7 @@ function parseInitArgs(rawArgs: string[]): InitOptions {
 
   if (positional.length > 0) {
     throw new Error(
-      `Unknown init argument(s): ${positional.join(", ")}. Usage: init [dir] [--target wasi|bindings] [--example minimal|full|none] [--install] [--yes] [--force] [--dir <path>]`,
+      `Unknown init argument(s): ${positional.join(", ")}. Usage: init [dir] [--target wasi|bindings|web] [--example minimal|full|none] [--install] [--yes] [--force] [--dir <path>]`,
     );
   }
 
@@ -258,6 +259,11 @@ async function runInteractiveOnboarding(
               value: "bindings",
               label:
                 "bindings (default runner: node .as-test/runners/default.bindings.js)",
+            },
+            {
+              value: "web",
+              label:
+                "web (default runner: node .as-test/runners/default.web.js <file>)",
             },
           ],
           face,
@@ -390,7 +396,7 @@ function printSelectionLine(answer: string): void {
 
 function parseTarget(value: string): Target {
   if (!isTarget(value)) {
-    throw new Error(`Invalid target "${value}". Expected wasi|bindings`);
+    throw new Error(`Invalid target "${value}". Expected wasi|bindings|web`);
   }
   return value;
 }
@@ -506,7 +512,7 @@ function printPlan(
     { path: "as-test.config.json", isDir: false },
     { path: "package.json", isDir: false },
   ];
-  if (target == "wasi" || target == "bindings") {
+  if (target == "wasi" || target == "bindings" || target == "web") {
     fileEntries.push({ path: ".as-test/runners", isDir: true });
     fileEntries.push({
       path: ".as-test/runners/default.bindings.js",
@@ -514,6 +520,10 @@ function printPlan(
     });
     fileEntries.push({
       path: ".as-test/runners/default.wasi.js",
+      isDir: false,
+    });
+    fileEntries.push({
+      path: ".as-test/runners/default.web.js",
       isDir: false,
     });
   }
@@ -558,7 +568,7 @@ function applyInit(
   ensureDir(root, ".as-test/coverage", summary);
   ensureDir(root, ".as-test/snapshots", summary);
   ensureDir(root, "assembly/__tests__", summary);
-  if (target == "wasi" || target == "bindings") {
+  if (target == "wasi" || target == "bindings" || target == "web") {
     ensureDir(root, ".as-test/runners", summary);
   }
   ensureGitignoreIncludesAsTestDirs(root, summary);
@@ -579,11 +589,24 @@ function applyInit(
         cmd:
           target == "wasi"
             ? "node .as-test/runners/default.wasi.js <file>"
-            : "node .as-test/runners/default.bindings.js <file>",
+            : target == "bindings"
+              ? "node .as-test/runners/default.bindings.js <file>"
+              : "node .as-test/runners/default.web.js <file>",
       },
       reporter: "default",
     },
-    modes: {},
+    modes:
+      target == "web"
+        ? {
+            "web-headless": {
+              runOptions: {
+                runtime: {
+                  cmd: "node .as-test/runners/default.web.js --headless <file>",
+                },
+              },
+            },
+          }
+        : {},
   };
   writeJson(configPath, config, summary, "as-test.config.json");
 
@@ -600,7 +623,7 @@ function applyInit(
     );
   }
 
-  if (target == "wasi" || target == "bindings") {
+  if (target == "wasi" || target == "bindings" || target == "web") {
     const runnerPath = path.join(root, ".as-test/runners/default.wasi.js");
     writeManagedFile(
       runnerPath,
@@ -611,7 +634,7 @@ function applyInit(
     );
   }
 
-  if (target == "wasi" || target == "bindings") {
+  if (target == "wasi" || target == "bindings" || target == "web") {
     const runnerPath = path.join(root, ".as-test/runners/default.bindings.js");
     writeManagedFile(
       runnerPath,
@@ -619,6 +642,17 @@ function applyInit(
       force,
       summary,
       ".as-test/runners/default.bindings.js",
+    );
+  }
+
+  if (target == "wasi" || target == "bindings" || target == "web") {
+    const runnerPath = path.join(root, ".as-test/runners/default.web.js");
+    writeManagedFile(
+      runnerPath,
+      buildWebRunnerSource(),
+      force,
+      summary,
+      ".as-test/runners/default.web.js",
     );
   }
 

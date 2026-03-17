@@ -30,12 +30,14 @@ export class BuildOptions {
         this.cmd = "";
         this.args = [];
         this.target = "wasi";
+        this.env = {};
     }
 }
 export class RunOptions {
     constructor() {
         this.runtime = new Runtime();
         this.reporter = "";
+        this.env = {};
     }
 }
 export class Runtime {

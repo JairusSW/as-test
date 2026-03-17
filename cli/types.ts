@@ -26,11 +26,13 @@ export class BuildOptions {
   cmd: string = "";
   args: string[] = [];
   target: string = "wasi";
+  env: Record<string, string> = {};
 }
 
 export class RunOptions {
   runtime: Runtime = new Runtime();
   reporter: string | ReporterConfig = "";
+  env: Record<string, string> = {};
 }
 
 export class Runtime {

@@ -1,5 +1,23 @@
 # Change Log
 
+## 2026-03-17 - Unreleased
+
+### Config & Environment
+
+- feat: allow `env` config values to come from a `.env` path, `KEY=value` array, or object map.
+- feat: support merged env overrides at the top level, `buildOptions`, `runOptions`, and per-mode build/run config.
+
+### Web Runner
+
+- feat: add a `web` target that runs bindings-style artifacts in a browser over a WebSocket-backed WIPC bridge.
+- feat: scaffold `.as-test/runners/default.web.js` and a `web-headless` mode during `ast init --target web`.
+- feat: prompt to install Chromium with Playwright when a web run starts without an available browser.
+- fix: remove per-file web runner startup noise from normal test output.
+
+### Docs
+
+- docs: remove outdated `run()` calls from README usage snippets where they are no longer needed.
+
 ## 2026-03-11 - v1.0.1
 
 - patch: automatically tokenize buildOptions.args so that `["--enable simd"]` becomes `["--enable", "simd"]`

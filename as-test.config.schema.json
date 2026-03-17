@@ -112,11 +112,26 @@
       "default": true
     },
     "env": {
-      "type": "object",
-      "description": "Environment variables injected when building/running.",
-      "additionalProperties": {
-        "type": "string"
-      },
+      "description": "Environment variables injected when building/running. Accepts a .env file path, an array of KEY=value strings, or an object map.",
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "Path to a .env file, resolved relative to the config file."
+        },
+        {
+          "type": "array",
+          "description": "Inline environment entries in KEY=value form.",
+          "items": {
+            "type": "string"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      ],
       "default": {}
     },
     "buildOptions": {
@@ -137,14 +152,36 @@
         },
         "target": {
           "type": "string",
-          "enum": ["wasi", "bindings"],
+          "enum": ["wasi", "bindings", "web"],
           "default": "wasi"
+        },
+        "env": {
+          "description": "Build-only environment overrides. Merges with top-level env and mode env.",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          ],
+          "default": {}
         }
       },
       "default": {
         "cmd": "",
         "args": [],
-        "target": "wasi"
+        "target": "wasi",
+        "env": {}
       }
     },
     "modes": {
@@ -210,7 +247,27 @@
               },
               "target": {
                 "type": "string",
-                "enum": ["wasi", "bindings"]
+                "enum": ["wasi", "bindings", "web"]
+              },
+              "env": {
+                "description": "Mode-specific build environment overrides.",
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
               }
             }
           },
@@ -257,15 +314,48 @@
                     "required": ["name"]
                   }
                 ]
+              },
+              "env": {
+                "description": "Mode-specific runtime environment overrides.",
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
               }
             }
           },
           "env": {
-            "type": "object",
-            "description": "Environment variables injected when building/running this mode.",
-            "additionalProperties": {
-              "type": "string"
-            }
+            "description": "Mode-wide environment variables merged before build/run-specific env.",
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            ]
           }
         }
       },
@@ -324,13 +414,35 @@
             }
           ],
           "default": ""
+        },
+        "env": {
+          "description": "Run-only environment overrides. Merges with top-level env and mode env.",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          ],
+          "default": {}
         }
       },
       "default": {
         "runtime": {
           "cmd": "node ./.as-test/runners/default.wasi.js <file>"
         },
-        "reporter": ""
+        "reporter": "",
+        "env": {}
       }
     }
   }

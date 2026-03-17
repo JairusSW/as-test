@@ -10,7 +10,7 @@ import {
 } from "./types.js";
 import chalk from "chalk";
 import { createRequire } from "module";
-import { delimiter, dirname, join } from "path";
+import { delimiter, dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 
 export function formatTime(ms: number): string {
@@ -69,9 +69,10 @@ export function loadConfig(CONFIG_PATH: string, warn: boolean = false): Config {
     }
     const raw = parsed as Record<string, unknown>;
     validateConfig(raw, CONFIG_PATH);
+    const configDir = dirname(CONFIG_PATH);
     const config = Object.assign(new Config(), raw) as Config;
     applyOutputConfig(raw.output, raw, config);
-    config.env = parseEnvMap(raw.env);
+    config.env = parseEnvValue(raw.env, configDir, "$.env");
     const runOptionsRaw =
       (raw.runOptions as Record<string, unknown> | undefined) ?? {};
     config.buildOptions = Object.assign(
@@ -85,6 +86,11 @@ export function loadConfig(CONFIG_PATH: string, warn: boolean = false): Config {
           (item): item is string => typeof item == "string",
         )
       : [];
+    config.buildOptions.env = parseEnvValue(
+      (raw.buildOptions as Record<string, unknown> | undefined)?.env,
+      configDir,
+      "$.buildOptions.env",
+    );
     config.buildOptions.target =
       typeof config.buildOptions.target == "string" &&
       config.buildOptions.target.length
@@ -136,7 +142,12 @@ export function loadConfig(CONFIG_PATH: string, warn: boolean = false): Config {
             : runtime.cmd;
     runtime.cmd = cmd;
     config.runOptions.runtime = runtime;
-    config.modes = parseModes(raw.modes);
+    config.runOptions.env = parseEnvValue(
+      runOptionsRaw.env,
+      configDir,
+      "$.runOptions.env",
+    );
+    config.modes = parseModes(raw.modes, configDir);
     return config;
   }
 }
@@ -163,8 +174,8 @@ const TOP_LEVEL_KEYS = new Set([
   "runOptions",
 ]);
 
-const BUILD_OPTION_KEYS = new Set(["cmd", "args", "target"]);
-const RUN_OPTION_KEYS = new Set(["runtime", "reporter", "run"]); // includes legacy "run"
+const BUILD_OPTION_KEYS = new Set(["cmd", "args", "target", "env"]);
+const RUN_OPTION_KEYS = new Set(["runtime", "reporter", "run", "env"]); // includes legacy "run"
 const RUNTIME_OPTION_KEYS = new Set(["cmd", "run"]); // includes legacy "run"
 const REPORTER_OPTION_KEYS = new Set(["name", "options", "outDir", "outFile"]);
 const OUTPUT_OPTION_KEYS = new Set(["build", "logs", "coverage", "snapshots"]);
@@ -391,11 +402,43 @@ function validateEnvField(
 ): void {
   if (!(key in raw) || raw[key] == undefined) return;
   const value = raw[key];
-  if (!value || typeof value != "object" || Array.isArray(value)) {
+  if (typeof value == "string") {
+    if (!value.length) {
+      issues.push({
+        path: `${pathPrefix}.${key}`,
+        message: "must not be an empty string",
+        fix: 'use a .env file path like "./secrets/.env"',
+      });
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) {
+      const item = value[i];
+      if (typeof item != "string" || !item.length) {
+        issues.push({
+          path: `${pathPrefix}.${key}[${i}]`,
+          message: "must be a non-empty string",
+          fix: 'use entries like "FOO=1"',
+        });
+        continue;
+      }
+      const separator = item.indexOf("=");
+      if (separator <= 0) {
+        issues.push({
+          path: `${pathPrefix}.${key}[${i}]`,
+          message: 'must use "KEY=value" format',
+          fix: 'example: "FOO=1"',
+        });
+      }
+    }
+    return;
+  }
+  if (!value || typeof value != "object") {
     issues.push({
       path: `${pathPrefix}.${key}`,
-      message: "must be an object of string values",
-      fix: 'example: "env": { "MY_FLAG": "1" }',
+      message: "must be a .env file path, array of KEY=value strings, or object of string values",
+      fix: 'example: "env": "./secrets/.env" or ["MY_FLAG=1"] or { "MY_FLAG": "1" }',
     });
     return;
   }
@@ -446,16 +489,21 @@ function validateBuildOptionsField(
       issues.push({
         path: `${pathPrefix}.${key}.target`,
         message: "must be a string",
-        fix: 'set to "wasi" or "bindings"',
+        fix: 'set to "wasi", "bindings", or "web"',
       });
-    } else if (obj.target != "wasi" && obj.target != "bindings") {
+    } else if (
+      obj.target != "wasi" &&
+      obj.target != "bindings" &&
+      obj.target != "web"
+    ) {
       issues.push({
         path: `${pathPrefix}.${key}.target`,
-        message: `must be "wasi" or "bindings"`,
+        message: `must be "wasi", "bindings", or "web"`,
         fix: `received "${obj.target}"`,
       });
     }
   }
+  validateEnvField(obj, "env", `${pathPrefix}.${key}`, issues);
 }
 
 function validateRunOptionsField(
@@ -569,6 +617,8 @@ function validateRunOptionsField(
       });
     }
   }
+
+  validateEnvField(obj, "env", `${pathPrefix}.${key}`, issues);
 }
 
 function validateModesField(
@@ -728,7 +778,10 @@ function applyOutputRoot(
   }
 }
 
-function parseModes(raw: unknown): Record<string, ModeConfig> {
+function parseModes(
+  raw: unknown,
+  configDir: string,
+): Record<string, ModeConfig> {
   if (!raw || typeof raw != "object" || Array.isArray(raw)) return {};
 
   const out: Record<string, ModeConfig> = {};
@@ -774,6 +827,11 @@ function parseModes(raw: unknown): Record<string, ModeConfig> {
           (item): item is string => typeof item == "string",
         );
       }
+      build.env = parseEnvValue(
+        buildRaw.env,
+        configDir,
+        `$.modes.${name}.buildOptions.env`,
+      );
       if (typeof buildRaw.target == "string" && buildRaw.target.length) {
         build.target = buildRaw.target;
       }
@@ -816,19 +874,16 @@ function parseModes(raw: unknown): Record<string, ModeConfig> {
           typeof reporter.outFile == "string" ? reporter.outFile : "";
         run.reporter = reporter;
       }
+      run.env = parseEnvValue(
+        runRaw.env,
+        configDir,
+        `$.modes.${name}.runOptions.env`,
+      );
 
       mode.runOptions = run;
     }
 
-    if (modeRaw.env && typeof modeRaw.env == "object") {
-      const env: Record<string, string> = {};
-      for (const [key, val] of Object.entries(
-        modeRaw.env as Record<string, unknown>,
-      )) {
-        if (typeof val == "string") env[key] = val;
-      }
-      mode.env = env;
-    }
+    mode.env = parseEnvValue(modeRaw.env, configDir, `$.modes.${name}.env`);
 
     out[name] = mode;
   }
@@ -843,6 +898,92 @@ function parseEnvMap(raw: unknown): Record<string, string> {
     if (typeof val == "string") env[key] = val;
   }
   return env;
+}
+
+function parseEnvValue(
+  raw: unknown,
+  configDir: string,
+  pathLabel: string,
+): Record<string, string> {
+  if (raw == undefined) return {};
+  if (typeof raw == "string") {
+    return parseEnvFile(resolve(configDir, raw), pathLabel);
+  }
+  if (Array.isArray(raw)) {
+    return parseInlineEnvEntries(raw, pathLabel);
+  }
+  return parseEnvMap(raw);
+}
+
+function parseInlineEnvEntries(
+  values: unknown[],
+  pathLabel: string,
+): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (let i = 0; i < values.length; i++) {
+    const item = values[i];
+    if (typeof item != "string") continue;
+    const separator = item.indexOf("=");
+    if (separator <= 0) {
+      throw new Error(
+        `invalid config at ${pathLabel}\nenv entry at index ${i} must use KEY=value format`,
+      );
+    }
+    const key = item.slice(0, separator).trim();
+    const value = item.slice(separator + 1);
+    if (!key.length) {
+      throw new Error(
+        `invalid config at ${pathLabel}\nenv entry at index ${i} must use a non-empty key`,
+      );
+    }
+    env[key] = value;
+  }
+  return env;
+}
+
+function parseEnvFile(
+  envPath: string,
+  pathLabel: string,
+): Record<string, string> {
+  if (!existsSync(envPath)) {
+    throw new Error(
+      `invalid config at ${pathLabel}\nenv file not found: ${envPath}`,
+    );
+  }
+  const env: Record<string, string> = {};
+  const lines = readFileSync(envPath, "utf8").split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i]!;
+    const line = rawLine.trim();
+    if (!line.length || line.startsWith("#")) continue;
+    const normalized = line.startsWith("export ") ? line.slice(7).trim() : line;
+    const separator = normalized.indexOf("=");
+    if (separator <= 0) {
+      throw new Error(
+        `invalid config at ${pathLabel}\ninvalid env line ${i + 1} in ${envPath}: expected KEY=value`,
+      );
+    }
+    const key = normalized.slice(0, separator).trim();
+    const value = normalized.slice(separator + 1).trim();
+    env[key] = unquoteEnvValue(value);
+  }
+  return env;
+}
+
+function unquoteEnvValue(value: string): string {
+  if (value.length < 2) return value;
+  const quote = value[0];
+  if ((quote != '"' && quote != "'") || value[value.length - 1] != quote) {
+    return value;
+  }
+  const inner = value.slice(1, -1);
+  if (quote == "'") return inner;
+  return inner
+    .replace(/\\n/g, "\n")
+    .replace(/\\r/g, "\r")
+    .replace(/\\t/g, "\t")
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, "\\");
 }
 
 export function resolveModeNames(rawArgs: string[]): string[] {
@@ -905,6 +1046,8 @@ export function applyMode(
     new Runtime(),
     config.runOptions.runtime,
   );
+  merged.buildOptions.env = { ...config.buildOptions.env };
+  merged.runOptions.env = { ...config.runOptions.env };
 
   if (mode.outDir) merged.outDir = mode.outDir;
   else merged.outDir = appendPathSegment(config.outDir, modeName);
@@ -931,12 +1074,24 @@ export function applyMode(
       ...mode.buildOptions.args,
     ];
   }
+  if (mode.buildOptions.env) {
+    merged.buildOptions.env = {
+      ...merged.buildOptions.env,
+      ...mode.buildOptions.env,
+    };
+  }
 
   if (mode.runOptions.runtime?.cmd) {
     merged.runOptions.runtime.cmd = mode.runOptions.runtime.cmd;
   }
   if (mode.runOptions.reporter != undefined) {
     merged.runOptions.reporter = mode.runOptions.reporter;
+  }
+  if (mode.runOptions.env) {
+    merged.runOptions.env = {
+      ...merged.runOptions.env,
+      ...mode.runOptions.env,
+    };
   }
 
   return {

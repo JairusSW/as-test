@@ -19,6 +19,7 @@ export async function build(configPath = DEFAULT_CONFIG_PATH, selectors = [], mo
     const coverageEnabled = resolveCoverageEnabled(config.coverage, featureToggles.coverage);
     const buildEnv = {
         ...mode.env,
+        ...config.buildOptions.env,
         AS_TEST_COVERAGE_ENABLED: coverageEnabled ? "1" : "0",
     };
     for (const file of inputFiles) {
@@ -235,7 +236,8 @@ function getDefaultBuildArgs(config, featureToggles) {
         buildArgs.push("--use", "AS_TEST_TRY_AS=1");
     }
     // Should also strip any bindings-enabling from asconfig
-    if (config.buildOptions.target == "bindings") {
+    if (config.buildOptions.target == "bindings" ||
+        config.buildOptions.target == "web") {
         buildArgs.push("--use", "AS_TEST_BINDINGS=1", "--bindings", "raw", "--exportRuntime", "--exportStart", "_start");
     }
     else if (config.buildOptions.target == "wasi") {
@@ -246,7 +248,7 @@ function getDefaultBuildArgs(config, featureToggles) {
         buildArgs.push("--use", "AS_TEST_WASI=1", "--config", wasiShim.configPath);
     }
     else {
-        console.log(`${chalk.bgRed(" ERROR ")}${chalk.dim(":")} could not determine target in config! Set target to 'bindings' or 'wasi'`);
+        console.log(`${chalk.bgRed(" ERROR ")}${chalk.dim(":")} could not determine target in config! Set target to 'bindings', 'web', or 'wasi'`);
         process.exit(1);
     }
     return buildArgs;

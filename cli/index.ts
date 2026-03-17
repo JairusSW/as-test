@@ -15,7 +15,10 @@ import {
   resolveModeNames,
 } from "./util.js";
 import * as path from "path";
+import { spawnSync } from "child_process";
 import { glob } from "glob";
+import { createInterface } from "readline";
+import { existsSync } from "fs";
 import { CoverageSummary, RunStats, TestReporter } from "./reporters/types.js";
 
 const _args = process.argv.slice(2);
@@ -429,7 +432,7 @@ function printCommandHelp(command: string): void {
     );
     process.stdout.write(chalk.bold("Flags:\n"));
     process.stdout.write(
-      "  --target <wasi|bindings>                Set build target\n",
+      "  --target <wasi|bindings|web>            Set build target\n",
     );
     process.stdout.write(
       "  --example <minimal|full|none>           Set example template\n",
@@ -733,6 +736,7 @@ async function runRuntimeModes(
   selectors: string[],
   modes: (string | undefined)[],
 ): Promise<void> {
+  await ensureWebBrowsersReady(configPath, modes);
   const modeSummaryTotal = resolveConfiguredModeTotal(configPath);
   const fileSummaryTotal = await resolveConfiguredFileTotal(configPath);
   if (modes.length > 1) {
@@ -902,6 +906,7 @@ async function runTestModes(
   modes: (string | undefined)[],
   buildFeatureToggles: BuildFeatureToggles,
 ): Promise<void> {
+  await ensureWebBrowsersReady(configPath, modes);
   const modeSummaryTotal = resolveConfiguredModeTotal(configPath);
   const fileSummaryTotal = await resolveConfiguredFileTotal(configPath);
   if (modes.length > 1) {
@@ -1489,6 +1494,170 @@ function resolveArtifactFileNameForPreview(
   return `${stem}.${disambiguator}${ext}`;
 }
 
+async function ensureWebBrowsersReady(
+  configPath: string | undefined,
+  modes: (string | undefined)[],
+): Promise<void> {
+  const resolvedConfigPath =
+    configPath ?? path.join(process.cwd(), "./as-test.config.json");
+  const config = loadConfig(resolvedConfigPath, true);
+  const missing: { modeName?: string; browser?: string }[] = [];
+
+  for (const modeName of modes) {
+    const applied = applyMode(config, modeName);
+    const active = applied.config;
+    if (active.buildOptions.target != "web") continue;
+    const resolved = resolveBrowserSelection();
+    if (!resolved) {
+      missing.push({ modeName });
+      continue;
+    }
+    process.env.BROWSER = resolved.browser;
+  }
+
+  if (!missing.length) return;
+  await handleMissingWebBrowsers(missing);
+}
+
+function resolveBrowserSelection(): { browser: string } | null {
+  const envBrowser = process.env.BROWSER?.trim() ?? "";
+  if (envBrowser.length && hasExecutable(envBrowser)) {
+    return { browser: envBrowser };
+  }
+
+  const candidates = [
+    "chromium",
+    "chromium-browser",
+    "google-chrome",
+    "google-chrome-stable",
+    "chrome",
+    "msedge",
+    "firefox",
+  ];
+  for (const candidate of candidates) {
+    if (hasExecutable(candidate)) {
+      return { browser: candidate };
+    }
+  }
+
+  const playwrightFallback =
+    resolvePlaywrightBrowserExecutable("chromium") ??
+    resolvePlaywrightBrowserExecutable("firefox");
+  if (playwrightFallback) {
+    return { browser: playwrightFallback };
+  }
+  return null;
+}
+
+async function handleMissingWebBrowsers(
+  missing: { modeName?: string }[],
+): Promise<void> {
+  const scope = missing
+    .map((entry) => entry.modeName ?? "default")
+    .join(", ");
+  const details = "no web-capable browser was found in PATH, BROWSER, or Playwright cache";
+
+  if (!canPromptForWebInstall()) {
+    throw new Error(
+      `web target requires a browser for mode(s) ${scope}; ${details}. Export BROWSER or install one with "npx -y playwright install chromium".`,
+    );
+  }
+
+  process.stdout.write(
+    chalk.bold.blue("◇  Browser Setup Needed") +
+      "\n" +
+      `│  ${details}\n` +
+      "│\n",
+  );
+
+  const choice = await promptLine("Install Chromium with Playwright now? [Y/n] ");
+  const normalized = choice.trim().toLowerCase();
+  if (normalized == "n" || normalized == "no") {
+    throw new Error(
+      'browser install skipped. Export BROWSER or install one with "npx -y playwright install chromium", then rerun.',
+    );
+  }
+  if (normalized != "" && normalized != "y" && normalized != "yes") {
+    throw new Error(`invalid answer "${choice}". Expected yes or no.`);
+  }
+  const selected = "chromium";
+  process.stdout.write(
+    chalk.dim(`installing ${selected} via Playwright...\n`),
+  );
+  const install = spawnSync(
+    "npx",
+    ["-y", "playwright", "install", selected],
+    {
+      stdio: "inherit",
+      shell: false,
+    },
+  );
+  if (install.status !== 0) {
+    throw new Error(`Playwright browser install failed for ${selected}`);
+  }
+  const browserPath = resolvePlaywrightBrowserExecutable(selected);
+  if (!browserPath) {
+    throw new Error(
+      `Playwright installed ${selected}, but as-test could not locate the browser executable`,
+    );
+  }
+  process.env.BROWSER = browserPath;
+}
+
+function canPromptForWebInstall(): boolean {
+  return Boolean(process.stdin.isTTY && process.stdout.isTTY);
+}
+
+function promptLine(question: string): Promise<string> {
+  return new Promise((resolve) => {
+    const rl = createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer);
+    });
+  });
+}
+
+function resolvePlaywrightBrowserExecutable(browser: string): string | null {
+  const cacheRoot = path.join(
+    process.env.HOME ?? "",
+    ".cache",
+    "ms-playwright",
+  );
+  if (!cacheRoot.length || !existsSync(cacheRoot)) return null;
+  const map: Record<string, string[]> = {
+    chromium: ["chromium-*/chrome-linux64/chrome"],
+    chrome: ["chromium-*/chrome-linux64/chrome"],
+    firefox: ["firefox-*/firefox/firefox"],
+  };
+  const patterns = map[browser] ?? [];
+  for (const pattern of patterns) {
+    const matches = glob.sync(path.join(cacheRoot, pattern)).sort();
+    if (matches.length) return matches[matches.length - 1]!;
+  }
+  return null;
+}
+
+function hasExecutable(command: string): boolean {
+  if (!command.length) return false;
+  if (command.includes("/") || command.includes("\\")) {
+    return existsSync(command);
+  }
+  const pathValue = process.env.PATH ?? "";
+  const suffixes =
+    process.platform == "win32" ? ["", ".exe", ".cmd", ".bat"] : [""];
+  for (const base of pathValue.split(path.delimiter)) {
+    if (!base.length) continue;
+    for (const suffix of suffixes) {
+      if (existsSync(path.join(base, command + suffix))) return true;
+    }
+  }
+  return false;
+}
+
 async function listExecutionPlan(
   command: "build" | "run" | "test",
   configPath: string | undefined,
@@ -1560,9 +1729,15 @@ async function listExecutionPlan(
     if (command != "build") {
       process.stdout.write(`  runtime: ${active.runOptions.runtime.cmd}\n`);
     }
-    const envOverrides = modeName
-      ? (config.modes[modeName]?.env ?? {})
-      : config.env;
+    const envOverrides = {
+      ...config.env,
+      ...(modeName ? (config.modes[modeName]?.env ?? {}) : {}),
+      ...(command == "build"
+        ? active.buildOptions.env
+        : command == "run" || command == "test"
+          ? active.runOptions.env
+          : {}),
+    };
     const envKeys = Object.keys(envOverrides);
     process.stdout.write(
       `  env overrides: ${envKeys.length}${

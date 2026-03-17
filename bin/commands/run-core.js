@@ -5,6 +5,7 @@ import { applyMode, getExec, loadConfig, tokenizeCommand } from "../util.js";
 import * as path from "path";
 import { pathToFileURL } from "url";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { buildWebRunnerSource } from "./web-runner-source.js";
 import { createReporter as createDefaultReporter } from "../reporters/default.js";
 import { createTapReporter } from "../reporters/tap.js";
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
@@ -232,7 +233,10 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
         const snapshotStore = new SnapshotStore(file, config.snapshotDir, duplicateSpecBasenames);
         let report;
         try {
-            report = await runProcess(invocation, snapshotStore, snapshotEnabled, updateSnapshots, reporter, reporterKind == "tap", mode.env);
+            report = await runProcess(invocation, snapshotStore, snapshotEnabled, updateSnapshots, reporter, reporterKind == "tap", {
+                ...mode.env,
+                ...config.runOptions.env,
+            });
         }
         catch (error) {
             const modeLabel = options.modeName ?? "default";
@@ -362,6 +366,12 @@ function resolveLegacyRuntime(runtimeRun, target, emitWarnings) {
             return runtimeRun.replace(legacyPath, preferredPath);
         }
     }
+    if (target == "web") {
+        const preferredPath = "./.as-test/runners/default.web.js";
+        if (runtimeRun.includes(preferredPath)) {
+            ensureDefaultRuntimeRunner("web", emitWarnings);
+        }
+    }
     return runtimeRun;
 }
 function fallbackToDefaultRuntime(runtimeRun, target, emitWarnings) {
@@ -397,6 +407,12 @@ function getDefaultRuntimeFallback(target) {
         return {
             command: "node ./.as-test/runners/default.bindings.js <file>",
             scriptPath: "./.as-test/runners/default.bindings.js",
+        };
+    }
+    if (target == "web") {
+        return {
+            command: "node ./.as-test/runners/default.web.js <file>",
+            scriptPath: "./.as-test/runners/default.web.js",
         };
     }
     return null;
@@ -536,6 +552,9 @@ try {
   process.exit(1);
 }
 `;
+    }
+    if (target == "web") {
+        return buildWebRunnerSource();
     }
     return null;
 }

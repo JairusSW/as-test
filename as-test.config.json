@@ -16,5 +16,16 @@
     },
     "reporter": "default"
   },
-  "modes": {}
+  "modes": {
+    "web-headless": {
+      "buildOptions": {
+        "target": "web"
+      },
+      "runOptions": {
+        "runtime": {
+          "cmd": "node .as-test/runners/default.web.js --headless <file>"
+        }
+      }
+    }
+  }
 }
