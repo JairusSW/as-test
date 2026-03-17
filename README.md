@@ -74,7 +74,7 @@ npm run test:examples
 Create `assembly/__tests__/math.spec.ts`:
 
 ```ts
-import { describe, test, expect, run } from "as-test";
+import { describe, test, expect } from "as-test";
 
 describe("math", () => {
   test("addition", () => {
@@ -208,7 +208,6 @@ import {
   mockFn,
   mockImport,
   restoreImport,
-  run,
   snapshotImport,
   unmockFn,
   unmockImport,
@@ -238,8 +237,6 @@ restoreImport("mock.foo", "default");
 
 unmockImport("mock.foo");
 mockImport("mock.foo", (): string => "buz");
-
-run();
 ```
 
 ## Snapshots
