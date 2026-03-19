@@ -1,3 +1,5 @@
+import { quote } from "../util/json";
+
 export class StringOptions {
   charset: string = "ascii";
   min: i32 = 0;
@@ -224,13 +226,13 @@ export class FuzzerResult {
       ',"end":' +
       this.timeEnd.toString() +
       '},"failure":{"instr":' +
-      quoteString(this.failureInstr) +
+      quote(this.failureInstr) +
       ',"left":' +
-      quoteString(this.failureLeft) +
+      quote(this.failureLeft) +
       ',"right":' +
-      quoteString(this.failureRight) +
+      quote(this.failureRight) +
       ',"message":' +
-      quoteString(this.failureMessage) +
+      quote(this.failureMessage) +
       "}}"
     );
   }
@@ -657,21 +659,6 @@ function containsFloatValue<T>(values: T[], needle: T): bool {
     if (candidate == value) return true;
   }
   return false;
-}
-
-function quoteString(value: string): string {
-  let out = '"';
-  for (let i = 0; i < value.length; i++) {
-    const c = value.charCodeAt(i);
-    if (c == 34) out += '\\"';
-    else if (c == 92) out += "\\\\";
-    else if (c == 10) out += "\\n";
-    else if (c == 13) out += "\\r";
-    else if (c == 9) out += "\\t";
-    else out += String.fromCharCode(c);
-  }
-  out += '"';
-  return out;
 }
 
 // @ts-ignore

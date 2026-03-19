@@ -28,6 +28,7 @@
 - fix: remove the baked-in `web-headless` mode from the repo's default config so the project defaults stay on the Wasmtime/WASI runner.
 - feat: add a dedicated `examples.yml` workflow that runs the standalone examples individually on push.
 - feat: install Chromium through Playwright for the `07-web` example job and pass its executable through `BROWSER`.
+- feat: add local `act` defaults and package scripts so GitHub Actions workflows can be exercised before pushing.
 
 ### Init & Examples
 
@@ -54,6 +55,7 @@
 ### Mocking & Runtime API
 
 - fix: remove `snapshotImport(...)` and `restoreImport(...)` from the active runtime API in favor of the simpler mocking surface.
+- fix: escape control bytes and invalid surrogate code units consistently in runtime JSON serialization, including WIPC event frames and fuzz failure payloads.
 
 ## 2026-03-11 - v1.0.1
 

@@ -45,7 +45,9 @@ jobs:
 
       - name: Set browser path for web example
         if: matrix.example == '07-web'
-        run: echo "BROWSER=$(npx -y -p playwright@latest node -e \"console.log(require('playwright').chromium.executablePath())\")" >> "$GITHUB_ENV"
+        run: |
+          BROWSER_PATH=$(npx -y -p playwright@latest node -e 'console.log(require("playwright").chromium.executablePath())')
+          echo "BROWSER=$BROWSER_PATH" >> "$GITHUB_ENV"
 
       - name: Run example tests
         working-directory: examples/${{ matrix.example }}

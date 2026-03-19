@@ -1,3 +1,5 @@
+import { quote as q } from "./json";
+
 // @ts-ignore
 @external("env", "process.stdout.write")
 declare function process_stdout_write(data: ArrayBuffer): void;
@@ -258,29 +260,4 @@ function wasiRead(max: i32): ArrayBuffer {
   const partial = new ArrayBuffer(size);
   memory.copy(changetype<usize>(partial), changetype<usize>(out), size);
   return partial;
-}
-
-function q(value: string): string {
-  return '"' + escape(value) + '"';
-}
-
-function escape(value: string): string {
-  let out = "";
-  for (let i = 0; i < value.length; i++) {
-    const ch = value.charCodeAt(i);
-    if (ch == 34) {
-      out += '\\"';
-    } else if (ch == 92) {
-      out += "\\\\";
-    } else if (ch == 10) {
-      out += "\\n";
-    } else if (ch == 13) {
-      out += "\\r";
-    } else if (ch == 9) {
-      out += "\\t";
-    } else {
-      out += String.fromCharCode(ch);
-    }
-  }
-  return out;
 }
