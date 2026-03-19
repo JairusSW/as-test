@@ -4,10 +4,9 @@ import { pathToFileURL } from "url";
 
 export const runnerImports = {
   env: {
-    // Add synchronous custom imports here. Example:
-    // "host.add"(a, b) {
-    //   return Number(a) + Number(b);
-    // },
+    now() {
+      return 10;
+    },
   },
 };
 
