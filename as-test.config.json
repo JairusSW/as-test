@@ -21,6 +21,38 @@
   "buildOptions": {
     "target": "wasi"
   },
+  "modes": {
+    "node-bindings": {
+      "buildOptions": {
+        "target": "bindings"
+      },
+      "runOptions": {
+        "runtime": {
+          "cmd": "node .as-test/runners/default.bindings.js <file>"
+        }
+      }
+    },
+    "node-wasi": {
+      "buildOptions": {
+        "target": "wasi"
+      },
+      "runOptions": {
+        "runtime": {
+          "cmd": "node .as-test/runners/default.wasi.js <file>"
+        }
+      }
+    },
+    "wasmtime-wasi": {
+      "buildOptions": {
+        "target": "wasi"
+      },
+      "runOptions": {
+        "runtime": {
+          "cmd": "wasmtime run --dir . <file>"
+        }
+      }
+    }
+  },
   "runOptions": {
     "runtime": {
       "cmd": "node .as-test/runners/default.wasi.js <file>"
