@@ -19,6 +19,8 @@
 - docs: remove outdated `run()` calls from README usage snippets where they are no longer needed.
 - docs: add a `docs/` directory with focused guides for setup, tests, fuzzing, mocking, snapshots, coverage, reporters, assertions, config, CLI usage, and diagnostics.
 - docs: link the new docs index from the main README.
+- docs: reorder the README to follow the beginner workflow from installation through tests, mocking, snapshots, fuzzing, and runtimes.
+- docs: simplify the main README and replace stale examples with snippets that reflect the current config shape and working APIs.
 
 ### CI
 
