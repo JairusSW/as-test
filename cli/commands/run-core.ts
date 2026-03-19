@@ -718,6 +718,11 @@ try {
   const binary = readFileSync(wasmPath);
   const module = new WebAssembly.Module(binary);
   const instance = new WebAssembly.Instance(module, {
+    env: {
+      __as_test_request_fuzz_config() {
+        return 0;
+      },
+    },
     wasi_snapshot_preview1: wasi.wasiImport,
   });
   wasi.start(instance);

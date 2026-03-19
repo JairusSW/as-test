@@ -20,6 +20,10 @@
 - docs: add a `docs/` directory with focused guides for setup, tests, fuzzing, mocking, snapshots, coverage, reporters, assertions, config, CLI usage, and diagnostics.
 - docs: link the new docs index from the main README.
 
+### CI
+
+- fix: add a dedicated `test:ci` script and `as-test.ci.config.json` so CI stays on the Wasmtime/WASI path instead of fanning out into `web-headless`.
+
 ### Fuzzing
 
 - feat: add `ast fuzz` to build and run dedicated `*.fuzz.ts` bindings targets.

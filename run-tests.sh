@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if command -v bun >/dev/null 2>&1; then
-  bun run test --tap
+  bun run test:ci
 else
-  npm run test -- --tap
+  npm run test:ci
 fi
