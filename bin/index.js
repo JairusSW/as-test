@@ -5,9 +5,11 @@ import { createRunReporter, run } from "./commands/run.js";
 import { executeBuildCommand } from "./commands/build.js";
 import { executeRunCommand } from "./commands/run.js";
 import { executeTestCommand } from "./commands/test.js";
+import { executeFuzzCommand } from "./commands/fuzz.js";
 import { executeInitCommand } from "./commands/init.js";
 import { executeDoctorCommand } from "./commands/doctor.js";
-import { applyMode, getCliVersion, loadConfig, resolveModeNames, } from "./util.js";
+import { fuzz } from "./commands/fuzz-core.js";
+import { applyMode, formatTime, getCliVersion, loadConfig, resolveModeNames, } from "./util.js";
 import * as path from "path";
 import { spawnSync } from "child_process";
 import { glob } from "glob";
@@ -16,7 +18,7 @@ import { existsSync } from "fs";
 const _args = process.argv.slice(2);
 const flags = [];
 const args = [];
-const COMMANDS = ["run", "build", "test", "init", "doctor"];
+const COMMANDS = ["run", "build", "test", "fuzz", "init", "doctor"];
 const version = getCliVersion();
 const configPath = resolveConfigPath(_args);
 const selectedModes = resolveModeNames(_args);
@@ -72,9 +74,22 @@ else if (COMMANDS.includes(args[0])) {
                 resolveCommandArgs,
                 resolveListFlags,
                 resolveFeatureToggles,
+                resolveFuzzOverrides,
                 resolveExecutionModes,
                 listExecutionPlan,
                 runTestModes,
+            }).catch((error) => {
+                printCliError(error);
+                process.exit(1);
+            });
+        }
+        else if (command === "fuzz") {
+            executeFuzzCommand(_args, configPath, selectedModes, {
+                resolveCommandArgs,
+                resolveListFlags,
+                resolveExecutionModes,
+                listExecutionPlan,
+                runFuzzModes,
             }).catch((error) => {
                 printCliError(error);
                 process.exit(1);
@@ -143,6 +158,13 @@ function info() {
         "Build and run unit tests with selected runtime" +
         "\n");
     console.log("  " +
+        chalk.bold.blueBright("fuzz") +
+        "    " +
+        chalk.dim("<name>|<path-or-glob>") +
+        "  " +
+        "Build and run fuzz targets" +
+        "\n");
+    console.log("  " +
         chalk.bold.magentaBright("init") +
         "    " +
         chalk.dim("<./dir>") +
@@ -192,6 +214,10 @@ function info() {
         chalk.bold.blue("--verbose") +
         "                     " +
         "Print each suite start/end line");
+    console.log("   " +
+        chalk.bold.blue("--fuzz") +
+        "                        " +
+        "When used with test, also run configured fuzz targets");
     console.log("   " +
         chalk.bold.blue("--reporter <name|path>") +
         "        " +
@@ -277,11 +303,30 @@ function printCommandHelp(command) {
         process.stdout.write("  --show-coverage          Print uncovered coverage point details\n");
         process.stdout.write("  --enable <feature>       Enable feature (coverage|try-as)\n");
         process.stdout.write("  --disable <feature>      Disable feature (coverage|try-as)\n");
+        process.stdout.write("  --fuzz                   Run fuzz targets after the normal test pass\n");
+        process.stdout.write("  --fuzz-runs <n>          Override fuzz iteration count for this run\n");
+        process.stdout.write("  --fuzz-seed <n>          Override fuzz seed for this run\n");
+        process.stdout.write("  --fuzz-max-input-bytes <n> Override fuzz input size cap for this run\n");
         process.stdout.write("  --reporter <name|path>   Use built-in reporter (default|tap) or custom module path\n");
         process.stdout.write("  --tap                    Shortcut for --reporter tap\n");
         process.stdout.write("  --verbose                Keep expanded suite/test lines and live updates\n");
         process.stdout.write("  --clean                  Disable in-place TTY updates; print final lines only\n");
         process.stdout.write("  --list                   Preview resolved files/artifacts/runtime without running\n");
+        process.stdout.write("  --list-modes             Preview configured and selected mode names\n");
+        process.stdout.write("  --help, -h               Show this help\n");
+        return;
+    }
+    if (command == "fuzz") {
+        process.stdout.write(chalk.bold("Usage: ast fuzz [selectors...] [flags]\n\n"));
+        process.stdout.write("Build selected fuzz targets with bindings and execute them with generated inputs.\n\n");
+        process.stdout.write(chalk.bold("Flags:\n"));
+        process.stdout.write("  --config <path>          Use a specific config file\n");
+        process.stdout.write("  --mode <name[,name...]>  Run one or multiple named config modes\n");
+        process.stdout.write("  --runs <n>               Override fuzz iteration count\n");
+        process.stdout.write("  --seed <n>               Override fuzz seed\n");
+        process.stdout.write("  --max-input-bytes <n>    Override fuzz input size cap\n");
+        process.stdout.write("  --entry <name>           Override exported fuzz entry name\n");
+        process.stdout.write("  --list                   Preview resolved fuzz files without running\n");
         process.stdout.write("  --list-modes             Preview configured and selected mode names\n");
         process.stdout.write("  --help, -h               Show this help\n");
         return;
@@ -364,11 +409,35 @@ function resolveCommandArgs(rawArgs, command) {
         if (arg == "--tap") {
             continue;
         }
+        if (arg == "--fuzz") {
+            continue;
+        }
         if (arg == "--enable" || arg == "--disable") {
             i++;
             continue;
         }
         if (arg.startsWith("--enable=") || arg.startsWith("--disable=")) {
+            continue;
+        }
+        if (arg == "--runs" ||
+            arg == "--seed" ||
+            arg == "--entry" ||
+            arg == "--max-input-bytes" ||
+            arg == "--fuzz-runs" ||
+            arg == "--fuzz-seed" ||
+            arg == "--fuzz-entry" ||
+            arg == "--fuzz-max-input-bytes") {
+            i++;
+            continue;
+        }
+        if (arg.startsWith("--runs=") ||
+            arg.startsWith("--seed=") ||
+            arg.startsWith("--entry=") ||
+            arg.startsWith("--max-input-bytes=") ||
+            arg.startsWith("--fuzz-runs=") ||
+            arg.startsWith("--fuzz-seed=") ||
+            arg.startsWith("--fuzz-entry=") ||
+            arg.startsWith("--fuzz-max-input-bytes=")) {
             continue;
         }
         if (arg.startsWith("-")) {
@@ -410,12 +479,68 @@ function resolveFeatureToggles(rawArgs, command) {
     }
     return out;
 }
+function resolveFuzzOverrides(rawArgs, command) {
+    const out = {};
+    let seenCommand = false;
+    for (let i = 0; i < rawArgs.length; i++) {
+        const arg = rawArgs[i];
+        if (!seenCommand) {
+            if (arg == command)
+                seenCommand = true;
+            continue;
+        }
+        const direct = command == "fuzz"
+            ? {
+                runs: "--runs",
+                seed: "--seed",
+                maxInputBytes: "--max-input-bytes",
+                entry: "--entry",
+            }
+            : {
+                runs: "--fuzz-runs",
+                seed: "--fuzz-seed",
+                maxInputBytes: "--fuzz-max-input-bytes",
+                entry: "--fuzz-entry",
+            };
+        const entry = parseStringFlag(rawArgs, i, direct.entry);
+        if (entry) {
+            out.entry = entry.value;
+            if (entry.consumeNext)
+                i++;
+            continue;
+        }
+        const runs = parseNumberFlag(rawArgs, i, direct.runs);
+        if (runs) {
+            out.runs = runs.number;
+            if (runs.consumeNext)
+                i++;
+            continue;
+        }
+        const seed = parseNumberFlag(rawArgs, i, direct.seed);
+        if (seed) {
+            out.seed = seed.number;
+            if (seed.consumeNext)
+                i++;
+            continue;
+        }
+        const maxInputBytes = parseNumberFlag(rawArgs, i, direct.maxInputBytes);
+        if (maxInputBytes) {
+            out.maxInputBytes = maxInputBytes.number;
+            if (maxInputBytes.consumeNext)
+                i++;
+        }
+    }
+    return out;
+}
 function resolveListFlags(rawArgs, command) {
     const out = {
         list: false,
         listModes: false,
     };
-    if (command !== "build" && command !== "run" && command !== "test") {
+    if (command !== "build" &&
+        command !== "run" &&
+        command !== "test" &&
+        command !== "fuzz") {
         return out;
     }
     let seenCommand = false;
@@ -432,6 +557,53 @@ function resolveListFlags(rawArgs, command) {
             out.listModes = true;
     }
     return out;
+}
+function parseNumberFlag(rawArgs, index, flag) {
+    const arg = rawArgs[index];
+    if (arg == flag) {
+        const next = rawArgs[index + 1];
+        if (!next || next.startsWith("-")) {
+            throw new Error(`${flag} requires a numeric value`);
+        }
+        return {
+            key: flag,
+            number: parseIntegerFlag(flag, next),
+            consumeNext: true,
+        };
+    }
+    if (arg.startsWith(`${flag}=`)) {
+        return {
+            key: flag,
+            number: parseIntegerFlag(flag, arg.slice(flag.length + 1)),
+            consumeNext: false,
+        };
+    }
+    return null;
+}
+function parseStringFlag(rawArgs, index, flag) {
+    const arg = rawArgs[index];
+    if (arg == flag) {
+        const next = rawArgs[index + 1];
+        if (!next || next.startsWith("-")) {
+            throw new Error(`${flag} requires a value`);
+        }
+        return { key: flag, value: next, consumeNext: true };
+    }
+    if (arg.startsWith(`${flag}=`)) {
+        const value = arg.slice(flag.length + 1);
+        if (!value.length) {
+            throw new Error(`${flag} requires a value`);
+        }
+        return { key: flag, value, consumeNext: false };
+    }
+    return null;
+}
+function parseIntegerFlag(flag, value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+        throw new Error(`${flag} requires a non-negative integer`);
+    }
+    return Math.floor(parsed);
 }
 function applyFeatureToggle(out, rawFeature, enabled) {
     const key = rawFeature.trim().toLowerCase();
@@ -624,12 +796,12 @@ async function runRuntimeMatrix(runFlags, configPath, selectors, modes, modeSumm
     });
     return allResults.some((result) => result.failed);
 }
-async function runTestModes(runFlags, configPath, selectors, modes, buildFeatureToggles) {
+async function runTestModes(runFlags, configPath, selectors, modes, buildFeatureToggles, fuzzEnabled, fuzzOverrides) {
     await ensureWebBrowsersReady(configPath, modes);
     const modeSummaryTotal = resolveConfiguredModeTotal(configPath);
     const fileSummaryTotal = await resolveConfiguredFileTotal(configPath);
     if (modes.length > 1) {
-        const failed = await runTestMatrix(runFlags, configPath, selectors, modes, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal);
+        const failed = await runTestMatrix(runFlags, configPath, selectors, modes, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal, fuzzEnabled, fuzzOverrides);
         process.exit(failed ? 1 : 0);
         return;
     }
@@ -638,10 +810,16 @@ async function runTestModes(runFlags, configPath, selectors, modes, buildFeature
         const modeFailed = await runTestSequential(runFlags, configPath, selectors, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal, modeName);
         if (modeFailed)
             failed = true;
+        if (fuzzEnabled) {
+            const fuzzResults = await fuzz(configPath, selectors, modeName, fuzzOverrides);
+            printFuzzSummary(fuzzResults, modeName);
+            if (fuzzResults.some((item) => item.crashes > 0))
+                failed = true;
+        }
     }
     process.exit(failed ? 1 : 0);
 }
-async function runTestMatrix(runFlags, configPath, selectors, modes, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal) {
+async function runTestMatrix(runFlags, configPath, selectors, modes, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal, fuzzEnabled, fuzzOverrides) {
     const files = await resolveSelectedFiles(configPath, selectors);
     if (!files.length) {
         throw await buildNoTestFilesMatchedError(configPath, selectors);
@@ -731,7 +909,28 @@ async function runTestMatrix(runFlags, configPath, selectors, modes, buildFeatur
         reports: summary.reports,
         modeSummary: buildModeSummary(modeState, modeSummaryTotal),
     });
-    return allResults.some((result) => result.failed);
+    let failed = allResults.some((result) => result.failed);
+    if (fuzzEnabled) {
+        const fuzzResults = [];
+        for (const modeName of modes) {
+            fuzzResults.push(...(await fuzz(configPath, selectors, modeName, fuzzOverrides)));
+        }
+        printFuzzSummary(fuzzResults);
+        if (fuzzResults.some((item) => item.crashes > 0))
+            failed = true;
+    }
+    return failed;
+}
+async function runFuzzModes(configPath, selectors, modes, rawArgs) {
+    const overrides = resolveFuzzOverrides(rawArgs, "fuzz");
+    let failed = false;
+    for (const modeName of modes) {
+        const results = await fuzz(configPath, selectors, modeName, overrides);
+        printFuzzSummary(results, modeName);
+        if (results.some((item) => item.crashes > 0))
+            failed = true;
+    }
+    process.exit(failed ? 1 : 0);
 }
 function renderMatrixFileResult(file, modes, results, modeTimes, liveMatrix, showPerModeTimes) {
     const verdict = resolveMatrixVerdict(results);
@@ -790,6 +989,25 @@ function formatMatrixAverageTime(results) {
             : 0;
     }
     return `${(total / results.length).toFixed(1)}ms`;
+}
+function printFuzzSummary(results, modeName) {
+    const modeLabel = modeName ?? "default";
+    const executions = results.reduce((sum, item) => sum + item.runs, 0);
+    const crashes = results.reduce((sum, item) => sum + item.crashes, 0);
+    const totalTime = results.reduce((sum, item) => sum + item.time, 0);
+    const badge = crashes > 0
+        ? chalk.bgRed.white(" FUZZ FAIL ")
+        : chalk.bgGreenBright.black(" FUZZ PASS ");
+    process.stdout.write(`${badge} ${modeLabel} ${chalk.dim(`${results.length} targets, ${executions} runs, ${formatTime(totalTime)}`)}\n`);
+    for (const result of results) {
+        const itemBadge = result.crashes > 0
+            ? chalk.bgRed.white(" FAIL ")
+            : chalk.bgGreenBright.black(" PASS ");
+        const crashSuffix = result.crashFiles.length > 0
+            ? ` ${chalk.dim(`-> ${result.crashFiles[0]}`)}`
+            : "";
+        process.stdout.write(`  ${itemBadge} ${path.basename(result.file)} ${chalk.dim(`${result.runs} runs, seed ${result.seed}`)}${crashSuffix}\n`);
+    }
 }
 function buildModeSummary(modeState, totalModes) {
     const total = Math.max(totalModes, modeState.length, 1);
@@ -876,6 +1094,14 @@ async function resolveSelectedFiles(configPath, selectors, warn = true) {
     const matches = await glob(patterns);
     const specs = matches.filter((file) => file.endsWith(".spec.ts"));
     return [...new Set(specs)].sort((a, b) => a.localeCompare(b));
+}
+async function resolveSelectedFuzzFiles(configPath, selectors) {
+    const resolvedConfigPath = configPath ?? path.join(process.cwd(), "./as-test.config.json");
+    const config = loadConfig(resolvedConfigPath, false);
+    const patterns = resolveFuzzPatterns(config.fuzz.input, selectors);
+    const matches = await glob(patterns);
+    const fuzzFiles = matches.filter((file) => file.endsWith(".fuzz.ts"));
+    return [...new Set(fuzzFiles)].sort((a, b) => a.localeCompare(b));
 }
 async function buildNoTestFilesMatchedError(configPath, selectors) {
     const scope = selectors.length > 0 ? selectors.join(", ") : "configured input patterns";
@@ -978,6 +1204,27 @@ function resolveInputPatterns(configured, selectors) {
             const base = stripSuiteSuffix(selector);
             for (const configuredInput of configuredInputs) {
                 patterns.add(path.join(path.dirname(configuredInput), `${base}.spec.ts`));
+            }
+            continue;
+        }
+        patterns.add(selector);
+    }
+    return [...patterns];
+}
+function resolveFuzzPatterns(configured, selectors) {
+    const configuredInputs = Array.isArray(configured)
+        ? configured
+        : [configured];
+    if (!selectors.length)
+        return configuredInputs;
+    const patterns = new Set();
+    for (const selector of expandSelectors(selectors)) {
+        if (!selector)
+            continue;
+        if (isBareSuiteSelector(selector)) {
+            const base = selector.replace(/\.fuzz\.ts$/, "").replace(/\.ts$/, "");
+            for (const configuredInput of configuredInputs) {
+                patterns.add(path.join(path.dirname(configuredInput), `${base}.fuzz.ts`));
             }
             continue;
         }
@@ -1229,10 +1476,14 @@ async function listExecutionPlan(command, configPath, selectors, modes, listFlag
     }
     if (!listFlags.list)
         return;
-    const files = await resolveSelectedFiles(configPath, selectors);
+    const files = command == "fuzz"
+        ? await resolveSelectedFuzzFiles(configPath, selectors)
+        : await resolveSelectedFiles(configPath, selectors);
     if (!files.length) {
         const scope = selectors.length > 0 ? selectors.join(", ") : "configured input patterns";
-        throw new Error(`No test files matched: ${scope}`);
+        throw new Error(command == "fuzz"
+            ? `No fuzz files matched: ${scope}`
+            : `No test files matched: ${scope}`);
     }
     const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
     process.stdout.write(chalk.bold("Resolved files:\n"));
@@ -1245,9 +1496,9 @@ async function listExecutionPlan(command, configPath, selectors, modes, listFlag
         const active = applied.config;
         const modeLabel = modeName ?? "default";
         process.stdout.write(chalk.bold(`Mode: ${modeLabel}\n`));
-        process.stdout.write(`  target: ${active.buildOptions.target}\n`);
+        process.stdout.write(`  target: ${command == "fuzz" ? "bindings" : active.buildOptions.target}\n`);
         process.stdout.write(`  outDir: ${active.outDir}\n`);
-        if (command != "build") {
+        if (command == "run" || command == "test") {
             process.stdout.write(`  runtime: ${active.runOptions.runtime.cmd}\n`);
         }
         const envOverrides = {
@@ -1263,7 +1514,7 @@ async function listExecutionPlan(command, configPath, selectors, modes, listFlag
         process.stdout.write(`  env overrides: ${envKeys.length}${envKeys.length ? ` (${envKeys.join(", ")})` : ""}\n`);
         process.stdout.write("  artifacts:\n");
         for (const file of files) {
-            const artifactName = resolveArtifactFileNameForPreview(file, active.buildOptions.target, modeName, duplicateSpecBasenames);
+            const artifactName = resolveArtifactFileNameForPreview(file, command == "fuzz" ? "bindings" : active.buildOptions.target, modeName, duplicateSpecBasenames);
             process.stdout.write(`    - ${path.join(active.outDir, artifactName)}\n`);
         }
         process.stdout.write("\n");

@@ -19,6 +19,10 @@ export type BuildFeatureToggles = {
   coverage?: boolean;
 };
 
+export type BuildConfigOverrides = {
+  target?: string;
+};
+
 type BuildInvocation = {
   command: string;
   args: string[];
@@ -29,10 +33,18 @@ export async function build(
   selectors: string[] = [],
   modeName?: string,
   featureToggles: BuildFeatureToggles = {},
+  overrides: BuildConfigOverrides = {},
 ) {
   const loadedConfig = loadConfig(configPath, false);
   const mode = applyMode(loadedConfig, modeName);
-  const config = mode.config;
+  const config = Object.assign(Object.create(Object.getPrototypeOf(mode.config)), mode.config) as Config;
+  config.buildOptions = Object.assign(
+    Object.create(Object.getPrototypeOf(mode.config.buildOptions)),
+    mode.config.buildOptions,
+  );
+  if (overrides.target) {
+    config.buildOptions.target = overrides.target;
+  }
 
   if (!hasCustomBuildCommand(config)) {
     ensureDeps(config);

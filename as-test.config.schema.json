@@ -184,6 +184,67 @@
         "env": {}
       }
     },
+    "fuzz": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Fuzz target configuration used by `ast fuzz` and `ast test --fuzz`.",
+      "properties": {
+        "input": {
+          "type": "array",
+          "description": "Glob patterns for fuzz target files.",
+          "items": {
+            "type": "string"
+          },
+          "default": ["./assembly/__fuzz__/*.fuzz.ts"]
+        },
+        "entry": {
+          "type": "string",
+          "description": "Exported fuzz entry name.",
+          "default": "fuzz"
+        },
+        "runs": {
+          "type": "number",
+          "description": "Number of fuzz iterations per target.",
+          "default": 1000
+        },
+        "seed": {
+          "type": "number",
+          "description": "Base deterministic seed for input mutation.",
+          "default": 1337
+        },
+        "maxInputBytes": {
+          "type": "number",
+          "description": "Maximum generated input size in bytes.",
+          "default": 4096
+        },
+        "target": {
+          "type": "string",
+          "enum": ["bindings"],
+          "description": "Fuzz builds currently require bindings output.",
+          "default": "bindings"
+        },
+        "corpusDir": {
+          "type": "string",
+          "description": "Directory containing per-target seed corpus files.",
+          "default": "./.as-test/fuzz/corpus"
+        },
+        "crashDir": {
+          "type": "string",
+          "description": "Directory where crashing inputs and metadata are written.",
+          "default": "./.as-test/fuzz/crashes"
+        }
+      },
+      "default": {
+        "input": ["./assembly/__fuzz__/*.fuzz.ts"],
+        "entry": "fuzz",
+        "runs": 1000,
+        "seed": 1337,
+        "maxInputBytes": 4096,
+        "target": "bindings",
+        "corpusDir": "./.as-test/fuzz/corpus",
+        "crashDir": "./.as-test/fuzz/crashes"
+      }
+    },
     "modes": {
       "type": "object",
       "description": "Named build/run modes. Each mode can override target/args/runtime/env and artifact directories.",

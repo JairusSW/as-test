@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "fs";
-import { BuildOptions, Config, CoverageOptions, ModeConfig, ReporterConfig, RunOptions, Runtime, } from "./types.js";
+import { BuildOptions, Config, CoverageOptions, FuzzConfig, ModeConfig, ReporterConfig, RunOptions, Runtime, } from "./types.js";
 import chalk from "chalk";
 import { createRequire } from "module";
 import { delimiter, dirname, join, resolve } from "path";
@@ -103,6 +103,32 @@ export function loadConfig(CONFIG_PATH, warn = false) {
         runtime.cmd = cmd;
         config.runOptions.runtime = runtime;
         config.runOptions.env = parseEnvValue(runOptionsRaw.env, configDir, "$.runOptions.env");
+        const fuzzRaw = raw.fuzz ?? {};
+        config.fuzz = Object.assign(new FuzzConfig(), fuzzRaw);
+        config.fuzz.input = Array.isArray(config.fuzz.input)
+            ? config.fuzz.input.filter((item) => typeof item == "string")
+            : typeof fuzzRaw.input == "string"
+                ? [fuzzRaw.input]
+                : new FuzzConfig().input;
+        config.fuzz.entry =
+            typeof config.fuzz.entry == "string" && config.fuzz.entry.length
+                ? config.fuzz.entry
+                : "fuzz";
+        config.fuzz.runs = normalizePositiveNumber(config.fuzz.runs, 1000);
+        config.fuzz.seed = normalizeNonNegativeNumber(config.fuzz.seed, 1337);
+        config.fuzz.maxInputBytes = normalizePositiveNumber(config.fuzz.maxInputBytes, 4096);
+        config.fuzz.target =
+            typeof config.fuzz.target == "string" && config.fuzz.target.length
+                ? config.fuzz.target
+                : "bindings";
+        config.fuzz.corpusDir =
+            typeof config.fuzz.corpusDir == "string" && config.fuzz.corpusDir.length
+                ? config.fuzz.corpusDir
+                : "./.as-test/fuzz/corpus";
+        config.fuzz.crashDir =
+            typeof config.fuzz.crashDir == "string" && config.fuzz.crashDir.length
+                ? config.fuzz.crashDir
+                : "./.as-test/fuzz/crashes";
         config.modes = parseModes(raw.modes, configDir);
         return config;
     }
@@ -119,6 +145,7 @@ const TOP_LEVEL_KEYS = new Set([
     "coverage",
     "env",
     "buildOptions",
+    "fuzz",
     "modes",
     "runOptions",
 ]);
@@ -127,6 +154,16 @@ const RUN_OPTION_KEYS = new Set(["runtime", "reporter", "run", "env"]); // inclu
 const RUNTIME_OPTION_KEYS = new Set(["cmd", "run"]); // includes legacy "run"
 const REPORTER_OPTION_KEYS = new Set(["name", "options", "outDir", "outFile"]);
 const OUTPUT_OPTION_KEYS = new Set(["build", "logs", "coverage", "snapshots"]);
+const FUZZ_OPTION_KEYS = new Set([
+    "input",
+    "entry",
+    "runs",
+    "seed",
+    "maxInputBytes",
+    "target",
+    "corpusDir",
+    "crashDir",
+]);
 const MODE_KEYS = new Set([
     "outDir",
     "logs",
@@ -152,6 +189,7 @@ function validateConfig(raw, configPath) {
     validateCoverageField(raw, "coverage", "$", issues);
     validateEnvField(raw, "env", "$", issues);
     validateBuildOptionsField(raw, "buildOptions", "$", issues);
+    validateFuzzField(raw, "fuzz", "$", issues);
     validateRunOptionsField(raw, "runOptions", "$", issues);
     validateModesField(raw, "modes", "$", issues);
     if (!issues.length)
@@ -503,6 +541,36 @@ function validateRunOptionsField(raw, key, pathPrefix, issues) {
     }
     validateEnvField(obj, "env", `${pathPrefix}.${key}`, issues);
 }
+function validateFuzzField(raw, key, pathPrefix, issues) {
+    if (!(key in raw) || raw[key] == undefined)
+        return;
+    const value = raw[key];
+    if (!value || typeof value != "object" || Array.isArray(value)) {
+        issues.push({
+            path: `${pathPrefix}.${key}`,
+            message: "must be an object",
+            fix: 'example: "fuzz": { "input": ["./assembly/__fuzz__/*.fuzz.ts"], "runs": 1000 }',
+        });
+        return;
+    }
+    const obj = value;
+    validateUnknownKeys(obj, FUZZ_OPTION_KEYS, `${pathPrefix}.${key}`, issues);
+    validateInputField(obj, "input", `${pathPrefix}.${key}`, issues);
+    validateStringField(obj, "entry", `${pathPrefix}.${key}`, issues);
+    validateStringField(obj, "target", `${pathPrefix}.${key}`, issues);
+    validateStringField(obj, "corpusDir", `${pathPrefix}.${key}`, issues);
+    validateStringField(obj, "crashDir", `${pathPrefix}.${key}`, issues);
+    validateNumberField(obj, "runs", `${pathPrefix}.${key}`, issues, true);
+    validateNumberField(obj, "seed", `${pathPrefix}.${key}`, issues, false);
+    validateNumberField(obj, "maxInputBytes", `${pathPrefix}.${key}`, issues, true);
+    if ("target" in obj && obj.target != "bindings") {
+        issues.push({
+            path: `${pathPrefix}.${key}.target`,
+            message: 'must be "bindings"',
+            fix: 'set to "bindings"',
+        });
+    }
+}
 function validateModesField(raw, key, pathPrefix, issues) {
     if (!(key in raw) || raw[key] == undefined)
         return;
@@ -539,6 +607,33 @@ function validateModesField(raw, key, pathPrefix, issues) {
 }
 function isStringArray(value) {
     return Array.isArray(value) && value.every((item) => typeof item == "string");
+}
+function validateNumberField(raw, key, pathPrefix, issues, positiveOnly) {
+    if (!(key in raw) || raw[key] == undefined)
+        return;
+    if (typeof raw[key] != "number" || !Number.isFinite(raw[key])) {
+        issues.push({
+            path: `${pathPrefix}.${key}`,
+            message: "must be a finite number",
+            fix: `set "${key}" to a numeric value`,
+        });
+        return;
+    }
+    if (positiveOnly && Number(raw[key]) <= 0) {
+        issues.push({
+            path: `${pathPrefix}.${key}`,
+            message: "must be greater than zero",
+            fix: `set "${key}" to a positive integer`,
+        });
+        return;
+    }
+    if (!positiveOnly && Number(raw[key]) < 0) {
+        issues.push({
+            path: `${pathPrefix}.${key}`,
+            message: "must be zero or greater",
+            fix: `set "${key}" to a non-negative integer`,
+        });
+    }
 }
 function resolveClosestKey(value, keys) {
     let best = null;
@@ -792,6 +887,18 @@ function unquoteEnvValue(value) {
         .replace(/\\t/g, "\t")
         .replace(/\\"/g, '"')
         .replace(/\\\\/g, "\\");
+}
+function normalizePositiveNumber(value, fallback) {
+    if (typeof value != "number" || !Number.isFinite(value) || value <= 0) {
+        return fallback;
+    }
+    return Math.floor(value);
+}
+function normalizeNonNegativeNumber(value, fallback) {
+    if (typeof value != "number" || !Number.isFinite(value) || value < 0) {
+        return fallback;
+    }
+    return Math.floor(value);
 }
 export function resolveModeNames(rawArgs) {
     const names = [];

@@ -5,10 +5,14 @@ import { spawnSync } from "child_process";
 import * as path from "path";
 import { applyMode, getPkgRunner, loadConfig, tokenizeCommand, resolveProjectModule, } from "../util.js";
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
-export async function build(configPath = DEFAULT_CONFIG_PATH, selectors = [], modeName, featureToggles = {}) {
+export async function build(configPath = DEFAULT_CONFIG_PATH, selectors = [], modeName, featureToggles = {}, overrides = {}) {
     const loadedConfig = loadConfig(configPath, false);
     const mode = applyMode(loadedConfig, modeName);
-    const config = mode.config;
+    const config = Object.assign(Object.create(Object.getPrototypeOf(mode.config)), mode.config);
+    config.buildOptions = Object.assign(Object.create(Object.getPrototypeOf(mode.config.buildOptions)), mode.config.buildOptions);
+    if (overrides.target) {
+        config.buildOptions.target = overrides.target;
+    }
     if (!hasCustomBuildCommand(config)) {
         ensureDeps(config);
     }

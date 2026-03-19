@@ -3,6 +3,7 @@ import {
   BuildOptions,
   Config,
   CoverageOptions,
+  FuzzConfig,
   ModeConfig,
   ReporterConfig,
   RunOptions,
@@ -147,6 +148,35 @@ export function loadConfig(CONFIG_PATH: string, warn: boolean = false): Config {
       configDir,
       "$.runOptions.env",
     );
+    const fuzzRaw = (raw.fuzz as Record<string, unknown> | undefined) ?? {};
+    config.fuzz = Object.assign(new FuzzConfig(), fuzzRaw);
+    config.fuzz.input = Array.isArray(config.fuzz.input)
+      ? config.fuzz.input.filter((item): item is string => typeof item == "string")
+      : typeof fuzzRaw.input == "string"
+        ? [fuzzRaw.input]
+        : new FuzzConfig().input;
+    config.fuzz.entry =
+      typeof config.fuzz.entry == "string" && config.fuzz.entry.length
+        ? config.fuzz.entry
+        : "fuzz";
+    config.fuzz.runs = normalizePositiveNumber(config.fuzz.runs, 1000);
+    config.fuzz.seed = normalizeNonNegativeNumber(config.fuzz.seed, 1337);
+    config.fuzz.maxInputBytes = normalizePositiveNumber(
+      config.fuzz.maxInputBytes,
+      4096,
+    );
+    config.fuzz.target =
+      typeof config.fuzz.target == "string" && config.fuzz.target.length
+        ? config.fuzz.target
+        : "bindings";
+    config.fuzz.corpusDir =
+      typeof config.fuzz.corpusDir == "string" && config.fuzz.corpusDir.length
+        ? config.fuzz.corpusDir
+        : "./.as-test/fuzz/corpus";
+    config.fuzz.crashDir =
+      typeof config.fuzz.crashDir == "string" && config.fuzz.crashDir.length
+        ? config.fuzz.crashDir
+        : "./.as-test/fuzz/crashes";
     config.modes = parseModes(raw.modes, configDir);
     return config;
   }
@@ -170,6 +200,7 @@ const TOP_LEVEL_KEYS = new Set([
   "coverage",
   "env",
   "buildOptions",
+  "fuzz",
   "modes",
   "runOptions",
 ]);
@@ -179,6 +210,16 @@ const RUN_OPTION_KEYS = new Set(["runtime", "reporter", "run", "env"]); // inclu
 const RUNTIME_OPTION_KEYS = new Set(["cmd", "run"]); // includes legacy "run"
 const REPORTER_OPTION_KEYS = new Set(["name", "options", "outDir", "outFile"]);
 const OUTPUT_OPTION_KEYS = new Set(["build", "logs", "coverage", "snapshots"]);
+const FUZZ_OPTION_KEYS = new Set([
+  "input",
+  "entry",
+  "runs",
+  "seed",
+  "maxInputBytes",
+  "target",
+  "corpusDir",
+  "crashDir",
+]);
 const MODE_KEYS = new Set([
   "outDir",
   "logs",
@@ -209,6 +250,7 @@ function validateConfig(
   validateCoverageField(raw, "coverage", "$", issues);
   validateEnvField(raw, "env", "$", issues);
   validateBuildOptionsField(raw, "buildOptions", "$", issues);
+  validateFuzzField(raw, "fuzz", "$", issues);
   validateRunOptionsField(raw, "runOptions", "$", issues);
   validateModesField(raw, "modes", "$", issues);
 
@@ -621,6 +663,47 @@ function validateRunOptionsField(
   validateEnvField(obj, "env", `${pathPrefix}.${key}`, issues);
 }
 
+function validateFuzzField(
+  raw: Record<string, unknown>,
+  key: string,
+  pathPrefix: string,
+  issues: ValidationIssue[],
+): void {
+  if (!(key in raw) || raw[key] == undefined) return;
+  const value = raw[key];
+  if (!value || typeof value != "object" || Array.isArray(value)) {
+    issues.push({
+      path: `${pathPrefix}.${key}`,
+      message: "must be an object",
+      fix: 'example: "fuzz": { "input": ["./assembly/__fuzz__/*.fuzz.ts"], "runs": 1000 }',
+    });
+    return;
+  }
+  const obj = value as Record<string, unknown>;
+  validateUnknownKeys(obj, FUZZ_OPTION_KEYS, `${pathPrefix}.${key}`, issues);
+  validateInputField(obj, "input", `${pathPrefix}.${key}`, issues);
+  validateStringField(obj, "entry", `${pathPrefix}.${key}`, issues);
+  validateStringField(obj, "target", `${pathPrefix}.${key}`, issues);
+  validateStringField(obj, "corpusDir", `${pathPrefix}.${key}`, issues);
+  validateStringField(obj, "crashDir", `${pathPrefix}.${key}`, issues);
+  validateNumberField(obj, "runs", `${pathPrefix}.${key}`, issues, true);
+  validateNumberField(obj, "seed", `${pathPrefix}.${key}`, issues, false);
+  validateNumberField(
+    obj,
+    "maxInputBytes",
+    `${pathPrefix}.${key}`,
+    issues,
+    true,
+  );
+  if ("target" in obj && obj.target != "bindings") {
+    issues.push({
+      path: `${pathPrefix}.${key}.target`,
+      message: 'must be "bindings"',
+      fix: 'set to "bindings"',
+    });
+  }
+}
+
 function validateModesField(
   raw: Record<string, unknown>,
   key: string,
@@ -664,6 +747,39 @@ function validateModesField(
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item == "string");
+}
+
+function validateNumberField(
+  raw: Record<string, unknown>,
+  key: string,
+  pathPrefix: string,
+  issues: ValidationIssue[],
+  positiveOnly: boolean,
+): void {
+  if (!(key in raw) || raw[key] == undefined) return;
+  if (typeof raw[key] != "number" || !Number.isFinite(raw[key])) {
+    issues.push({
+      path: `${pathPrefix}.${key}`,
+      message: "must be a finite number",
+      fix: `set "${key}" to a numeric value`,
+    });
+    return;
+  }
+  if (positiveOnly && Number(raw[key]) <= 0) {
+    issues.push({
+      path: `${pathPrefix}.${key}`,
+      message: "must be greater than zero",
+      fix: `set "${key}" to a positive integer`,
+    });
+    return;
+  }
+  if (!positiveOnly && Number(raw[key]) < 0) {
+    issues.push({
+      path: `${pathPrefix}.${key}`,
+      message: "must be zero or greater",
+      fix: `set "${key}" to a non-negative integer`,
+    });
+  }
 }
 
 function resolveClosestKey(value: string, keys: string[]): string | null {
@@ -984,6 +1100,20 @@ function unquoteEnvValue(value: string): string {
     .replace(/\\t/g, "\t")
     .replace(/\\"/g, '"')
     .replace(/\\\\/g, "\\");
+}
+
+function normalizePositiveNumber(value: unknown, fallback: number): number {
+  if (typeof value != "number" || !Number.isFinite(value) || value <= 0) {
+    return fallback;
+  }
+  return Math.floor(value);
+}
+
+function normalizeNonNegativeNumber(value: unknown, fallback: number): number {
+  if (typeof value != "number" || !Number.isFinite(value) || value < 0) {
+    return fallback;
+  }
+  return Math.floor(value);
 }
 
 export function resolveModeNames(rawArgs: string[]): string[] {

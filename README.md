@@ -9,6 +9,7 @@
 - [Installation](#installation)
 - [Examples](#examples)
 - [Writing Tests](#writing-tests)
+- [Fuzzing](#fuzzing)
 - [Setup Diagnostics](#setup-diagnostics)
 - [Mocking](#mocking)
 - [Snapshots](#snapshots)
@@ -87,7 +88,7 @@ describe("math", () => {
 });
 ```
 
-### File selection (`ast run`, `ast build`, `ast test`)
+### File selection (`ast run`, `ast build`, `ast test`, `ast fuzz`)
 
 No selectors:
 
@@ -124,6 +125,7 @@ Comma-separated bare suite names:
 ast test box,custom,generics,string
 ast run box,custom,generics,string
 ast build box,custom,generics,string
+ast fuzz parser,json
 ```
 
 If nothing matches, `ast test` exits non-zero with:
@@ -141,6 +143,10 @@ No test files matched: ...
 - `--show-coverage`: print uncovered coverage points
 - `--enable <feature>`: enable as-test feature (`coverage`, `try-as`)
 - `--disable <feature>`: disable as-test feature (`coverage`, `try-as`)
+- `--fuzz`: when used with `ast test`, also run configured fuzz targets after the normal test pass
+- `--fuzz-runs <n>` / `--runs <n>`: override fuzz iteration count for `ast test --fuzz` / `ast fuzz`
+- `--fuzz-seed <n>` / `--seed <n>`: override fuzz seed for `ast test --fuzz` / `ast fuzz`
+- `--fuzz-max-input-bytes <n>` / `--max-input-bytes <n>`: override fuzz input size cap for `ast test --fuzz` / `ast fuzz`
 - `--verbose`: keep expanded suite/test lines and update running `....` statuses in place
 - `--clean`: disable in-place TTY updates and print only final per-file verdict lines. Useful for CI/CD.
 - `--list`: show resolved files, per-mode artifacts, and runtime command without executing
@@ -162,6 +168,37 @@ ast test --list-modes
 ast run sleep --list --mode wasi
 ast build --list --mode wasi,bindings
 ```
+
+## Fuzzing
+
+Fuzz targets live separately from specs, by default in `assembly/__fuzz__/*.fuzz.ts`.
+
+Example target:
+
+```ts
+export function fuzz(data: Uint8Array): void {
+  if (data.length > 3 && data[0] == 0xff) unreachable();
+}
+```
+
+Commands:
+
+```bash
+ast fuzz
+ast fuzz parser --runs 50000 --seed 42
+ast fuzz ./assembly/__fuzz__/*.fuzz.ts --max-input-bytes 8192
+ast test --fuzz
+ast test --fuzz --fuzz-runs 50000 --fuzz-seed 42
+```
+
+Behavior:
+
+- `ast fuzz` builds the selected fuzz targets with `bindings` and runs only the fuzz pass
+- `ast test --fuzz` runs the normal spec suite first, then runs fuzz targets and appends a fuzz summary to the same console report
+- crashing inputs are written to `fuzz.crashDir` as `.bin` plus `.json` metadata
+- seed corpus inputs are loaded from `fuzz.corpusDir/<target-name>/`
+- fuzz target files should export a function matching `export function fuzz(data: Uint8Array): void`
+- per-target overrides are available from the CLI via `--runs`, `--seed`, `--max-input-bytes`, and `--entry`
 
 ## Setup Diagnostics
 
@@ -303,6 +340,16 @@ Example:
     "args": [],
     "target": "wasi"
   },
+  "fuzz": {
+    "input": ["./assembly/__fuzz__/*.fuzz.ts"],
+    "entry": "fuzz",
+    "runs": 1000,
+    "seed": 1337,
+    "maxInputBytes": 4096,
+    "target": "bindings",
+    "corpusDir": "./.as-test/fuzz/corpus",
+    "crashDir": "./.as-test/fuzz/crashes"
+  },
   "modes": {},
   "runOptions": {
     "runtime": {
@@ -325,6 +372,12 @@ Key fields:
 - `env`: environment variables injected into build and runtime processes
 - `buildOptions.cmd`: optional custom build command template; when set it replaces default build command and flags. Supports `<file>`, `<name>`, `<outFile>`, `<target>`, `<mode>`
 - `buildOptions.target`: `wasi` or `bindings`
+- `fuzz`: fuzz target configuration used by `ast fuzz` and `ast test --fuzz`
+- `fuzz.input`: glob list of fuzz files (default `./assembly/__fuzz__/*.fuzz.ts`)
+- `fuzz.entry`: exported fuzz function name, default `fuzz`
+- `fuzz.runs` / `fuzz.seed` / `fuzz.maxInputBytes`: default driver settings for mutation count, deterministic seed, and input size cap
+- `fuzz.target`: currently must be `bindings`
+- `fuzz.corpusDir` / `fuzz.crashDir`: directories for seed inputs and crashing repro artifacts
 - `modes`: named overrides for command/target/args/runtime/env/artifact directories (selected via `--mode`); `mode.env` overrides top-level `env`
 - `runOptions.runtime.cmd`: runtime command, supports `<file>` and `<name>`; if its script path is missing, as-test falls back to the default runner for the selected target
 - `runOptions.reporter`: reporter selection as a string or object

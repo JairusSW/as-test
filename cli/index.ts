@@ -6,10 +6,13 @@ import { createRunReporter, run, RunResult } from "./commands/run.js";
 import { executeBuildCommand } from "./commands/build.js";
 import { executeRunCommand } from "./commands/run.js";
 import { executeTestCommand } from "./commands/test.js";
+import { executeFuzzCommand } from "./commands/fuzz.js";
 import { executeInitCommand } from "./commands/init.js";
 import { executeDoctorCommand } from "./commands/doctor.js";
+import { fuzz, FuzzOverrides, FuzzResult } from "./commands/fuzz-core.js";
 import {
   applyMode,
+  formatTime,
   getCliVersion,
   loadConfig,
   resolveModeNames,
@@ -25,7 +28,7 @@ const _args = process.argv.slice(2);
 const flags: string[] = [];
 const args: string[] = [];
 
-const COMMANDS: string[] = ["run", "build", "test", "init", "doctor"];
+const COMMANDS: string[] = ["run", "build", "test", "fuzz", "init", "doctor"];
 type CliFeatureToggles = {
   coverage?: boolean;
   tryAs?: boolean;
@@ -85,9 +88,21 @@ if (!args.length) {
         resolveCommandArgs,
         resolveListFlags,
         resolveFeatureToggles,
+        resolveFuzzOverrides,
         resolveExecutionModes,
         listExecutionPlan,
         runTestModes,
+      }).catch((error) => {
+        printCliError(error);
+        process.exit(1);
+      });
+    } else if (command === "fuzz") {
+      executeFuzzCommand(_args, configPath, selectedModes, {
+        resolveCommandArgs,
+        resolveListFlags,
+        resolveExecutionModes,
+        listExecutionPlan,
+        runFuzzModes,
       }).catch((error) => {
         printCliError(error);
         process.exit(1);
@@ -166,6 +181,15 @@ function info(): void {
       "Build and run unit tests with selected runtime" +
       "\n",
   );
+  console.log(
+    "  " +
+      chalk.bold.blueBright("fuzz") +
+      "    " +
+      chalk.dim("<name>|<path-or-glob>") +
+      "  " +
+      "Build and run fuzz targets" +
+      "\n",
+  );
 
   console.log(
     "  " +
@@ -240,6 +264,12 @@ function info(): void {
       chalk.bold.blue("--verbose") +
       "                     " +
       "Print each suite start/end line",
+  );
+  console.log(
+    "   " +
+      chalk.bold.blue("--fuzz") +
+      "                        " +
+      "When used with test, also run configured fuzz targets",
   );
   console.log(
     "   " +
@@ -404,6 +434,18 @@ function printCommandHelp(command: string): void {
       "  --disable <feature>      Disable feature (coverage|try-as)\n",
     );
     process.stdout.write(
+      "  --fuzz                   Run fuzz targets after the normal test pass\n",
+    );
+    process.stdout.write(
+      "  --fuzz-runs <n>          Override fuzz iteration count for this run\n",
+    );
+    process.stdout.write(
+      "  --fuzz-seed <n>          Override fuzz seed for this run\n",
+    );
+    process.stdout.write(
+      "  --fuzz-max-input-bytes <n> Override fuzz input size cap for this run\n",
+    );
+    process.stdout.write(
       "  --reporter <name|path>   Use built-in reporter (default|tap) or custom module path\n",
     );
     process.stdout.write(
@@ -417,6 +459,42 @@ function printCommandHelp(command: string): void {
     );
     process.stdout.write(
       "  --list                   Preview resolved files/artifacts/runtime without running\n",
+    );
+    process.stdout.write(
+      "  --list-modes             Preview configured and selected mode names\n",
+    );
+    process.stdout.write("  --help, -h               Show this help\n");
+    return;
+  }
+
+  if (command == "fuzz") {
+    process.stdout.write(
+      chalk.bold("Usage: ast fuzz [selectors...] [flags]\n\n"),
+    );
+    process.stdout.write(
+      "Build selected fuzz targets with bindings and execute them with generated inputs.\n\n",
+    );
+    process.stdout.write(chalk.bold("Flags:\n"));
+    process.stdout.write(
+      "  --config <path>          Use a specific config file\n",
+    );
+    process.stdout.write(
+      "  --mode <name[,name...]>  Run one or multiple named config modes\n",
+    );
+    process.stdout.write(
+      "  --runs <n>               Override fuzz iteration count\n",
+    );
+    process.stdout.write(
+      "  --seed <n>               Override fuzz seed\n",
+    );
+    process.stdout.write(
+      "  --max-input-bytes <n>    Override fuzz input size cap\n",
+    );
+    process.stdout.write(
+      "  --entry <name>           Override exported fuzz entry name\n",
+    );
+    process.stdout.write(
+      "  --list                   Preview resolved fuzz files without running\n",
     );
     process.stdout.write(
       "  --list-modes             Preview configured and selected mode names\n",
@@ -529,11 +607,39 @@ function resolveCommandArgs(rawArgs: string[], command: string): string[] {
     if (arg == "--tap") {
       continue;
     }
+    if (arg == "--fuzz") {
+      continue;
+    }
     if (arg == "--enable" || arg == "--disable") {
       i++;
       continue;
     }
     if (arg.startsWith("--enable=") || arg.startsWith("--disable=")) {
+      continue;
+    }
+    if (
+      arg == "--runs" ||
+      arg == "--seed" ||
+      arg == "--entry" ||
+      arg == "--max-input-bytes" ||
+      arg == "--fuzz-runs" ||
+      arg == "--fuzz-seed" ||
+      arg == "--fuzz-entry" ||
+      arg == "--fuzz-max-input-bytes"
+    ) {
+      i++;
+      continue;
+    }
+    if (
+      arg.startsWith("--runs=") ||
+      arg.startsWith("--seed=") ||
+      arg.startsWith("--entry=") ||
+      arg.startsWith("--max-input-bytes=") ||
+      arg.startsWith("--fuzz-runs=") ||
+      arg.startsWith("--fuzz-seed=") ||
+      arg.startsWith("--fuzz-entry=") ||
+      arg.startsWith("--fuzz-max-input-bytes=")
+    ) {
       continue;
     }
     if (arg.startsWith("-")) {
@@ -581,12 +687,74 @@ function resolveFeatureToggles(
   return out;
 }
 
+function resolveFuzzOverrides(
+  rawArgs: string[],
+  command: "test" | "fuzz",
+): FuzzOverrides {
+  const out: FuzzOverrides = {};
+  let seenCommand = false;
+
+  for (let i = 0; i < rawArgs.length; i++) {
+    const arg = rawArgs[i]!;
+    if (!seenCommand) {
+      if (arg == command) seenCommand = true;
+      continue;
+    }
+
+    const direct =
+      command == "fuzz"
+        ? {
+            runs: "--runs",
+            seed: "--seed",
+            maxInputBytes: "--max-input-bytes",
+            entry: "--entry",
+          }
+        : {
+            runs: "--fuzz-runs",
+            seed: "--fuzz-seed",
+            maxInputBytes: "--fuzz-max-input-bytes",
+            entry: "--fuzz-entry",
+          };
+
+    const entry = parseStringFlag(rawArgs, i, direct.entry);
+    if (entry) {
+      out.entry = entry.value;
+      if (entry.consumeNext) i++;
+      continue;
+    }
+    const runs = parseNumberFlag(rawArgs, i, direct.runs);
+    if (runs) {
+      out.runs = runs.number;
+      if (runs.consumeNext) i++;
+      continue;
+    }
+    const seed = parseNumberFlag(rawArgs, i, direct.seed);
+    if (seed) {
+      out.seed = seed.number;
+      if (seed.consumeNext) i++;
+      continue;
+    }
+    const maxInputBytes = parseNumberFlag(rawArgs, i, direct.maxInputBytes);
+    if (maxInputBytes) {
+      out.maxInputBytes = maxInputBytes.number;
+      if (maxInputBytes.consumeNext) i++;
+    }
+  }
+
+  return out;
+}
+
 function resolveListFlags(rawArgs: string[], command: string): CliListFlags {
   const out: CliListFlags = {
     list: false,
     listModes: false,
   };
-  if (command !== "build" && command !== "run" && command !== "test") {
+  if (
+    command !== "build" &&
+    command !== "run" &&
+    command !== "test" &&
+    command !== "fuzz"
+  ) {
     return out;
   }
 
@@ -601,6 +769,68 @@ function resolveListFlags(rawArgs: string[], command: string): CliListFlags {
     if (arg == "--list-modes") out.listModes = true;
   }
   return out;
+}
+
+function parseNumberFlag(
+  rawArgs: string[],
+  index: number,
+  flag: string,
+):
+  | { key: string; number: number; consumeNext: boolean }
+  | null {
+  const arg = rawArgs[index]!;
+  if (arg == flag) {
+    const next = rawArgs[index + 1];
+    if (!next || next.startsWith("-")) {
+      throw new Error(`${flag} requires a numeric value`);
+    }
+    return {
+      key: flag,
+      number: parseIntegerFlag(flag, next),
+      consumeNext: true,
+    };
+  }
+  if (arg.startsWith(`${flag}=`)) {
+    return {
+      key: flag,
+      number: parseIntegerFlag(flag, arg.slice(flag.length + 1)),
+      consumeNext: false,
+    };
+  }
+  return null;
+}
+
+function parseStringFlag(
+  rawArgs: string[],
+  index: number,
+  flag: string,
+):
+  | { key: string; value: string; consumeNext: boolean }
+  | null {
+  const arg = rawArgs[index]!;
+  if (arg == flag) {
+    const next = rawArgs[index + 1];
+    if (!next || next.startsWith("-")) {
+      throw new Error(`${flag} requires a value`);
+    }
+    return { key: flag, value: next, consumeNext: true };
+  }
+  if (arg.startsWith(`${flag}=`)) {
+    const value = arg.slice(flag.length + 1);
+    if (!value.length) {
+      throw new Error(`${flag} requires a value`);
+    }
+    return { key: flag, value, consumeNext: false };
+  }
+  return null;
+}
+
+function parseIntegerFlag(flag: string, value: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`${flag} requires a non-negative integer`);
+  }
+  return Math.floor(parsed);
 }
 
 function applyFeatureToggle(
@@ -905,6 +1135,8 @@ async function runTestModes(
   selectors: string[],
   modes: (string | undefined)[],
   buildFeatureToggles: BuildFeatureToggles,
+  fuzzEnabled: boolean,
+  fuzzOverrides: FuzzOverrides,
 ): Promise<void> {
   await ensureWebBrowsersReady(configPath, modes);
   const modeSummaryTotal = resolveConfiguredModeTotal(configPath);
@@ -918,6 +1150,8 @@ async function runTestModes(
       buildFeatureToggles,
       modeSummaryTotal,
       fileSummaryTotal,
+      fuzzEnabled,
+      fuzzOverrides,
     );
     process.exit(failed ? 1 : 0);
     return;
@@ -935,6 +1169,16 @@ async function runTestModes(
       modeName,
     );
     if (modeFailed) failed = true;
+    if (fuzzEnabled) {
+      const fuzzResults = await fuzz(
+        configPath,
+        selectors,
+        modeName,
+        fuzzOverrides,
+      );
+      printFuzzSummary(fuzzResults, modeName);
+      if (fuzzResults.some((item) => item.crashes > 0)) failed = true;
+    }
   }
   process.exit(failed ? 1 : 0);
 }
@@ -954,6 +1198,8 @@ async function runTestMatrix(
   buildFeatureToggles: BuildFeatureToggles,
   modeSummaryTotal: number,
   fileSummaryTotal: number,
+  fuzzEnabled: boolean,
+  fuzzOverrides: FuzzOverrides,
 ): Promise<boolean> {
   const files = await resolveSelectedFiles(configPath, selectors);
   if (!files.length) {
@@ -1065,7 +1311,34 @@ async function runTestMatrix(
     reports: summary.reports,
     modeSummary: buildModeSummary(modeState, modeSummaryTotal),
   });
-  return allResults.some((result) => result.failed);
+  let failed = allResults.some((result) => result.failed);
+  if (fuzzEnabled) {
+    const fuzzResults: FuzzResult[] = [];
+    for (const modeName of modes) {
+      fuzzResults.push(
+        ...(await fuzz(configPath, selectors, modeName, fuzzOverrides)),
+      );
+    }
+    printFuzzSummary(fuzzResults);
+    if (fuzzResults.some((item) => item.crashes > 0)) failed = true;
+  }
+  return failed;
+}
+
+async function runFuzzModes(
+  configPath: string | undefined,
+  selectors: string[],
+  modes: (string | undefined)[],
+  rawArgs: string[],
+): Promise<void> {
+  const overrides = resolveFuzzOverrides(rawArgs, "fuzz");
+  let failed = false;
+  for (const modeName of modes) {
+    const results = await fuzz(configPath, selectors, modeName, overrides);
+    printFuzzSummary(results, modeName);
+    if (results.some((item) => item.crashes > 0)) failed = true;
+  }
+  process.exit(failed ? 1 : 0);
 }
 
 function renderMatrixFileResult(
@@ -1138,6 +1411,33 @@ function formatMatrixAverageTime(results: RunResult[]): string {
       : 0;
   }
   return `${(total / results.length).toFixed(1)}ms`;
+}
+
+function printFuzzSummary(results: FuzzResult[], modeName?: string): void {
+  const modeLabel = modeName ?? "default";
+  const executions = results.reduce((sum, item) => sum + item.runs, 0);
+  const crashes = results.reduce((sum, item) => sum + item.crashes, 0);
+  const totalTime = results.reduce((sum, item) => sum + item.time, 0);
+  const badge =
+    crashes > 0
+      ? chalk.bgRed.white(" FUZZ FAIL ")
+      : chalk.bgGreenBright.black(" FUZZ PASS ");
+  process.stdout.write(
+    `${badge} ${modeLabel} ${chalk.dim(`${results.length} targets, ${executions} runs, ${formatTime(totalTime)}`)}\n`,
+  );
+  for (const result of results) {
+    const itemBadge =
+      result.crashes > 0
+        ? chalk.bgRed.white(" FAIL ")
+        : chalk.bgGreenBright.black(" PASS ");
+    const crashSuffix =
+      result.crashFiles.length > 0
+        ? ` ${chalk.dim(`-> ${result.crashFiles[0]}`)}`
+        : "";
+    process.stdout.write(
+      `  ${itemBadge} ${path.basename(result.file)} ${chalk.dim(`${result.runs} runs, seed ${result.seed}`)}${crashSuffix}\n`,
+    );
+  }
 }
 
 function buildModeSummary(
@@ -1268,6 +1568,19 @@ async function resolveSelectedFiles(
   return [...new Set(specs)].sort((a, b) => a.localeCompare(b));
 }
 
+async function resolveSelectedFuzzFiles(
+  configPath: string | undefined,
+  selectors: string[],
+): Promise<string[]> {
+  const resolvedConfigPath =
+    configPath ?? path.join(process.cwd(), "./as-test.config.json");
+  const config = loadConfig(resolvedConfigPath, false);
+  const patterns = resolveFuzzPatterns(config.fuzz.input, selectors);
+  const matches = await glob(patterns);
+  const fuzzFiles = matches.filter((file) => file.endsWith(".fuzz.ts"));
+  return [...new Set(fuzzFiles)].sort((a, b) => a.localeCompare(b));
+}
+
 async function buildNoTestFilesMatchedError(
   configPath: string | undefined,
   selectors: string[],
@@ -1386,6 +1699,30 @@ function resolveInputPatterns(
         patterns.add(
           path.join(path.dirname(configuredInput), `${base}.spec.ts`),
         );
+      }
+      continue;
+    }
+    patterns.add(selector);
+  }
+  return [...patterns];
+}
+
+function resolveFuzzPatterns(
+  configured: string[] | string,
+  selectors: string[],
+): string[] {
+  const configuredInputs = Array.isArray(configured)
+    ? configured
+    : [configured];
+  if (!selectors.length) return configuredInputs;
+
+  const patterns = new Set<string>();
+  for (const selector of expandSelectors(selectors)) {
+    if (!selector) continue;
+    if (isBareSuiteSelector(selector)) {
+      const base = selector.replace(/\.fuzz\.ts$/, "").replace(/\.ts$/, "");
+      for (const configuredInput of configuredInputs) {
+        patterns.add(path.join(path.dirname(configuredInput), `${base}.fuzz.ts`));
       }
       continue;
     }
@@ -1659,7 +1996,7 @@ function hasExecutable(command: string): boolean {
 }
 
 async function listExecutionPlan(
-  command: "build" | "run" | "test",
+  command: "build" | "run" | "test" | "fuzz",
   configPath: string | undefined,
   selectors: string[],
   modes: (string | undefined)[],
@@ -1705,11 +2042,18 @@ async function listExecutionPlan(
 
   if (!listFlags.list) return;
 
-  const files = await resolveSelectedFiles(configPath, selectors);
+  const files =
+    command == "fuzz"
+      ? await resolveSelectedFuzzFiles(configPath, selectors)
+      : await resolveSelectedFiles(configPath, selectors);
   if (!files.length) {
     const scope =
       selectors.length > 0 ? selectors.join(", ") : "configured input patterns";
-    throw new Error(`No test files matched: ${scope}`);
+    throw new Error(
+      command == "fuzz"
+        ? `No fuzz files matched: ${scope}`
+        : `No test files matched: ${scope}`,
+    );
   }
   const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
 
@@ -1724,9 +2068,11 @@ async function listExecutionPlan(
     const active = applied.config;
     const modeLabel = modeName ?? "default";
     process.stdout.write(chalk.bold(`Mode: ${modeLabel}\n`));
-    process.stdout.write(`  target: ${active.buildOptions.target}\n`);
+    process.stdout.write(
+      `  target: ${command == "fuzz" ? "bindings" : active.buildOptions.target}\n`,
+    );
     process.stdout.write(`  outDir: ${active.outDir}\n`);
-    if (command != "build") {
+    if (command == "run" || command == "test") {
       process.stdout.write(`  runtime: ${active.runOptions.runtime.cmd}\n`);
     }
     const envOverrides = {
@@ -1748,7 +2094,7 @@ async function listExecutionPlan(
     for (const file of files) {
       const artifactName = resolveArtifactFileNameForPreview(
         file,
-        active.buildOptions.target,
+        command == "fuzz" ? "bindings" : active.buildOptions.target,
         modeName,
         duplicateSpecBasenames,
       );

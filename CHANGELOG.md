@@ -17,6 +17,13 @@
 ### Docs
 
 - docs: remove outdated `run()` calls from README usage snippets where they are no longer needed.
+- docs: add README and schema coverage for `ast fuzz`, `ast test --fuzz`, and the new top-level `fuzz` config block.
+
+### Fuzzing
+
+- feat: add `ast fuzz` to build and run dedicated `*.fuzz.ts` bindings targets.
+- feat: add `ast test --fuzz` to run fuzz targets after the normal spec pass and print a combined console summary.
+- feat: add top-level `fuzz` config for target discovery, entry name, corpus/crash directories, and driver overrides.
 
 ## 2026-03-11 - v1.0.1
 
