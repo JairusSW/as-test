@@ -119,22 +119,24 @@ async function runFuzzTarget(
   const module = new WebAssembly.Module(binary);
 
   let report: FuzzPayload | null = null;
-  const captured = captureFrames((type, payload) => {
-    if (type != 0x03) return;
-    report = JSON.parse(payload.toString("utf8")) as FuzzPayload;
+  const captured = captureFrames((type, payload, respond) => {
+    if (type == 0x02) {
+      const event = JSON.parse(payload.toString("utf8")) as Record<string, unknown>;
+      if (String(event.kind ?? "") == "fuzz:config") {
+        respond(`${config.runs}\n${config.seed}`);
+      } else {
+        respond("");
+      }
+      return;
+    }
+    if (type == 0x03) {
+      report = JSON.parse(payload.toString("utf8")) as FuzzPayload;
+    }
   });
-  const globalKey = "__as_test_request_fuzz_config";
-  const previousConfig = Reflect.get(globalThis, globalKey);
 
   try {
-    Reflect.set(globalThis, globalKey, () => `${config.runs}\n${config.seed}`);
     await helper.instantiate(module, {});
   } catch (error) {
-    if (previousConfig === undefined) {
-      Reflect.deleteProperty(globalThis, globalKey);
-    } else {
-      Reflect.set(globalThis, globalKey, previousConfig);
-    }
     const passthrough = captured.restore();
     const crashMessage = error instanceof Error ? error.stack ?? error.message : String(error);
     const crash = persistCrashRecord(config.crashDir, {
@@ -158,11 +160,6 @@ async function runFuzzTarget(
     };
   }
 
-  if (previousConfig === undefined) {
-    Reflect.deleteProperty(globalThis, globalKey);
-  } else {
-    Reflect.set(globalThis, globalKey, previousConfig);
-  }
   const passthrough = captured.restore();
   if (!report?.fuzzers) {
     const crash = persistCrashRecord(config.crashDir, {
@@ -199,13 +196,34 @@ async function runFuzzTarget(
 }
 
 function captureFrames(
-  onFrame: (type: number, payload: Buffer) => void,
+  onFrame: (type: number, payload: Buffer, respond: (body: string) => void) => void,
 ): {
   restore(): { stdout: string };
 } {
   const originalWrite = process.stdout.write.bind(process.stdout);
+  const originalRead =
+    typeof process.stdin.read == "function"
+      ? process.stdin.read.bind(process.stdin)
+      : null;
   let buffer = Buffer.alloc(0);
   let passthrough = Buffer.alloc(0);
+  let replies = Buffer.alloc(0);
+
+  function encodeReply(body: string): Buffer {
+    const payload = Buffer.from(body, "utf8");
+    const header = Buffer.alloc(HEADER_SIZE);
+    MAGIC.copy(header, 0);
+    header.writeUInt8(0x02, 4);
+    header.writeUInt32LE(payload.length, 5);
+    return Buffer.concat([header, payload]);
+  }
+
+  function dequeueReply(length: number): ArrayBuffer {
+    const available = Math.min(length, replies.length);
+    const view = replies.subarray(0, available);
+    replies = replies.subarray(available);
+    return view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength);
+  }
 
   process.stdout.write = ((chunk: unknown, ...args: unknown[]) => {
     if (!(chunk instanceof ArrayBuffer) && !Buffer.isBuffer(chunk)) {
@@ -236,13 +254,28 @@ function captureFrames(
       if (buffer.length < frameSize) return true;
       const payload = buffer.subarray(HEADER_SIZE, frameSize);
       buffer = buffer.subarray(frameSize);
-      onFrame(type, payload);
+      onFrame(type, payload, (body) => {
+        replies = Buffer.concat([replies, encodeReply(body)]);
+      });
     }
   }) as typeof process.stdout.write;
+  process.stdin.read = ((size?: number | null) => {
+    const max = Number(size ?? 0);
+    if (max > 0 && replies.length) {
+      return dequeueReply(max);
+    }
+    if (originalRead) {
+      return originalRead(size);
+    }
+    return null;
+  }) as typeof process.stdin.read;
 
   return {
     restore() {
       process.stdout.write = originalWrite;
+      if (originalRead) {
+        process.stdin.read = originalRead as typeof process.stdin.read;
+      }
       return {
         stdout: passthrough.toString("utf8"),
       };

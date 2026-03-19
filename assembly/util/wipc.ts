@@ -49,6 +49,11 @@ export class SnapshotReply {
   public expected: string = "";
 }
 
+export class FuzzConfigReply {
+  public runs: i32 = 1000;
+  public seed: u64 = 1337;
+}
+
 export function sendAssertionFailure(
   key: string,
   instr: string,
@@ -116,6 +121,26 @@ export function snapshotAssert(key: string, actual: string): SnapshotReply {
   const reply = new SnapshotReply();
   reply.ok = body.slice(0, sep) == "1";
   reply.expected = body.slice(sep + 1);
+  return reply;
+}
+
+export function requestFuzzConfig(): FuzzConfigReply {
+  sendJson(MessageType.CALL, `{"kind":"fuzz:config"}`);
+  const response = readFrame();
+  if (response == null || response.type != MessageType.CALL) {
+    return new FuzzConfigReply();
+  }
+  const body = String.UTF8.decode(response.payload);
+  if (!body.length) {
+    return new FuzzConfigReply();
+  }
+  const sep = body.indexOf("\n");
+  if (sep < 0) return new FuzzConfigReply();
+  const reply = new FuzzConfigReply();
+  const runs = body.slice(0, sep);
+  const seed = body.slice(sep + 1);
+  if (runs.length) reply.runs = I32.parseInt(runs);
+  if (seed.length) reply.seed = U64.parseInt(seed);
   return reply;
 }
 

@@ -9,7 +9,12 @@ import {
   CoverPoint,
 } from "as-test/assembly/coverage";
 import { Log } from "./src/log";
-import { sendFileEnd, sendFileStart, sendReport } from "./util/wipc";
+import {
+  requestFuzzConfig as requestHostFuzzConfig,
+  sendFileEnd,
+  sendFileStart,
+  sendReport,
+} from "./util/wipc";
 import { quote } from "./util/json";
 import {
   createFuzzer,
@@ -399,15 +404,10 @@ function runFuzzers(): void {
 }
 
 function requestFuzzConfig(): FuzzConfig {
-  const reply = __as_test_request_fuzz_config();
   const out = new FuzzConfig();
-  const parts = reply.split("\n");
-  if (parts.length >= 1 && parts[0].length) {
-    out.runs = I32.parseInt(parts[0]);
-  }
-  if (parts.length >= 2 && parts[1].length) {
-    out.seed = U64.parseInt(parts[1]);
-  }
+  const reply = requestHostFuzzConfig();
+  out.runs = reply.runs;
+  out.seed = reply.seed;
   return out;
 }
 
@@ -563,10 +563,6 @@ function snapshotKey(): string {
   const path = parts.join(" > ");
   return FILE + "::" + path + "::" + suite.tests.length.toString();
 }
-
-// @ts-ignore
-@external("env", "__as_test_request_fuzz_config")
-declare function __as_test_request_fuzz_config(): string;
 
 export class Result {
   public name: string;
