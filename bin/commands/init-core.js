@@ -575,8 +575,9 @@ function ensureGitignoreIncludesAsTestDirs(root, summary) {
     const entries = [
         "# Include essential as-test artifacts",
         "!.as-test/",
-        ".as-test/runners/",
-        ".as-test/snapshots/",
+        ".as-test/*",
+        "!.as-test/runners/",
+        "!.as-test/snapshots/",
     ];
     const existed = existsSync(fullPath);
     const source = existed ? readFileSync(fullPath, "utf8") : "";

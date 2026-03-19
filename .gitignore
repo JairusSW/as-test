@@ -2,8 +2,9 @@ node_modules
 *.lock
 build
 !.as-test/
-.as-test/runners/
-.as-test/snapshots/
+.as-test/*
+!.as-test/runners/
+!.as-test/snapshots/
 pnpm-lock.yaml
 package-lock.json
 .vscode
