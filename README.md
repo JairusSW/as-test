@@ -7,6 +7,7 @@
 
 - [Why as-test](#why-as-test)
 - [Installation](#installation)
+- [Docs](#docs)
 - [Examples](#examples)
 - [Writing Tests](#writing-tests)
 - [Fuzzing](#fuzzing)
@@ -52,6 +53,22 @@ Alternatively, you can install it manually:
 ```bash
 npm install as-test --save-dev
 ```
+
+## Docs
+
+Deeper guides live in [docs/](./docs/README.md):
+
+- [Getting Started](./docs/getting-started.md)
+- [Writing Tests](./docs/writing-tests.md)
+- [Fuzzing](./docs/fuzzing.md)
+- [Mocking](./docs/mocking.md)
+- [Snapshots](./docs/snapshots.md)
+- [Coverage](./docs/coverage.md)
+- [Custom Reporters](./docs/reporters.md)
+- [Assertions](./docs/assertions.md)
+- [Configuration](./docs/configuration.md)
+- [CLI Guide](./docs/cli.md)
+- [Setup Diagnostics](./docs/doctor.md)
 
 ## Examples
 
@@ -181,6 +198,17 @@ export function fuzz(data: Uint8Array): void {
 }
 ```
 
+Built-in argument generation currently supports common exported parameter types:
+
+- `Uint8Array`
+- `ArrayBuffer`
+- `string`
+- `number`
+- `Array<number>`
+- `Array<boolean>`
+- `Array<string>`
+- typed arrays like `Int32Array`, `Uint16Array`, `Float64Array`
+
 Commands:
 
 ```bash
@@ -199,6 +227,49 @@ Behavior:
 - seed corpus inputs are loaded from `fuzz.corpusDir/<target-name>/`
 - fuzz target files should export a function matching `export function fuzz(data: Uint8Array): void`
 - per-target overrides are available from the CLI via `--runs`, `--seed`, `--max-input-bytes`, and `--entry`
+
+### Custom Generators
+
+If built-in argument generation is not enough, add a sibling generator module next to the target:
+
+```text
+assembly/__fuzz__/parser.fuzz.ts
+assembly/__fuzz__/parser.fuzz.gen.js
+```
+
+Example target:
+
+```ts
+export function fuzz(input: string, flags: Array<number>): void {
+  // ...
+}
+```
+
+Example generator:
+
+```js
+export function generate(ctx) {
+  const text = ctx.helpers.string(ctx.bytes);
+  const flags = ctx.helpers.array.numbers(ctx.bytes.subarray(0, 16));
+  return [text, flags];
+}
+```
+
+Generator behavior:
+
+- export `generate(context)` or a default function
+- return one argument value for single-parameter targets
+- return an array of arguments for multi-parameter targets
+- `context` includes `seed`, `bytes`, `rand`, inferred target args, and `helpers`
+
+Available helpers:
+
+- `helpers.bytes(input)`
+- `helpers.buffer(input)`
+- `helpers.string(input)`
+- `helpers.typedArray(typeName, input)`
+- `helpers.number.i32(input)` / `helpers.number.u32(input)` / `helpers.number.f64(input)` / `helpers.number.bool(input)`
+- `helpers.array.numbers(input)` / `helpers.array.booleans(input)` / `helpers.array.strings(input)`
 
 ## Setup Diagnostics
 

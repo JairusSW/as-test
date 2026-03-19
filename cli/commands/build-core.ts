@@ -21,6 +21,7 @@ export type BuildFeatureToggles = {
 
 export type BuildConfigOverrides = {
   target?: string;
+  args?: string[];
 };
 
 type BuildInvocation = {
@@ -44,6 +45,9 @@ export async function build(
   );
   if (overrides.target) {
     config.buildOptions.target = overrides.target;
+  }
+  if (overrides.args?.length) {
+    config.buildOptions.args = [...config.buildOptions.args, ...overrides.args];
   }
 
   if (!hasCustomBuildCommand(config)) {

@@ -1,10 +1,4 @@
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  writeFileSync,
-} from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import * as path from "path";
 import { pathToFileURL } from "url";
 import { glob } from "glob";
@@ -13,10 +7,28 @@ import { applyMode, loadConfig } from "../util.js";
 import type { FuzzConfig } from "../types.js";
 
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
+const MAGIC = Buffer.from("WIPC");
+const HEADER_SIZE = 9;
 
-export type FuzzOverrides = Partial<
-  Pick<FuzzConfig, "entry" | "runs" | "seed" | "maxInputBytes">
->;
+export type FuzzOverrides = Partial<Pick<FuzzConfig, "runs" | "seed">>;
+
+export type FuzzerRunResult = {
+  name: string;
+  runs: number;
+  passed: number;
+  failed: number;
+  crashed: number;
+  time: {
+    start: number;
+    end: number;
+  };
+  failure?: {
+    instr: string;
+    left: string;
+    right: string;
+    message: string;
+  };
+};
 
 export type FuzzResult = {
   file: string;
@@ -26,6 +38,11 @@ export type FuzzResult = {
   crashFiles: string[];
   seed: number;
   time: number;
+  fuzzers: FuzzerRunResult[];
+};
+
+type FuzzPayload = {
+  fuzzers?: FuzzerRunResult[];
 };
 
 export async function fuzz(
@@ -51,9 +68,13 @@ export async function fuzz(
   const duplicateBasenames = resolveDuplicateBasenames(inputFiles);
   const results: FuzzResult[] = [];
   for (const file of inputFiles) {
-    await build(configPath, [file], modeName, { coverage: false }, {
-      target: "bindings",
-    });
+    await build(
+      configPath,
+      [file],
+      modeName,
+      { coverage: false },
+      { target: "bindings", args: ["--use", "AS_TEST_FUZZ=1"] },
+    );
     results.push(
       await runFuzzTarget(
         file,
@@ -91,115 +112,123 @@ async function runFuzzTarget(
   const artifact = resolveArtifactFileName(file, duplicateBasenames, modeName);
   const wasmPath = path.resolve(process.cwd(), outDir, artifact);
   const jsPath = resolveBindingsHelperPath(wasmPath);
-  const helper = await import(pathToFileURL(jsPath).href);
+  const helper = await import(pathToFileURL(jsPath).href + `?t=${Date.now()}`);
   const binary = readFileSync(wasmPath);
   const module = new WebAssembly.Module(binary);
-  const crashFiles: string[] = [];
-  const corpus = loadCorpusInputs(config, file);
-  let crashes = 0;
 
-  for (let iteration = 0; iteration < config.runs; iteration++) {
-    const seed = (config.seed + iteration) >>> 0;
-    const input = mutateInput(corpus, seed, config.maxInputBytes);
-    try {
-      const exports = await helper.instantiate(module, {});
-      const target = exports?.[config.entry];
-      if (typeof target != "function") {
-        throw new Error(`fuzz export "${config.entry}" not found`);
-      }
-      target(input);
-      if (typeof exports.__collect == "function") {
-        exports.__collect();
-      }
-    } catch (error) {
-      crashes++;
-      crashFiles.push(
-        persistCrash(config, file, iteration, seed, input, error),
-      );
-      break;
+  let report: FuzzPayload | null = null;
+  const restoreStdout = captureFrames((type, payload) => {
+    if (type != 0x03) return;
+    report = JSON.parse(payload.toString("utf8")) as FuzzPayload;
+  });
+  const globalKey = "__as_test_request_fuzz_config";
+  const previousConfig = Reflect.get(globalThis, globalKey);
+
+  try {
+    Reflect.set(globalThis, globalKey, () => `${config.runs}\n${config.seed}`);
+    await helper.instantiate(module, {});
+  } catch (error) {
+    if (previousConfig === undefined) {
+      Reflect.deleteProperty(globalThis, globalKey);
+    } else {
+      Reflect.set(globalThis, globalKey, previousConfig);
     }
+    restoreStdout();
+    const crashMessage = error instanceof Error ? error.stack ?? error.message : String(error);
+    return {
+      file,
+      target: path.basename(file),
+      runs: config.runs,
+      crashes: 1,
+      crashFiles: [persistCrash(config, file, crashMessage)],
+      seed: config.seed,
+      time: Date.now() - startedAt,
+      fuzzers: [],
+    };
+  }
+
+  if (previousConfig === undefined) {
+    Reflect.deleteProperty(globalThis, globalKey);
+  } else {
+    Reflect.set(globalThis, globalKey, previousConfig);
+  }
+  restoreStdout();
+  if (!report?.fuzzers) {
+    throw new Error(`missing fuzz report payload from ${path.basename(file)}`);
   }
 
   return {
     file,
-    target: `${path.basename(file)}:${config.entry}`,
-    runs: config.runs,
-    crashes,
-    crashFiles,
+    target: path.basename(file),
+    runs: report.fuzzers.reduce((sum, item) => sum + item.runs, 0),
+    crashes: report.fuzzers.reduce((sum, item) => sum + item.crashed, 0),
+    crashFiles: [],
     seed: config.seed,
     time: Date.now() - startedAt,
+    fuzzers: report.fuzzers,
   };
 }
 
-function loadCorpusInputs(config: FuzzConfig, file: string): Uint8Array[] {
-  const stem = path.basename(file, ".fuzz.ts");
-  const dir = path.resolve(process.cwd(), config.corpusDir, stem);
-  if (!existsSync(dir)) return [new Uint8Array(0)];
-  const entries = readdirSync(dir)
-    .filter((entry) => !entry.startsWith("."))
-    .sort((a, b) => a.localeCompare(b));
-  if (!entries.length) return [new Uint8Array(0)];
-  return entries.map(
-    (entry) => new Uint8Array(readFileSync(path.join(dir, entry))),
-  );
+function captureFrames(
+  onFrame: (type: number, payload: Buffer) => void,
+): () => void {
+  const originalWrite = process.stdout.write.bind(process.stdout);
+  let buffer = Buffer.alloc(0);
+
+  process.stdout.write = ((chunk: unknown, ...args: unknown[]) => {
+    if (!(chunk instanceof ArrayBuffer) && !Buffer.isBuffer(chunk)) {
+      return originalWrite(chunk as never, ...(args as []));
+    }
+    const incoming = Buffer.from(chunk as ArrayBuffer);
+    buffer = Buffer.concat([buffer, incoming]);
+    while (true) {
+      const index = buffer.indexOf(MAGIC);
+      if (index == -1) {
+        if (buffer.length) {
+          originalWrite(buffer);
+          buffer = Buffer.alloc(0);
+        }
+        return true;
+      }
+      if (index > 0) {
+        originalWrite(buffer.subarray(0, index));
+        buffer = buffer.subarray(index);
+      }
+      if (buffer.length < HEADER_SIZE) return true;
+      const type = buffer.readUInt8(4);
+      const length = buffer.readUInt32LE(5);
+      const frameSize = HEADER_SIZE + length;
+      if (buffer.length < frameSize) return true;
+      const payload = buffer.subarray(HEADER_SIZE, frameSize);
+      buffer = buffer.subarray(frameSize);
+      onFrame(type, payload);
+    }
+  }) as typeof process.stdout.write;
+
+  return () => {
+    process.stdout.write = originalWrite;
+  };
 }
 
-function mutateInput(
-  corpus: Uint8Array[],
-  seed: number,
-  maxInputBytes: number,
-): Uint8Array {
-  const rand = mulberry32(seed);
-  const base = corpus[Math.floor(rand() * corpus.length)] ?? new Uint8Array(0);
-  const nextLength = Math.max(
-    1,
-    Math.min(
-      maxInputBytes,
-      base.length + Math.floor(rand() * 9) - Math.floor(rand() * 5),
-    ),
-  );
-  const out = new Uint8Array(nextLength);
-  for (let i = 0; i < out.length; i++) {
-    out[i] = i < base.length ? base[i]! : Math.floor(rand() * 256);
-  }
-  const edits = Math.max(1, Math.min(8, Math.floor(rand() * 8) + 1));
-  for (let i = 0; i < edits; i++) {
-    out[Math.floor(rand() * out.length)] = Math.floor(rand() * 256);
-  }
-  return out;
-}
-
-function persistCrash(
-  config: FuzzConfig,
-  file: string,
-  iteration: number,
-  seed: number,
-  input: Uint8Array,
-  error: unknown,
-): string {
+function persistCrash(config: FuzzConfig, file: string, error: string): string {
   const stem = path.basename(file, ".fuzz.ts");
   const crashDir = path.resolve(process.cwd(), config.crashDir, stem);
   mkdirSync(crashDir, { recursive: true });
-  const fileBase = String(iteration).padStart(6, "0");
-  const binPath = path.join(crashDir, `${fileBase}.bin`);
+  const fileBase = "crash";
   const jsonPath = path.join(crashDir, `${fileBase}.json`);
-  writeFileSync(binPath, Buffer.from(input));
   writeFileSync(
     jsonPath,
     JSON.stringify(
       {
         file,
-        seed,
-        iteration,
-        entry: config.entry,
-        error: error instanceof Error ? error.stack ?? error.message : String(error),
-        inputFile: path.relative(process.cwd(), binPath),
+        seed: config.seed,
+        error,
       },
       null,
       2,
     ),
   );
-  return binPath;
+  return jsonPath;
 }
 
 function resolveFuzzInputPatterns(
@@ -305,15 +334,4 @@ function isBareSelector(selector: string): boolean {
     !selector.includes("\\") &&
     !/[*?[\]{}]/.test(selector)
   );
-}
-
-function mulberry32(seed: number): () => number {
-  let value = seed >>> 0;
-  return () => {
-    value += 0x6d2b79f5;
-    let current = value;
-    current = Math.imul(current ^ (current >>> 15), current | 1);
-    current ^= current + Math.imul(current ^ (current >>> 7), current | 61);
-    return ((current ^ (current >>> 14)) >>> 0) / 4294967296;
-  };
 }

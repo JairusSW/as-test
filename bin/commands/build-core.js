@@ -13,6 +13,9 @@ export async function build(configPath = DEFAULT_CONFIG_PATH, selectors = [], mo
     if (overrides.target) {
         config.buildOptions.target = overrides.target;
     }
+    if (overrides.args?.length) {
+        config.buildOptions.args = [...config.buildOptions.args, ...overrides.args];
+    }
     if (!hasCustomBuildCommand(config)) {
         ensureDeps(config);
     }

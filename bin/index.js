@@ -306,7 +306,6 @@ function printCommandHelp(command) {
         process.stdout.write("  --fuzz                   Run fuzz targets after the normal test pass\n");
         process.stdout.write("  --fuzz-runs <n>          Override fuzz iteration count for this run\n");
         process.stdout.write("  --fuzz-seed <n>          Override fuzz seed for this run\n");
-        process.stdout.write("  --fuzz-max-input-bytes <n> Override fuzz input size cap for this run\n");
         process.stdout.write("  --reporter <name|path>   Use built-in reporter (default|tap) or custom module path\n");
         process.stdout.write("  --tap                    Shortcut for --reporter tap\n");
         process.stdout.write("  --verbose                Keep expanded suite/test lines and live updates\n");
@@ -324,8 +323,6 @@ function printCommandHelp(command) {
         process.stdout.write("  --mode <name[,name...]>  Run one or multiple named config modes\n");
         process.stdout.write("  --runs <n>               Override fuzz iteration count\n");
         process.stdout.write("  --seed <n>               Override fuzz seed\n");
-        process.stdout.write("  --max-input-bytes <n>    Override fuzz input size cap\n");
-        process.stdout.write("  --entry <name>           Override exported fuzz entry name\n");
         process.stdout.write("  --list                   Preview resolved fuzz files without running\n");
         process.stdout.write("  --list-modes             Preview configured and selected mode names\n");
         process.stdout.write("  --help, -h               Show this help\n");
@@ -421,23 +418,15 @@ function resolveCommandArgs(rawArgs, command) {
         }
         if (arg == "--runs" ||
             arg == "--seed" ||
-            arg == "--entry" ||
-            arg == "--max-input-bytes" ||
             arg == "--fuzz-runs" ||
-            arg == "--fuzz-seed" ||
-            arg == "--fuzz-entry" ||
-            arg == "--fuzz-max-input-bytes") {
+            arg == "--fuzz-seed") {
             i++;
             continue;
         }
         if (arg.startsWith("--runs=") ||
             arg.startsWith("--seed=") ||
-            arg.startsWith("--entry=") ||
-            arg.startsWith("--max-input-bytes=") ||
             arg.startsWith("--fuzz-runs=") ||
-            arg.startsWith("--fuzz-seed=") ||
-            arg.startsWith("--fuzz-entry=") ||
-            arg.startsWith("--fuzz-max-input-bytes=")) {
+            arg.startsWith("--fuzz-seed=")) {
             continue;
         }
         if (arg.startsWith("-")) {
@@ -493,22 +482,11 @@ function resolveFuzzOverrides(rawArgs, command) {
             ? {
                 runs: "--runs",
                 seed: "--seed",
-                maxInputBytes: "--max-input-bytes",
-                entry: "--entry",
             }
             : {
                 runs: "--fuzz-runs",
                 seed: "--fuzz-seed",
-                maxInputBytes: "--fuzz-max-input-bytes",
-                entry: "--fuzz-entry",
             };
-        const entry = parseStringFlag(rawArgs, i, direct.entry);
-        if (entry) {
-            out.entry = entry.value;
-            if (entry.consumeNext)
-                i++;
-            continue;
-        }
         const runs = parseNumberFlag(rawArgs, i, direct.runs);
         if (runs) {
             out.runs = runs.number;
@@ -522,12 +500,6 @@ function resolveFuzzOverrides(rawArgs, command) {
             if (seed.consumeNext)
                 i++;
             continue;
-        }
-        const maxInputBytes = parseNumberFlag(rawArgs, i, direct.maxInputBytes);
-        if (maxInputBytes) {
-            out.maxInputBytes = maxInputBytes.number;
-            if (maxInputBytes.consumeNext)
-                i++;
         }
     }
     return out;

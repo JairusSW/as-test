@@ -17,13 +17,18 @@
 ### Docs
 
 - docs: remove outdated `run()` calls from README usage snippets where they are no longer needed.
-- docs: add README and schema coverage for `ast fuzz`, `ast test --fuzz`, and the new top-level `fuzz` config block.
+- docs: add a `docs/` directory with focused guides for setup, tests, fuzzing, mocking, snapshots, coverage, reporters, assertions, config, CLI usage, and diagnostics.
+- docs: link the new docs index from the main README.
 
 ### Fuzzing
 
 - feat: add `ast fuzz` to build and run dedicated `*.fuzz.ts` bindings targets.
 - feat: add `ast test --fuzz` to run fuzz targets after the normal spec pass and print a combined console summary.
-- feat: add top-level `fuzz` config for target discovery, entry name, corpus/crash directories, and driver overrides.
+- feat: add an AssemblyScript-first fuzz API via `fuzz("name", callback).generate((seed, run) => ...)`.
+- feat: add built-in `FuzzSeed` generators for booleans, numbers, bytes, strings, arrays, and picks.
+- feat: treat failed expectations and `false` returns as fuzz failures, while traps and throws are reported as crashes.
+- feat: add top-level `fuzz` config for fuzz target discovery and default driver settings.
+- fix: auto-inject `run()` correctly for fuzz files without being confused by generator-local `run(...)` parameters.
 
 ## 2026-03-11 - v1.0.1
 

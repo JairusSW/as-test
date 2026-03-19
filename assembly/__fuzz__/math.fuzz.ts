@@ -1,14 +1,12 @@
-export function fuzz(data: Uint8Array): void {
-  let sum: u32 = 0;
-  for (let i = 0; i < data.length; i++) {
-    sum += data[i];
-  }
+import { expect, fuzz, FuzzSeed } from "as-test";
 
-  if (data.length >= 4) {
-    const left = <u32>data[0] + <u32>data[1];
-    const right = <u32>data[2] + <u32>data[3];
-    if (left + right != sum && data.length == 4) {
-      unreachable();
-    }
-  }
-}
+fuzz("bounded integer addition", (left: i32, right: i32): bool => {
+  const sum = left + right;
+  expect(sum - right).toBe(left);
+  return sum >= i32.MIN_VALUE;
+}).generate((seed: FuzzSeed, run: (left: i32, right: i32) => bool): void => {
+  run(
+    seed.i32({ min: -1000, max: 1000 }),
+    seed.i32({ min: -1000, max: 1000 }),
+  );
+});

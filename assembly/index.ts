@@ -11,8 +11,17 @@ import {
 import { Log } from "./src/log";
 import { sendFileEnd, sendFileStart, sendReport } from "./util/wipc";
 import { quote } from "./util/json";
+import {
+  createFuzzer,
+  FuzzerBase,
+  FuzzSeed,
+  FuzzerResult,
+  prepareFuzzIteration,
+} from "./src/fuzz";
+export { FuzzSeed } from "./src/fuzz";
 
 let entrySuites: Suite[] = [];
+let entryFuzzers: FuzzerBase[] = [];
 
 // @ts-ignore
 const FILE = isDefined(ENTRY_FILE) ? ENTRY_FILE : "unknown";
@@ -127,6 +136,15 @@ export function xtest(description: string, callback: () => void): void {
  */
 export function xit(description: string, callback: () => void): void {
   registerSuite(description, callback, "xit");
+}
+
+export function fuzz<T extends Function>(
+  description: string,
+  callback: T,
+): FuzzerBase {
+  const entry = createFuzzer(description, callback);
+  entryFuzzers.push(entry);
+  return entry;
 }
 
 /**
@@ -339,6 +357,11 @@ class RunOptions {
  * ```
  */
 export function run(options: RunOptions = new RunOptions()): void {
+  // @ts-ignore
+  if (isDefined(AS_TEST_FUZZ)) {
+    runFuzzers();
+    return;
+  }
   __test_options = options;
   const time = new Time();
   let fileVerdict = "none";
@@ -372,6 +395,51 @@ export function run(options: RunOptions = new RunOptions()): void {
   report.suites = entrySuites;
   report.coverage = collectCoverage();
   sendReport(report.serialize());
+}
+
+class FuzzConfig {
+  runs: i32 = 1000;
+  seed: u64 = 1337;
+}
+
+class FuzzReport {
+  fuzzers: FuzzerResult[] = [];
+
+  serialize(): string {
+    let out = '{"fuzzers":[';
+    for (let i = 0; i < this.fuzzers.length; i++) {
+      if (i) out += ",";
+      out += unchecked(this.fuzzers[i]).serialize();
+    }
+    out += "]}";
+    return out;
+  }
+}
+
+function runFuzzers(): void {
+  __test_options = new RunOptions();
+  const config = requestFuzzConfig();
+  const report = new FuzzReport();
+  for (let i = 0; i < entryFuzzers.length; i++) {
+    const fuzzer = unchecked(entryFuzzers[i]);
+    prepareFuzzIteration();
+    const result = fuzzer.run(config.seed, config.runs);
+    report.fuzzers.push(result);
+  }
+  sendReport(report.serialize());
+}
+
+function requestFuzzConfig(): FuzzConfig {
+  const reply = __as_test_request_fuzz_config();
+  const out = new FuzzConfig();
+  const parts = reply.split("\n");
+  if (parts.length >= 1 && parts[0].length) {
+    out.runs = I32.parseInt(parts[0]);
+  }
+  if (parts.length >= 2 && parts[1].length) {
+    out.seed = U64.parseInt(parts[1]);
+  }
+  return out;
 }
 
 function registerSuite(
@@ -566,6 +634,10 @@ function saveImportSnapshot(importKey: string, version: string): void {
   }
   __mock_import_snapshots.set(snapshotKey, snapshot);
 }
+
+// @ts-ignore
+@external("env", "__as_test_request_fuzz_config")
+declare function __as_test_request_fuzz_config(): string;
 
 export class Result {
   public name: string;
