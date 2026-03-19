@@ -223,7 +223,7 @@ Behavior:
 
 - `ast fuzz` builds the selected fuzz targets with `bindings` and runs only the fuzz pass
 - `ast test --fuzz` runs the normal spec suite first, then runs fuzz targets and appends a fuzz summary to the same console report
-- crashing inputs are written to `fuzz.crashDir` as `.bin` plus `.json` metadata
+- crashing inputs and runtime crash metadata are written to `fuzz.crashDir`
 - seed corpus inputs are loaded from `fuzz.corpusDir/<target-name>/`
 - fuzz target files should export a function matching `export function fuzz(data: Uint8Array): void`
 - per-target overrides are available from the CLI via `--runs`, `--seed`, `--max-input-bytes`, and `--entry`
@@ -413,13 +413,12 @@ Example:
   },
   "fuzz": {
     "input": ["./assembly/__fuzz__/*.fuzz.ts"],
-    "entry": "fuzz",
     "runs": 1000,
     "seed": 1337,
     "maxInputBytes": 4096,
     "target": "bindings",
     "corpusDir": "./.as-test/fuzz/corpus",
-    "crashDir": "./.as-test/fuzz/crashes"
+    "crashDir": "./.as-test/crashes"
   },
   "modes": {},
   "runOptions": {
@@ -445,10 +444,9 @@ Key fields:
 - `buildOptions.target`: `wasi` or `bindings`
 - `fuzz`: fuzz target configuration used by `ast fuzz` and `ast test --fuzz`
 - `fuzz.input`: glob list of fuzz files (default `./assembly/__fuzz__/*.fuzz.ts`)
-- `fuzz.entry`: exported fuzz function name, default `fuzz`
 - `fuzz.runs` / `fuzz.seed` / `fuzz.maxInputBytes`: default driver settings for mutation count, deterministic seed, and input size cap
 - `fuzz.target`: currently must be `bindings`
-- `fuzz.corpusDir` / `fuzz.crashDir`: directories for seed inputs and crashing repro artifacts
+- `fuzz.corpusDir` / `fuzz.crashDir`: directories for seed inputs and crash artifacts
 - `modes`: named overrides for command/target/args/runtime/env/artifact directories (selected via `--mode`); `mode.env` overrides top-level `env`
 - `runOptions.runtime.cmd`: runtime command, supports `<file>` and `<name>`; if its script path is missing, as-test falls back to the default runner for the selected target
 - `runOptions.reporter`: reporter selection as a string or object

@@ -64,12 +64,11 @@ export class ReporterConfig {
 export class FuzzConfig {
     constructor() {
         this.input = ["./assembly/__fuzz__/*.fuzz.ts"];
-        this.entry = "fuzz";
         this.runs = 1000;
         this.seed = 1337;
         this.maxInputBytes = 4096;
         this.target = "bindings";
         this.corpusDir = "./.as-test/fuzz/corpus";
-        this.crashDir = "./.as-test/fuzz/crashes";
+        this.crashDir = "./.as-test/crashes";
     }
 }

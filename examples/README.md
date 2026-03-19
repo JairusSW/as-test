@@ -10,6 +10,7 @@ Each example is now a standalone project initialized with `ast init`.
 - `04-snapshots`: unnamed and named `toMatchSnapshot` usage.
 - `05-mocking-and-import-snapshots`: `mockFn`, `unmockFn`, `mockImport`, `unmockImport`, `snapshotImport`, and `restoreImport`.
 - `06-skips`: `xdescribe`, `xtest`, `xit`, and `xexpect`.
+- `07-fuzzing`: `fuzz(...)`, custom generators, `ast fuzz`, and `ast test --fuzz`.
 
 ## Run One Example
 
@@ -29,4 +30,5 @@ npm test
 ## Notes
 
 - `01` through `06` run both `wasi` and `bindings` modes.
+- `07` focuses on the fuzzing workflow and runs `ast test --fuzz`.
 - Artifacts are isolated under each example's local `.as-test/` directory.

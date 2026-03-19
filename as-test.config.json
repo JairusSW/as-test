@@ -11,13 +11,12 @@
     "input": [
       "assembly/__fuzz__/*.fuzz.ts"
     ],
-    "entry": "fuzz",
     "runs": 1000,
     "seed": 1337,
     "maxInputBytes": 4096,
     "target": "bindings",
     "corpusDir": ".as-test/fuzz/corpus",
-    "crashDir": ".as-test/fuzz/crashes"
+    "crashDir": ".as-test/crashes"
   },
   "buildOptions": {
     "target": "wasi"
@@ -27,17 +26,5 @@
       "cmd": "node .as-test/runners/default.wasi.js <file>"
     },
     "reporter": "default"
-  },
-  "modes": {
-    "web-headless": {
-      "buildOptions": {
-        "target": "web"
-      },
-      "runOptions": {
-        "runtime": {
-          "cmd": "node .as-test/runners/default.web.js --headless <file>"
-        }
-      }
-    }
   }
 }

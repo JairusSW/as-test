@@ -155,10 +155,6 @@ export function loadConfig(CONFIG_PATH: string, warn: boolean = false): Config {
       : typeof fuzzRaw.input == "string"
         ? [fuzzRaw.input]
         : new FuzzConfig().input;
-    config.fuzz.entry =
-      typeof config.fuzz.entry == "string" && config.fuzz.entry.length
-        ? config.fuzz.entry
-        : "fuzz";
     config.fuzz.runs = normalizePositiveNumber(config.fuzz.runs, 1000);
     config.fuzz.seed = normalizeNonNegativeNumber(config.fuzz.seed, 1337);
     config.fuzz.maxInputBytes = normalizePositiveNumber(
@@ -176,7 +172,7 @@ export function loadConfig(CONFIG_PATH: string, warn: boolean = false): Config {
     config.fuzz.crashDir =
       typeof config.fuzz.crashDir == "string" && config.fuzz.crashDir.length
         ? config.fuzz.crashDir
-        : "./.as-test/fuzz/crashes";
+        : "./.as-test/crashes";
     config.modes = parseModes(raw.modes, configDir);
     return config;
   }
@@ -212,7 +208,6 @@ const REPORTER_OPTION_KEYS = new Set(["name", "options", "outDir", "outFile"]);
 const OUTPUT_OPTION_KEYS = new Set(["build", "logs", "coverage", "snapshots"]);
 const FUZZ_OPTION_KEYS = new Set([
   "input",
-  "entry",
   "runs",
   "seed",
   "maxInputBytes",
@@ -682,7 +677,6 @@ function validateFuzzField(
   const obj = value as Record<string, unknown>;
   validateUnknownKeys(obj, FUZZ_OPTION_KEYS, `${pathPrefix}.${key}`, issues);
   validateInputField(obj, "input", `${pathPrefix}.${key}`, issues);
-  validateStringField(obj, "entry", `${pathPrefix}.${key}`, issues);
   validateStringField(obj, "target", `${pathPrefix}.${key}`, issues);
   validateStringField(obj, "corpusDir", `${pathPrefix}.${key}`, issues);
   validateStringField(obj, "crashDir", `${pathPrefix}.${key}`, issues);
@@ -1151,8 +1145,27 @@ export function applyMode(
   modeName?: string;
 } {
   if (!modeName) {
+    const merged = Object.assign(new Config(), config) as Config;
+    merged.buildOptions = Object.assign(new BuildOptions(), config.buildOptions);
+    merged.runOptions = Object.assign(new RunOptions(), config.runOptions);
+    merged.runOptions.runtime = Object.assign(
+      new Runtime(),
+      config.runOptions.runtime,
+    );
+    merged.buildOptions.env = { ...config.buildOptions.env };
+    merged.runOptions.env = { ...config.runOptions.env };
+    merged.outDir = appendPathSegment(config.outDir, "default");
+    if (config.logs != "none") {
+      merged.logs = appendPathSegment(config.logs, "default");
+    }
+    if (config.coverageDir != "none") {
+      merged.coverageDir = appendPathSegment(config.coverageDir, "default");
+    }
+    merged.fuzz = Object.assign(new FuzzConfig(), config.fuzz);
+    merged.fuzz.crashDir = appendPathSegment(config.fuzz.crashDir, "default");
+    merged.fuzz.corpusDir = appendPathSegment(config.fuzz.corpusDir, "default");
     return {
-      config,
+      config: merged,
       env: {
         ...process.env,
         ...config.env,

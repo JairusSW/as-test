@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { buildWebRunnerSource } from "./web-runner-source.js";
 import { createReporter as createDefaultReporter } from "../reporters/default.js";
 import { createTapReporter } from "../reporters/tap.js";
+import { persistCrashRecord } from "../crash-store.js";
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 var MessageType;
 (function (MessageType) {
@@ -233,7 +234,7 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
         const snapshotStore = new SnapshotStore(file, config.snapshotDir, duplicateSpecBasenames);
         let report;
         try {
-            report = await runProcess(invocation, snapshotStore, snapshotEnabled, updateSnapshots, reporter, reporterKind == "tap", {
+            report = await runProcess(invocation, file, config.fuzz.crashDir, options.modeName, snapshotStore, snapshotEnabled, updateSnapshots, reporter, reporterKind == "tap", {
                 ...mode.env,
                 ...config.runOptions.env,
             });
@@ -299,6 +300,7 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
                 total: totalModes,
             },
         });
+        reporter.flush?.();
     }
     const failed = Boolean(stats.failedFiles || snapshotSummary.failed);
     if (shouldExit) {
@@ -953,7 +955,7 @@ function compareCoveragePoints(a, b) {
         return a.type.localeCompare(b.type);
     return a.hash.localeCompare(b.hash);
 }
-async function runProcess(invocation, snapshots, snapshotEnabled, updateSnapshots, reporter, tapMode = false, env = process.env) {
+async function runProcess(invocation, specFile, crashDir, modeName, snapshots, snapshotEnabled, updateSnapshots, reporter, tapMode = false, env = process.env) {
     const child = spawn(invocation.command, invocation.args, {
         stdio: ["pipe", "pipe", "pipe"],
         shell: false,
@@ -962,6 +964,7 @@ async function runProcess(invocation, snapshots, snapshotEnabled, updateSnapshot
     let report = null;
     let parseError = null;
     let stderrBuffer = "";
+    let stdoutBuffer = "";
     let suppressTraceWarningLine = false;
     let spawnError = null;
     child.on("error", (error) => {
@@ -985,6 +988,7 @@ async function runProcess(invocation, snapshots, snapshotEnabled, updateSnapshot
     });
     class TestChannel extends Channel {
         onPassthrough(data) {
+            stdoutBuffer += data.toString("utf8");
             if (tapMode) {
                 process.stderr.write(data);
             }
@@ -1075,12 +1079,36 @@ async function runProcess(invocation, snapshots, snapshotEnabled, updateSnapshot
         }
     }
     if (spawnError) {
+        persistCrashRecord(crashDir, {
+            kind: "test",
+            file: specFile,
+            mode: modeName ?? "default",
+            error: spawnError.stack ?? spawnError.message,
+            stdout: stdoutBuffer,
+            stderr: stderrBuffer,
+        });
         throw spawnError;
     }
     if (parseError) {
+        persistCrashRecord(crashDir, {
+            kind: "test",
+            file: specFile,
+            mode: modeName ?? "default",
+            error: `could not parse report payload: ${parseError}`,
+            stdout: stdoutBuffer,
+            stderr: stderrBuffer,
+        });
         throw new Error(`could not parse report payload: ${parseError}`);
     }
     if (!report) {
+        persistCrashRecord(crashDir, {
+            kind: "test",
+            file: specFile,
+            mode: modeName ?? "default",
+            error: "missing report payload from test runtime",
+            stdout: stdoutBuffer,
+            stderr: stderrBuffer,
+        });
         throw new Error("missing report payload from test runtime");
     }
     if (code !== 0) {

@@ -1,9 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import * as path from "path";
 import { pathToFileURL } from "url";
 import { glob } from "glob";
 import { build } from "./build-core.js";
 import { applyMode, loadConfig } from "../util.js";
+import { persistCrashRecord } from "../crash-store.js";
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 const MAGIC = Buffer.from("WIPC");
 const HEADER_SIZE = 9;
@@ -40,7 +41,7 @@ async function runFuzzTarget(file, outDir, duplicateBasenames, config, modeName)
     const binary = readFileSync(wasmPath);
     const module = new WebAssembly.Module(binary);
     let report = null;
-    const restoreStdout = captureFrames((type, payload) => {
+    const captured = captureFrames((type, payload) => {
         if (type != 0x03)
             return;
         report = JSON.parse(payload.toString("utf8"));
@@ -58,14 +59,23 @@ async function runFuzzTarget(file, outDir, duplicateBasenames, config, modeName)
         else {
             Reflect.set(globalThis, globalKey, previousConfig);
         }
-        restoreStdout();
+        const passthrough = captured.restore();
         const crashMessage = error instanceof Error ? error.stack ?? error.message : String(error);
+        const crash = persistCrashRecord(config.crashDir, {
+            kind: "fuzz",
+            file,
+            mode: modeName ?? "default",
+            seed: config.seed,
+            error: crashMessage,
+            stdout: passthrough.stdout,
+            stderr: "",
+        });
         return {
             file,
             target: path.basename(file),
             runs: config.runs,
             crashes: 1,
-            crashFiles: [persistCrash(config, file, crashMessage)],
+            crashFiles: [crash.jsonPath],
             seed: config.seed,
             time: Date.now() - startedAt,
             fuzzers: [],
@@ -77,9 +87,27 @@ async function runFuzzTarget(file, outDir, duplicateBasenames, config, modeName)
     else {
         Reflect.set(globalThis, globalKey, previousConfig);
     }
-    restoreStdout();
+    const passthrough = captured.restore();
     if (!report?.fuzzers) {
-        throw new Error(`missing fuzz report payload from ${path.basename(file)}`);
+        const crash = persistCrashRecord(config.crashDir, {
+            kind: "fuzz",
+            file,
+            mode: modeName ?? "default",
+            seed: config.seed,
+            error: `missing fuzz report payload from ${path.basename(file)}`,
+            stdout: passthrough.stdout,
+            stderr: "",
+        });
+        return {
+            file,
+            target: path.basename(file),
+            runs: config.runs,
+            crashes: 1,
+            crashFiles: [crash.jsonPath],
+            seed: config.seed,
+            time: Date.now() - startedAt,
+            fuzzers: [],
+        };
     }
     return {
         file,
@@ -95,6 +123,7 @@ async function runFuzzTarget(file, outDir, duplicateBasenames, config, modeName)
 function captureFrames(onFrame) {
     const originalWrite = process.stdout.write.bind(process.stdout);
     let buffer = Buffer.alloc(0);
+    let passthrough = Buffer.alloc(0);
     process.stdout.write = ((chunk, ...args) => {
         if (!(chunk instanceof ArrayBuffer) && !Buffer.isBuffer(chunk)) {
             return originalWrite(chunk, ...args);
@@ -105,13 +134,16 @@ function captureFrames(onFrame) {
             const index = buffer.indexOf(MAGIC);
             if (index == -1) {
                 if (buffer.length) {
+                    passthrough = Buffer.concat([passthrough, buffer]);
                     originalWrite(buffer);
                     buffer = Buffer.alloc(0);
                 }
                 return true;
             }
             if (index > 0) {
-                originalWrite(buffer.subarray(0, index));
+                const raw = buffer.subarray(0, index);
+                passthrough = Buffer.concat([passthrough, raw]);
+                originalWrite(raw);
                 buffer = buffer.subarray(index);
             }
             if (buffer.length < HEADER_SIZE)
@@ -126,22 +158,14 @@ function captureFrames(onFrame) {
             onFrame(type, payload);
         }
     });
-    return () => {
-        process.stdout.write = originalWrite;
+    return {
+        restore() {
+            process.stdout.write = originalWrite;
+            return {
+                stdout: passthrough.toString("utf8"),
+            };
+        },
     };
-}
-function persistCrash(config, file, error) {
-    const stem = path.basename(file, ".fuzz.ts");
-    const crashDir = path.resolve(process.cwd(), config.crashDir, stem);
-    mkdirSync(crashDir, { recursive: true });
-    const fileBase = "crash";
-    const jsonPath = path.join(crashDir, `${fileBase}.json`);
-    writeFileSync(jsonPath, JSON.stringify({
-        file,
-        seed: config.seed,
-        error,
-    }, null, 2));
-    return jsonPath;
 }
 function resolveFuzzInputPatterns(configured, selectors) {
     const configuredInputs = Array.isArray(configured)

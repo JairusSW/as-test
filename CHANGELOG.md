@@ -23,6 +23,7 @@
 ### CI
 
 - fix: add a dedicated `test:ci` script and `as-test.ci.config.json` so CI stays on the Wasmtime/WASI path instead of fanning out into `web-headless`.
+- fix: remove the baked-in `web-headless` mode from the repo's default config so the project defaults stay on the Wasmtime/WASI runner.
 
 ### Fuzzing
 
@@ -32,6 +33,8 @@
 - feat: add built-in `FuzzSeed` generators for booleans, numbers, bytes, strings, arrays, and picks.
 - feat: treat failed expectations and `false` returns as fuzz failures, while traps and throws are reported as crashes.
 - feat: add top-level `fuzz` config for fuzz target discovery and default driver settings.
+- fix: fail `ast fuzz` and `ast test --fuzz` on logical fuzz failures, not only crashes.
+- fix: disambiguate duplicate fuzz basenames using the selected input set so same-named fuzz files do not overwrite one another.
 - fix: auto-inject `run()` correctly for fuzz files without being confused by generator-local `run(...)` parameters.
 
 ## 2026-03-11 - v1.0.1

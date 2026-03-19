@@ -9,7 +9,7 @@ import { executeTestCommand } from "./commands/test.js";
 import { executeFuzzCommand } from "./commands/fuzz.js";
 import { executeInitCommand } from "./commands/init.js";
 import { executeDoctorCommand } from "./commands/doctor.js";
-import { fuzz, FuzzOverrides, FuzzResult } from "./commands/fuzz-core.js";
+import { fuzz, FuzzOverrides } from "./commands/fuzz-core.js";
 import {
   applyMode,
   formatTime,
@@ -22,7 +22,13 @@ import { spawnSync } from "child_process";
 import { glob } from "glob";
 import { createInterface } from "readline";
 import { existsSync } from "fs";
-import { CoverageSummary, RunStats, TestReporter } from "./reporters/types.js";
+import {
+  CoverageSummary,
+  FuzzCompleteEvent,
+  FuzzResult,
+  RunStats,
+  TestReporter,
+} from "./reporters/types.js";
 
 const _args = process.argv.slice(2);
 const flags: string[] = [];
@@ -847,11 +853,29 @@ async function runTestSequential(
   buildFeatureToggles: BuildFeatureToggles,
   modeSummaryTotal: number,
   fileSummaryTotal: number,
+  allowNoSpecFiles: boolean = false,
   modeName?: string,
-): Promise<boolean> {
+  reporterOverride?: TestReporter,
+  emitRunComplete: boolean = true,
+): Promise<{
+  failed: boolean;
+  summary: {
+    snapshotSummary: {
+      matched: number;
+      created: number;
+      updated: number;
+      failed: number;
+    };
+    coverageSummary: CoverageSummary;
+    stats: RunStats;
+    reports: unknown[];
+  };
+}> {
   const files = await resolveSelectedFiles(configPath, selectors);
   if (!files.length) {
-    throw await buildNoTestFilesMatchedError(configPath, selectors);
+    if (!allowNoSpecFiles) {
+      throw await buildNoTestFilesMatchedError(configPath, selectors);
+    }
   }
 
   const reporterSession = await createRunReporter(
@@ -859,7 +883,7 @@ async function runTestSequential(
     undefined,
     modeName,
   );
-  const reporter = reporterSession.reporter;
+  const reporter = reporterOverride ?? reporterSession.reporter;
   const snapshotEnabled = runFlags.snapshot !== false;
   reporter.onRunStart?.({
     runtimeName: reporterSession.runtimeName,
@@ -892,21 +916,32 @@ async function runTestSequential(
     summary.stats,
     fileSummaryTotal,
   );
-  reporter.onRunComplete?.({
-    clean: runFlags.clean,
-    snapshotEnabled,
-    showCoverage: runFlags.showCoverage,
-    snapshotSummary: summary.snapshotSummary,
-    coverageSummary: summary.coverageSummary,
-    stats: summary.stats,
-    reports: summary.reports,
-    modeSummary: buildSingleModeSummary(
-      summary.stats,
-      summary.snapshotSummary,
-      modeSummaryTotal,
-    ),
-  });
-  return failed;
+  if (emitRunComplete) {
+    reporter.onRunComplete?.({
+      clean: runFlags.clean,
+      snapshotEnabled,
+      showCoverage: runFlags.showCoverage,
+      snapshotSummary: summary.snapshotSummary,
+      coverageSummary: summary.coverageSummary,
+      stats: summary.stats,
+      reports: summary.reports,
+      modeSummary: buildSingleModeSummary(
+        summary.stats,
+        summary.snapshotSummary,
+        modeSummaryTotal,
+      ),
+    });
+    reporter.flush?.();
+  }
+  return {
+    failed,
+    summary: {
+      snapshotSummary: summary.snapshotSummary,
+      coverageSummary: summary.coverageSummary,
+      stats: summary.stats,
+      reports: summary.reports,
+    },
+  };
 }
 
 async function runBuildModes(
@@ -1107,7 +1142,10 @@ async function runTestModes(
 ): Promise<void> {
   await ensureWebBrowsersReady(configPath, modes);
   const modeSummaryTotal = resolveConfiguredModeTotal(configPath);
-  const fileSummaryTotal = await resolveConfiguredFileTotal(configPath);
+  const fileSummaryTotal = await resolveConfiguredFileTotal(
+    configPath,
+    selectors,
+  );
   if (modes.length > 1) {
     const failed = await runTestMatrix(
       runFlags,
@@ -1126,16 +1164,24 @@ async function runTestModes(
 
   let failed = false;
   for (const modeName of modes) {
-    const modeFailed = await runTestSequential(
+    const reporterSession = await createRunReporter(
+      configPath,
+      undefined,
+      modeName,
+    );
+    const modeResult = await runTestSequential(
       runFlags,
       configPath,
       selectors,
       buildFeatureToggles,
       modeSummaryTotal,
       fileSummaryTotal,
+      fuzzEnabled,
       modeName,
+      reporterSession.reporter,
+      !fuzzEnabled,
     );
-    if (modeFailed) failed = true;
+    if (modeResult.failed) failed = true;
     if (fuzzEnabled) {
       const fuzzResults = await fuzz(
         configPath,
@@ -1143,8 +1189,26 @@ async function runTestModes(
         modeName,
         fuzzOverrides,
       );
-      printFuzzSummary(fuzzResults, modeName);
-      if (fuzzResults.some((item) => item.crashes > 0)) failed = true;
+      reporterSession.reporter.onFuzzComplete?.(
+        buildFuzzCompleteEvent(fuzzResults, modeName),
+      );
+      if (fuzzResults.some(hasFuzzFailures)) failed = true;
+      reporterSession.reporter.onRunComplete?.({
+        clean: runFlags.clean,
+        snapshotEnabled: runFlags.snapshot !== false,
+        showCoverage: runFlags.showCoverage,
+        snapshotSummary: modeResult.summary.snapshotSummary,
+        coverageSummary: modeResult.summary.coverageSummary,
+        stats: modeResult.summary.stats,
+        reports: modeResult.summary.reports,
+        fuzzSummary: summarizeFuzzResults(fuzzResults),
+        modeSummary: buildSingleModeSummary(
+          modeResult.summary.stats,
+          modeResult.summary.snapshotSummary,
+          modeSummaryTotal,
+        ),
+      });
+      reporterSession.reporter.flush?.();
     }
   }
   process.exit(failed ? 1 : 0);
@@ -1170,7 +1234,13 @@ async function runTestMatrix(
 ): Promise<boolean> {
   const files = await resolveSelectedFiles(configPath, selectors);
   if (!files.length) {
-    throw await buildNoTestFilesMatchedError(configPath, selectors);
+    if (!fuzzEnabled) {
+      throw await buildNoTestFilesMatchedError(configPath, selectors);
+    }
+    const fuzzFiles = await resolveSelectedFuzzFiles(configPath, selectors);
+    if (!fuzzFiles.length) {
+      throw await buildNoTestFilesMatchedError(configPath, selectors, true);
+    }
   }
 
   const reporterSession = await createRunReporter(configPath);
@@ -1286,9 +1356,10 @@ async function runTestMatrix(
         ...(await fuzz(configPath, selectors, modeName, fuzzOverrides)),
       );
     }
-    printFuzzSummary(fuzzResults);
-    if (fuzzResults.some((item) => item.crashes > 0)) failed = true;
+    reporter.onFuzzComplete?.(buildFuzzCompleteEvent(fuzzResults));
+    if (fuzzResults.some(hasFuzzFailures)) failed = true;
   }
+  reporter.flush?.();
   return failed;
 }
 
@@ -1301,11 +1372,59 @@ async function runFuzzModes(
   const overrides = resolveFuzzOverrides(rawArgs, "fuzz");
   let failed = false;
   for (const modeName of modes) {
+    const reporterSession = await createRunReporter(
+      configPath,
+      undefined,
+      modeName,
+    );
     const results = await fuzz(configPath, selectors, modeName, overrides);
-    printFuzzSummary(results, modeName);
-    if (results.some((item) => item.crashes > 0)) failed = true;
+    reporterSession.reporter.onFuzzComplete?.(
+      buildFuzzCompleteEvent(results, modeName),
+    );
+    reporterSession.reporter.flush?.();
+    if (results.some(hasFuzzFailures)) failed = true;
   }
   process.exit(failed ? 1 : 0);
+}
+
+function hasFuzzFailures(result: FuzzResult): boolean {
+  if (result.crashes > 0) return true;
+  return result.fuzzers.some((fuzzer) => fuzzer.failed > 0);
+}
+
+function buildFuzzCompleteEvent(
+  results: FuzzResult[],
+  modeName?: string,
+): FuzzCompleteEvent {
+  return {
+    modeName: modeName ?? "default",
+    results,
+    executions: results.reduce((sum, item) => sum + item.runs, 0),
+    crashes: results.reduce((sum, item) => sum + item.crashes, 0),
+    failedTargets: results.reduce(
+      (sum, item) => sum + (hasFuzzFailures(item) ? 1 : 0),
+      0,
+    ),
+    time: results.reduce((sum, item) => sum + item.time, 0),
+  };
+}
+
+function summarizeFuzzResults(results: FuzzResult[]): {
+  failed: number;
+  crashed: number;
+  total: number;
+  runs: number;
+} {
+  return {
+    failed: results.reduce(
+      (sum, item) =>
+        sum + item.fuzzers.filter((fuzzer) => fuzzer.failed > 0).length,
+      0,
+    ),
+    crashed: results.reduce((sum, item) => sum + item.crashes, 0),
+    total: results.length,
+    runs: results.reduce((sum, item) => sum + item.runs, 0),
+  };
 }
 
 function renderMatrixFileResult(
@@ -1378,33 +1497,6 @@ function formatMatrixAverageTime(results: RunResult[]): string {
       : 0;
   }
   return `${(total / results.length).toFixed(1)}ms`;
-}
-
-function printFuzzSummary(results: FuzzResult[], modeName?: string): void {
-  const modeLabel = modeName ?? "default";
-  const executions = results.reduce((sum, item) => sum + item.runs, 0);
-  const crashes = results.reduce((sum, item) => sum + item.crashes, 0);
-  const totalTime = results.reduce((sum, item) => sum + item.time, 0);
-  const badge =
-    crashes > 0
-      ? chalk.bgRed.white(" FUZZ FAIL ")
-      : chalk.bgGreenBright.black(" FUZZ PASS ");
-  process.stdout.write(
-    `${badge} ${modeLabel} ${chalk.dim(`${results.length} targets, ${executions} runs, ${formatTime(totalTime)}`)}\n`,
-  );
-  for (const result of results) {
-    const itemBadge =
-      result.crashes > 0
-        ? chalk.bgRed.white(" FAIL ")
-        : chalk.bgGreenBright.black(" PASS ");
-    const crashSuffix =
-      result.crashFiles.length > 0
-        ? ` ${chalk.dim(`-> ${result.crashFiles[0]}`)}`
-        : "";
-    process.stdout.write(
-      `  ${itemBadge} ${path.basename(result.file)} ${chalk.dim(`${result.runs} runs, seed ${result.seed}`)}${crashSuffix}\n`,
-    );
-  }
 }
 
 function buildModeSummary(
@@ -1503,8 +1595,9 @@ function resolveConfiguredModeTotal(configPath: string | undefined): number {
 
 async function resolveConfiguredFileTotal(
   configPath: string | undefined,
+  selectors: string[] = [],
 ): Promise<number> {
-  const files = await resolveSelectedFiles(configPath, []);
+  const files = await resolveSelectedFiles(configPath, selectors);
   return files.length;
 }
 
@@ -1548,14 +1641,32 @@ async function resolveSelectedFuzzFiles(
   return [...new Set(fuzzFiles)].sort((a, b) => a.localeCompare(b));
 }
 
+async function resolveSelectedTestInputs(
+  configPath: string | undefined,
+  selectors: string[],
+): Promise<{
+  specs: string[];
+  fuzz: string[];
+}> {
+  const [specs, fuzz] = await Promise.all([
+    resolveSelectedFiles(configPath, selectors),
+    resolveSelectedFuzzFiles(configPath, selectors),
+  ]);
+  return { specs, fuzz };
+}
+
 async function buildNoTestFilesMatchedError(
   configPath: string | undefined,
   selectors: string[],
+  includeFuzz: boolean = false,
 ): Promise<Error> {
   const scope =
     selectors.length > 0 ? selectors.join(", ") : "configured input patterns";
   const lines = [`No test files matched: ${scope}`];
   const configuredFiles = await resolveSelectedFiles(configPath, [], false);
+  const configuredFuzzFiles = includeFuzz
+    ? await resolveSelectedFuzzFiles(configPath, [])
+    : [];
   if (!selectors.length) {
     lines.push(
       'No specs were discovered from configured input patterns. Check "input" in config or run "ast doctor".',
@@ -1563,7 +1674,10 @@ async function buildNoTestFilesMatchedError(
     return new Error(lines.join("\n"));
   }
 
-  const suggestions = suggestClosestSuites(selectors, configuredFiles);
+  const suggestions = suggestClosestSuites(
+    selectors,
+    includeFuzz ? [...configuredFiles, ...configuredFuzzFiles] : configuredFiles,
+  );
   if (suggestions.length) {
     lines.push(`Closest suite names: ${suggestions.join(", ")}`);
   }
@@ -1578,6 +1692,15 @@ async function buildNoTestFilesMatchedError(
   } else {
     lines.push(
       'No specs were discovered from configured input patterns. Check "input" in config.',
+    );
+  }
+  if (includeFuzz && configuredFuzzFiles.length) {
+    const sample = configuredFuzzFiles
+      .slice(0, 5)
+      .map((file) => path.basename(file))
+      .join(", ");
+    lines.push(
+      `Configured fuzzers (${configuredFuzzFiles.length}): ${sample}${configuredFuzzFiles.length > 5 ? ", ..." : ""}`,
     );
   }
   lines.push('Run "ast test --list" to inspect resolved files.');
@@ -1968,6 +2091,7 @@ async function listExecutionPlan(
   selectors: string[],
   modes: (string | undefined)[],
   listFlags: CliListFlags,
+  fuzzEnabled: boolean = false,
 ): Promise<void> {
   const resolvedConfigPath =
     configPath ?? path.join(process.cwd(), "./as-test.config.json");
@@ -2009,11 +2133,16 @@ async function listExecutionPlan(
 
   if (!listFlags.list) return;
 
-  const files =
+  const specFiles =
+    command == "fuzz" ? [] : await resolveSelectedFiles(configPath, selectors);
+  const fuzzFiles =
     command == "fuzz"
       ? await resolveSelectedFuzzFiles(configPath, selectors)
-      : await resolveSelectedFiles(configPath, selectors);
-  if (!files.length) {
+      : command == "test" && fuzzEnabled
+        ? await resolveSelectedFuzzFiles(configPath, selectors)
+        : [];
+  const files = command == "fuzz" ? fuzzFiles : specFiles;
+  if (!specFiles.length && !fuzzFiles.length) {
     const scope =
       selectors.length > 0 ? selectors.join(", ") : "configured input patterns";
     throw new Error(
@@ -2022,13 +2151,30 @@ async function listExecutionPlan(
         : `No test files matched: ${scope}`,
     );
   }
-  const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
+  const duplicateSpecBasenames = resolveDuplicateSpecBasenames(specFiles);
+  const duplicateFuzzBasenames = resolveDuplicateSpecBasenames(fuzzFiles);
 
-  process.stdout.write(chalk.bold("Resolved files:\n"));
-  for (const file of files) {
-    process.stdout.write(`  - ${file}\n`);
+  if (specFiles.length) {
+    process.stdout.write(chalk.bold("Resolved files:\n"));
+    for (const file of specFiles) {
+      process.stdout.write(`  - ${file}\n`);
+    }
+    process.stdout.write("\n");
   }
-  process.stdout.write("\n");
+  if (fuzzFiles.length && command == "test") {
+    process.stdout.write(chalk.bold("Resolved fuzz files:\n"));
+    for (const file of fuzzFiles) {
+      process.stdout.write(`  - ${file}\n`);
+    }
+    process.stdout.write("\n");
+  }
+  if (command == "fuzz" && fuzzFiles.length) {
+    process.stdout.write(chalk.bold("Resolved files:\n"));
+    for (const file of fuzzFiles) {
+      process.stdout.write(`  - ${file}\n`);
+    }
+    process.stdout.write("\n");
+  }
 
   for (const modeName of modes) {
     const applied = applyMode(config, modeName);
@@ -2057,15 +2203,40 @@ async function listExecutionPlan(
         envKeys.length ? ` (${envKeys.join(", ")})` : ""
       }\n`,
     );
-    process.stdout.write("  artifacts:\n");
-    for (const file of files) {
-      const artifactName = resolveArtifactFileNameForPreview(
-        file,
-        command == "fuzz" ? "bindings" : active.buildOptions.target,
-        modeName,
-        duplicateSpecBasenames,
-      );
-      process.stdout.write(`    - ${path.join(active.outDir, artifactName)}\n`);
+    if (specFiles.length) {
+      process.stdout.write("  artifacts:\n");
+      for (const file of specFiles) {
+        const artifactName = resolveArtifactFileNameForPreview(
+          file,
+          active.buildOptions.target,
+          modeName,
+          duplicateSpecBasenames,
+        );
+        process.stdout.write(`    - ${path.join(active.outDir, artifactName)}\n`);
+      }
+    }
+    if (fuzzFiles.length && command == "test") {
+      process.stdout.write("  fuzz artifacts:\n");
+      for (const file of fuzzFiles) {
+        const artifactName = resolveArtifactFileNameForPreview(
+          file,
+          "bindings",
+          modeName,
+          duplicateFuzzBasenames,
+        );
+        process.stdout.write(`    - ${path.join(active.outDir, artifactName)}\n`);
+      }
+    } else if (command == "fuzz") {
+      process.stdout.write("  artifacts:\n");
+      for (const file of fuzzFiles) {
+        const artifactName = resolveArtifactFileNameForPreview(
+          file,
+          "bindings",
+          modeName,
+          duplicateFuzzBasenames,
+        );
+        process.stdout.write(`    - ${path.join(active.outDir, artifactName)}\n`);
+      }
     }
     process.stdout.write("\n");
   }

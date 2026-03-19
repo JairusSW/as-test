@@ -59,9 +59,7 @@ export async function build(
   const inputFiles = (await glob(inputPatterns)).sort((a, b) =>
     a.localeCompare(b),
   );
-  const duplicateSpecBasenames = await resolveDuplicateSpecBasenames(
-    config.input,
-  );
+  const duplicateSpecBasenames = resolveDuplicateBasenames(inputFiles);
 
   const coverageEnabled = resolveCoverageEnabled(
     config.coverage,
@@ -197,11 +195,7 @@ function resolveArtifactFileName(
   return `${stem}.${disambiguator}${ext}`;
 }
 
-async function resolveDuplicateSpecBasenames(
-  configured: string[] | string,
-): Promise<Set<string>> {
-  const patterns = Array.isArray(configured) ? configured : [configured];
-  const files = await glob(patterns);
+function resolveDuplicateBasenames(files: string[]): Set<string> {
   const counts = new Map<string, number>();
   for (const file of files) {
     const base = path.basename(file);

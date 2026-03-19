@@ -1,5 +1,7 @@
 import chalk from "chalk";
 import { diff } from "typer-diff";
+import { readFileSync } from "fs";
+import * as path from "path";
 import { formatTime } from "../util.js";
 export const createReporter = (context) => {
     return new DefaultReporter(context);
@@ -14,6 +16,7 @@ class DefaultReporter {
         this.fileHasWarning = false;
         this.verboseMode = false;
         this.cleanMode = false;
+        this.hasRenderedTestFiles = false;
     }
     canRewriteLine() {
         return (!this.cleanMode &&
@@ -118,6 +121,7 @@ class DefaultReporter {
     onRunStart(event) {
         this.verboseMode = Boolean(event.verbose);
         this.cleanMode = Boolean(event.clean);
+        this.hasRenderedTestFiles = false;
     }
     onFileStart(event) {
         this.currentFile = event.file;
@@ -137,6 +141,7 @@ class DefaultReporter {
         this.renderLiveState();
     }
     onFileEnd(event) {
+        this.hasRenderedTestFiles = true;
         if (this.verboseMode && this.canRewriteLine()) {
             this.renderVerboseState(event);
             this.context.stdout.write("\n");
@@ -214,7 +219,7 @@ class DefaultReporter {
     onAssertionFail(_event) { }
     onSnapshotMissing(event) {
         this.fileHasWarning = true;
-        const warnLine = `${chalk.bgYellow.black(" WARN ")} missing snapshot for ${chalk.dim(event.key)}. Re-run with ${chalk.bold("--update-snapshots")} to create it.\n`;
+        const warnLine = `${chalk.bgYellow.black(" WARN ")} missing snapshot for ${chalk.dim(event.key)}.\n`;
         if (!this.canRewriteLine() || !this.currentFile) {
             this.context.stdout.write(warnLine);
             return;
@@ -243,6 +248,114 @@ class DefaultReporter {
             }
         }
         renderTotals(event.stats, event);
+    }
+    onFuzzComplete(event) {
+        if (this.hasRenderedTestFiles) {
+            this.context.stdout.write("\n");
+        }
+        renderFuzzSummary(this.context, event);
+    }
+}
+function renderFuzzSummary(context, event) {
+    for (const result of event.results) {
+        const itemFailed = result.crashes > 0 || result.fuzzers.some((fuzzer) => fuzzer.failed > 0);
+        const itemBadge = itemFailed
+            ? chalk.bgRed.white(" FAIL ")
+            : chalk.bgGreenBright.black(" PASS ");
+        const detail = `${formatTime(result.time)} seed: ${result.seed}`;
+        const crashSuffix = result.crashFiles.length > 0
+            ? ` ${chalk.dim(`-> ${result.crashFiles[0]}`)}`
+            : "";
+        context.stdout.write(`${itemBadge} ${path.basename(result.file)} ${chalk.dim(detail)}${crashSuffix}\n`);
+    }
+    const renderedFailures = renderFailedFuzzers(event.results);
+    if (!renderedFailures) {
+        context.stdout.write("\n");
+    }
+}
+function renderFailedFuzzers(results) {
+    let rendered = false;
+    for (const result of results) {
+        const relativeFile = toRelativeResultPath(result.file);
+        const repro = buildFuzzReproCommand(relativeFile, result.seed);
+        if (result.crashes > 0 && !result.fuzzers.length) {
+            if (!rendered) {
+                console.log("");
+                rendered = true;
+            }
+            console.log(`${chalk.bgRed(" FAIL ")} ${chalk.dim(path.basename(result.file))} ${chalk.dim("(crash)")}`);
+            console.log(`${chalk.dim("Runs:")} ${chalk.bold(String(result.runs))} configured`);
+            console.log(`${chalk.dim("Seed:")} ${chalk.bold(String(result.seed))}`);
+            console.log(`${chalk.dim("Repro:")} ${chalk.bold(repro)}`);
+            if (result.crashFiles.length) {
+                console.log(`${chalk.dim("Crash:")} ${chalk.bold(result.crashFiles[0])}`);
+            }
+            console.log("");
+            continue;
+        }
+        for (const fuzzer of result.fuzzers) {
+            if (fuzzer.failed <= 0 && fuzzer.crashed <= 0)
+                continue;
+            if (!rendered) {
+                console.log("");
+                rendered = true;
+            }
+            console.log(`${chalk.bgRed(" FAIL ")} ${formatFuzzFailureTitle(result.file, fuzzer.name)}`);
+            if (fuzzer.failure?.message?.length) {
+                console.log(chalk.dim(`Message: ${fuzzer.failure.message}`));
+            }
+            console.log(chalk.dim(`Runs: ${fuzzer.passed + fuzzer.failed + fuzzer.crashed} completed (${fuzzer.passed} passed, ${fuzzer.failed} failed, ${fuzzer.crashed} crashed)`));
+            console.log(chalk.dim(`Repro: ${repro}`));
+            console.log(chalk.dim(`Seed: ${result.seed}`));
+            if (result.crashFiles.length) {
+                console.log(chalk.dim(`Crash: ${result.crashFiles[0]}`));
+            }
+            console.log("");
+        }
+    }
+    return rendered;
+}
+function buildFuzzReproCommand(file, seed) {
+    return `ast fuzz ${file} --seed ${seed}`;
+}
+function toRelativeResultPath(file) {
+    const relative = path.relative(process.cwd(), path.resolve(process.cwd(), file));
+    return relative.length ? relative : file;
+}
+function formatFuzzFailureTitle(file, name) {
+    const location = findFuzzLocation(file, name);
+    const suffix = location
+        ? ` (${path.basename(file)}:${location})`
+        : ` (${path.basename(file)})`;
+    return `${chalk.dim(name)}${chalk.dim(suffix)}`;
+}
+function findFuzzLocation(file, name) {
+    try {
+        const source = readFileSync(path.resolve(process.cwd(), file), "utf8");
+        const patterns = [`fuzz("${name}"`, `fuzz('${name}'`];
+        let index = -1;
+        for (const pattern of patterns) {
+            index = source.indexOf(pattern);
+            if (index != -1)
+                break;
+        }
+        if (index == -1)
+            return null;
+        let line = 1;
+        let column = 1;
+        for (let i = 0; i < index; i++) {
+            if (source.charCodeAt(i) == 10) {
+                line++;
+                column = 1;
+            }
+            else {
+                column++;
+            }
+        }
+        return `${line}:${column}`;
+    }
+    catch {
+        return null;
     }
 }
 function renderFailedSuites(failedEntries) {
@@ -350,6 +463,9 @@ function renderTotals(stats, event) {
     if (event.modeSummary) {
         renderModeSummary(event.modeSummary);
     }
+    if (event.fuzzSummary) {
+        renderFuzzTotals(event.fuzzSummary);
+    }
     process.stdout.write(chalk.bold("Time:   ") + formatTime(stats.time) + "\n");
 }
 function renderModeSummary(summary) {
@@ -363,6 +479,17 @@ function renderModeSummary(summary) {
             : chalk.gray("0 skipped")));
     process.stdout.write(", " + summary.total + " total\n");
 }
+function renderFuzzTotals(summary) {
+    process.stdout.write(chalk.bold("Fuzz:   "));
+    process.stdout.write(summary.failed
+        ? chalk.bold.red(summary.failed + " failed")
+        : chalk.bold.greenBright("0 failed"));
+    process.stdout.write(", " +
+        (summary.crashed
+            ? chalk.bold.red(summary.crashed + " crashed")
+            : chalk.gray("0 crashed")));
+    process.stdout.write(", " + summary.total + " total\n");
+}
 function renderCoverageSummary(summary) {
     const pct = summary.total
         ? ((summary.covered * 100) / summary.total).toFixed(2)
@@ -373,7 +500,7 @@ function renderCoverageSummary(summary) {
             ? chalk.yellowBright
             : chalk.redBright;
     console.log("");
-    console.log(`${chalk.bold("Coverage:")} ${color(pct + "%")} ${chalk.dim(`(${summary.covered}/${summary.total} points, ${summary.uncovered} uncovered)${Number(pct) < 100.0 ? " run with --show-coverage to see details" : ""}`)}`);
+    console.log(`${chalk.bold("Coverage:")} ${color(pct + "%")} ${chalk.dim(`(${summary.covered}/${summary.total} points, ${summary.uncovered} uncovered)`)}`);
 }
 function renderCoveragePoints(files) {
     console.log("");

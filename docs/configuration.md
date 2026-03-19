@@ -40,7 +40,7 @@ Fuzz config:
     "seed": 1337,
     "target": "bindings",
     "corpusDir": ".as-test/fuzz/corpus",
-    "crashDir": ".as-test/fuzz/crashes"
+    "crashDir": ".as-test/crashes"
   }
 }
 ```

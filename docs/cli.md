@@ -14,7 +14,6 @@ Examples:
 ```bash
 ast test
 ast test math,array
-ast test --mode wasi,web-headless
 ast test --list
 ast fuzz
 ast fuzz parser --runs 5000 --seed 42

@@ -306,13 +306,14 @@ function recordResult(result: FuzzerResult): void {
 
 export class Fuzzer0<R> extends FuzzerBase {
   private generator: ((seed: FuzzSeed, run: () => R) => void) | null = null;
-  private returnsBool: bool = isBoolean<R>();
+  private returnsBool: bool;
 
   constructor(
     name: string,
     private callback: () => R,
   ) {
     super(name);
+    this.returnsBool = !isVoid<R>();
   }
 
   generate<T extends Function>(generator: T): this {
@@ -358,13 +359,14 @@ export class Fuzzer0<R> extends FuzzerBase {
 
 export class Fuzzer1<A, R> extends FuzzerBase {
   private generator: ((seed: FuzzSeed, run: (a: A) => R) => void) | null = null;
-  private returnsBool: bool = isBoolean<R>();
+  private returnsBool: bool;
 
   constructor(
     name: string,
     private callback: (a: A) => R,
   ) {
     super(name);
+    this.returnsBool = !isVoid<R>();
   }
 
   generate<T extends Function>(generator: T): this {
@@ -415,13 +417,14 @@ export class Fuzzer1<A, R> extends FuzzerBase {
 
 export class Fuzzer2<A, B, R> extends FuzzerBase {
   private generator: ((seed: FuzzSeed, run: (a: A, b: B) => R) => void) | null = null;
-  private returnsBool: bool = isBoolean<R>();
+  private returnsBool: bool;
 
   constructor(
     name: string,
     private callback: (a: A, b: B) => R,
   ) {
     super(name);
+    this.returnsBool = !isVoid<R>();
   }
 
   generate<T extends Function>(generator: T): this {
@@ -472,13 +475,14 @@ export class Fuzzer2<A, B, R> extends FuzzerBase {
 
 export class Fuzzer3<A, B, C, R> extends FuzzerBase {
   private generator: ((seed: FuzzSeed, run: (a: A, b: B, c: C) => R) => void) | null = null;
-  private returnsBool: bool = isBoolean<R>();
+  private returnsBool: bool;
 
   constructor(
     name: string,
     private callback: (a: A, b: B, c: C) => R,
   ) {
     super(name);
+    this.returnsBool = !isVoid<R>();
   }
 
   generate<T extends Function>(generator: T): this {

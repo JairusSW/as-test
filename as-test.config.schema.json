@@ -197,11 +197,6 @@
           },
           "default": ["./assembly/__fuzz__/*.fuzz.ts"]
         },
-        "entry": {
-          "type": "string",
-          "description": "Exported fuzz entry name.",
-          "default": "fuzz"
-        },
         "runs": {
           "type": "number",
           "description": "Number of fuzz iterations per target.",
@@ -231,18 +226,17 @@
         "crashDir": {
           "type": "string",
           "description": "Directory where crashing inputs and metadata are written.",
-          "default": "./.as-test/fuzz/crashes"
+          "default": "./.as-test/crashes"
         }
       },
       "default": {
         "input": ["./assembly/__fuzz__/*.fuzz.ts"],
-        "entry": "fuzz",
         "runs": 1000,
         "seed": 1337,
         "maxInputBytes": 4096,
         "target": "bindings",
         "corpusDir": "./.as-test/fuzz/corpus",
-        "crashDir": "./.as-test/fuzz/crashes"
+        "crashDir": "./.as-test/crashes"
       }
     },
     "modes": {

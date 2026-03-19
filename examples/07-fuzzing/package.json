@@ -1,0 +1,15 @@
+{
+  "name": "as-test-example-07-fuzzing",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "as-test test --fuzz",
+    "test:fuzz": "as-test fuzz",
+    "test:seeded": "as-test fuzz --seed 1337 --runs 5000"
+  },
+  "devDependencies": {
+    "@assemblyscript/wasi-shim": "^0.1.0",
+    "as-test": "file:../..",
+    "assemblyscript": "^0.28.9"
+  }
+}

@@ -22,7 +22,7 @@ export async function build(configPath = DEFAULT_CONFIG_PATH, selectors = [], mo
     const pkgRunner = getPkgRunner();
     const inputPatterns = resolveInputPatterns(config.input, selectors);
     const inputFiles = (await glob(inputPatterns)).sort((a, b) => a.localeCompare(b));
-    const duplicateSpecBasenames = await resolveDuplicateSpecBasenames(config.input);
+    const duplicateSpecBasenames = resolveDuplicateBasenames(inputFiles);
     const coverageEnabled = resolveCoverageEnabled(config.coverage, featureToggles.coverage);
     const buildEnv = {
         ...mode.env,
@@ -106,9 +106,7 @@ function resolveArtifactFileName(file, target, modeName, duplicateSpecBasenames 
     const stem = ext.length ? legacy.slice(0, -ext.length) : legacy;
     return `${stem}.${disambiguator}${ext}`;
 }
-async function resolveDuplicateSpecBasenames(configured) {
-    const patterns = Array.isArray(configured) ? configured : [configured];
-    const files = await glob(patterns);
+function resolveDuplicateBasenames(files) {
     const counts = new Map();
     for (const file of files) {
         const base = path.basename(file);

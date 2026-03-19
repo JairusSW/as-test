@@ -17,6 +17,7 @@ type TestCommandDeps = {
     selectors: string[],
     modes: (string | undefined)[],
     listFlags: CliListFlags,
+    fuzzEnabled?: boolean,
   ): Promise<void>;
   runTestModes(
     runFlags: RunFlags,
@@ -61,6 +62,7 @@ export async function executeTestCommand(
       commandArgs,
       modeTargets,
       listFlags,
+      fuzzEnabled,
     );
     return;
   }
