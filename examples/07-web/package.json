@@ -1,0 +1,14 @@
+{
+  "name": "as-test-example-07-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "as-test test --mode web-headless",
+    "test:web": "as-test test --mode web",
+    "test:web-headless": "as-test test --mode web-headless"
+  },
+  "devDependencies": {
+    "as-test": "file:../..",
+    "assemblyscript": "^0.28.9"
+  }
+}

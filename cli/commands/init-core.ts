@@ -15,6 +15,7 @@ type ExampleMode = (typeof EXAMPLE_MODES)[number];
 type InitOptions = {
   target?: Target;
   example?: ExampleMode;
+  fuzzExample?: boolean;
   install?: boolean;
   yes: boolean;
   force: boolean;
@@ -45,6 +46,7 @@ export async function init(rawArgs: string[]) {
           root: path.resolve(process.cwd(), options.dir),
           target: options.target ?? "wasi",
           example: options.example ?? "minimal",
+          fuzzExample: options.fuzzExample ?? false,
           installDependenciesNow: options.install ?? false,
         }
       : await runInteractiveOnboarding(options, rl);
@@ -58,6 +60,7 @@ export async function init(rawArgs: string[]) {
       answers.root,
       answers.target,
       answers.example,
+      answers.fuzzExample,
       answers.installDependenciesNow,
     );
 
@@ -73,6 +76,7 @@ export async function init(rawArgs: string[]) {
       answers.root,
       answers.target,
       answers.example,
+      answers.fuzzExample,
       options.force,
     );
     printSummary(summary);
@@ -111,6 +115,14 @@ function parseInitArgs(rawArgs: string[]): InitOptions {
     }
     if (arg == "--install") {
       options.install = true;
+      continue;
+    }
+    if (arg == "--fuzz-example") {
+      options.fuzzExample = true;
+      continue;
+    }
+    if (arg == "--no-fuzz-example") {
+      options.fuzzExample = false;
       continue;
     }
     if (arg == "--target") {
@@ -179,7 +191,7 @@ function parseInitArgs(rawArgs: string[]): InitOptions {
 
   if (positional.length > 0) {
     throw new Error(
-      `Unknown init argument(s): ${positional.join(", ")}. Usage: init [dir] [--target wasi|bindings|web] [--example minimal|full|none] [--install] [--yes] [--force] [--dir <path>]`,
+      `Unknown init argument(s): ${positional.join(", ")}. Usage: init [dir] [--target wasi|bindings|web] [--example minimal|full|none] [--fuzz-example|--no-fuzz-example] [--install] [--yes] [--force] [--dir <path>]`,
     );
   }
 
@@ -190,6 +202,7 @@ type InteractiveAnswers = {
   root: string;
   target: Target;
   example: ExampleMode;
+  fuzzExample: boolean;
   installDependenciesNow: boolean;
 };
 
@@ -291,6 +304,18 @@ async function runInteractiveOnboarding(
     printPromptAndSelectionLine("Example template", example);
   }
 
+  const fuzzExample =
+    options.fuzzExample ??
+    (onboardingMode == "quick"
+      ? false
+      : await askYesNo("Add a basic fuzzer example?", face, false));
+  if (options.fuzzExample !== undefined || onboardingMode == "quick") {
+    printPromptAndSelectionLine(
+      "Add a basic fuzzer example?",
+      fuzzExample ? "Yes" : "No",
+    );
+  }
+
   const installDependenciesNow =
     options.install ??
     (onboardingMode == "quick"
@@ -307,6 +332,7 @@ async function runInteractiveOnboarding(
     root: resolvedRoot,
     target,
     example,
+    fuzzExample,
     installDependenciesNow,
   };
 }
@@ -320,9 +346,9 @@ function printOnboardingHeader(): void {
 }
 
 function printOnboardingIntro(): void {
-  console.log(chalk.blue("╔═╗ ╔═╗    ╔═╗ ╔═╗ ╔═╗ ╔═╗"));
-  console.log(chalk.blue("╠═╣ ╚═╗ ══  ║  ╠═  ╚═╗  ║ "));
-  console.log(chalk.blue("╩ ╩ ╚═╝     ╩  ╚═╝ ╚═╝  ╩ "));
+  console.log(chalk.bold.blue("╔═╗ ╔═╗    ╔═╗ ╔═╗ ╔═╗ ╔═╗"));
+  console.log(chalk.bold.blue("╠═╣ ╚═╗ ══  ║  ╠═  ╚═╗  ║ "));
+  console.log(chalk.bold.blue("╩ ╩ ╚═╝     ╩  ╚═╝ ╚═╝  ╩ "));
   console.log("");
   // console.log(chalk.bold("┌") + " " + chalk.bold.blueBright(""));
   // console.log("│");
@@ -422,6 +448,7 @@ function printPlan(
   root: string,
   target: Target,
   example: ExampleMode,
+  fuzzExample: boolean,
   install: boolean,
 ): void {
   type TreeEntry = {
@@ -508,6 +535,7 @@ function printPlan(
     { path: ".as-test/coverage", isDir: true },
     { path: ".as-test/snapshots", isDir: true },
     { path: "assembly", isDir: true },
+    { path: "assembly/tsconfig.json", isDir: false },
     { path: "assembly/__tests__", isDir: true },
     { path: "as-test.config.json", isDir: false },
     { path: "package.json", isDir: false },
@@ -533,12 +561,20 @@ function printPlan(
       isDir: false,
     });
   }
+  if (fuzzExample) {
+    fileEntries.push({ path: "assembly/__fuzz__", isDir: true });
+    fileEntries.push({
+      path: "assembly/__fuzz__/example.fuzz.ts",
+      isDir: false,
+    });
+  }
 
   const treeRoot = buildTree(fileEntries);
 
   console.log(chalk.bold.blue("◇  Planned Changes"));
   console.log("│" + chalk.dim(`  - Target: ${target}`));
   console.log("│" + chalk.dim(`  - Example: ${example}`));
+  console.log("│" + chalk.dim(`  - Fuzzer example: ${fuzzExample ? "yes" : "no"}`));
   console.log("│" + chalk.dim(`  - Directory: ${displayRoot()}`));
   console.log(
     "│" + chalk.dim(`  - Install dependencies: ${install ? "yes" : "no"}`),
@@ -555,6 +591,7 @@ function applyInit(
   root: string,
   target: Target,
   example: ExampleMode,
+  fuzzExample: boolean,
   force: boolean,
 ): ApplySummary {
   const summary: ApplySummary = {
@@ -568,10 +605,20 @@ function applyInit(
   ensureDir(root, ".as-test/coverage", summary);
   ensureDir(root, ".as-test/snapshots", summary);
   ensureDir(root, "assembly/__tests__", summary);
+  if (fuzzExample) {
+    ensureDir(root, "assembly/__fuzz__", summary);
+  }
   if (target == "wasi" || target == "bindings" || target == "web") {
     ensureDir(root, ".as-test/runners", summary);
   }
   ensureGitignoreIncludesAsTestDirs(root, summary);
+
+  writeJson(
+    path.join(root, "assembly/tsconfig.json"),
+    buildAssemblyTsconfig(),
+    summary,
+    "assembly/tsconfig.json",
+  );
 
   const configPath = path.join(root, "as-test.config.json");
   const config = {
@@ -581,6 +628,18 @@ function applyInit(
     config: "none",
     coverage: true,
     env: {},
+    ...(fuzzExample
+      ? {
+          fuzz: {
+            input: ["assembly/__fuzz__/*.fuzz.ts"],
+            runs: 1000,
+            seed: 1337,
+            target: "bindings",
+            corpusDir: ".as-test/corpus",
+            crashDir: ".as-test/crashes",
+          },
+        }
+      : {}),
     buildOptions: {
       target,
     },
@@ -620,6 +679,17 @@ function applyInit(
       force,
       summary,
       "assembly/__tests__/example.spec.ts",
+    );
+  }
+
+  if (fuzzExample) {
+    const fuzzPath = path.join(root, "assembly/__fuzz__/example.fuzz.ts");
+    writeManagedFile(
+      fuzzPath,
+      buildBasicFuzzerExample(),
+      force,
+      summary,
+      "assembly/__fuzz__/example.fuzz.ts",
     );
   }
 
@@ -720,7 +790,12 @@ function ensureGitignoreIncludesAsTestDirs(
 ): void {
   const rel = ".gitignore";
   const fullPath = path.join(root, rel);
-  const entries = ["!.as-test/runners/", "!.as-test/snapshots/"];
+  const entries = [
+    "# Include essential as-test artifacts",
+    "!.as-test/",
+    ".as-test/runners/",
+    ".as-test/snapshots/",
+  ];
   const existed = existsSync(fullPath);
   const source = existed ? readFileSync(fullPath, "utf8") : "";
   const lines = source.split(/\r?\n/);
@@ -739,6 +814,13 @@ function ensureGitignoreIncludesAsTestDirs(
   writeFileSync(fullPath, output);
   if (existed) summary.updated.push(rel);
   else summary.created.push(rel);
+}
+
+function buildAssemblyTsconfig(): Record<string, unknown> {
+  return {
+    extends: "assemblyscript/std/assembly.json",
+    include: ["./**/*.ts"],
+  };
 }
 
 function writeJson(
@@ -1166,6 +1248,25 @@ describe("strings", () => {
 });
 
 run();
+`;
+}
+
+function buildBasicFuzzerExample(): string {
+  return `import { expect, fuzz, FuzzSeed } from "as-test";
+
+fuzz("basic string fuzzer", (value: string): bool => {
+  expect(value.length >= 0).toBe(true);
+  return value.length <= 24;
+}).generate((seed: FuzzSeed, run: (value: string) => bool): void => {
+  run(
+    seed.string({
+      charset: "ascii",
+      min: 0,
+      max: 24,
+      exclude: [0x00, 0x0a, 0x0d],
+    }),
+  );
+});
 `;
 }
 

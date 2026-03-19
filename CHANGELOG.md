@@ -24,6 +24,15 @@
 
 - fix: add a dedicated `test:ci` script and `as-test.ci.config.json` so CI stays on the Wasmtime/WASI path instead of fanning out into `web-headless`.
 - fix: remove the baked-in `web-headless` mode from the repo's default config so the project defaults stay on the Wasmtime/WASI runner.
+- feat: add a dedicated `examples.yml` workflow that runs the standalone examples individually on push.
+- feat: install Chromium through Playwright for the `07-web` example job and pass its executable through `BROWSER`.
+
+### Init & Examples
+
+- feat: `ast init` can scaffold a basic fuzzer example and now writes `assembly/tsconfig.json` for editor-friendly AssemblyScript setup.
+- feat: update the generated `.gitignore` block to keep the `.as-test/` root while excluding runners and snapshots.
+- feat: add more standalone fuzzing examples and a dedicated `07-web` example project.
+- fix: rename `05-mocking-and-import-snapshots` to `05-mocking-and-imports` and align its file/test labels with the new name.
 
 ### Fuzzing
 
