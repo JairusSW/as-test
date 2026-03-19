@@ -38,7 +38,7 @@ try {
         return 0;
       },
       now() {
-        return 0;
+        return 10;
       },
     },
     wasi_snapshot_preview1: wasi.wasiImport,
