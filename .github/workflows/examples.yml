@@ -43,12 +43,6 @@ jobs:
         if: matrix.example == '07-web'
         run: npx -y playwright@latest install --with-deps chromium
 
-      - name: Set browser path for web example
-        if: matrix.example == '07-web'
-        run: |
-          BROWSER_PATH=$(npx -y -p playwright@latest node -e 'console.log(require("playwright").chromium.executablePath())')
-          echo "BROWSER=$BROWSER_PATH" >> "$GITHUB_ENV"
-
       - name: Run example tests
         working-directory: examples/${{ matrix.example }}
         run: bun run test
