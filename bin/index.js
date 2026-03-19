@@ -9,7 +9,7 @@ import { executeFuzzCommand } from "./commands/fuzz.js";
 import { executeInitCommand } from "./commands/init.js";
 import { executeDoctorCommand } from "./commands/doctor.js";
 import { fuzz } from "./commands/fuzz-core.js";
-import { applyMode, formatTime, getCliVersion, loadConfig, resolveModeNames, } from "./util.js";
+import { applyMode, getCliVersion, loadConfig, resolveModeNames, } from "./util.js";
 import * as path from "path";
 import { spawnSync } from "child_process";
 import { glob } from "glob";
@@ -956,11 +956,16 @@ function buildFuzzCompleteEvent(results, modeName) {
 }
 function summarizeFuzzResults(results) {
     return {
-        failed: results.reduce((sum, item) => sum + item.fuzzers.filter((fuzzer) => fuzzer.failed > 0).length, 0),
-        crashed: results.reduce((sum, item) => sum + item.crashes, 0),
+        failed: results.reduce((sum, item) => sum + (hasFuzzFailures(item) ? 1 : 0), 0),
+        skipped: results.reduce((sum, item) => sum + (isSkippedFuzzResult(item) ? 1 : 0), 0),
         total: results.length,
         runs: results.reduce((sum, item) => sum + item.runs, 0),
     };
+}
+function isSkippedFuzzResult(result) {
+    return (result.crashes == 0 &&
+        result.fuzzers.length > 0 &&
+        result.fuzzers.every((fuzzer) => fuzzer.skipped > 0));
 }
 function renderMatrixFileResult(file, modes, results, modeTimes, liveMatrix, showPerModeTimes) {
     const verdict = resolveMatrixVerdict(results);
@@ -1113,6 +1118,13 @@ async function resolveSelectedFuzzFiles(configPath, selectors) {
     const matches = await glob(patterns);
     const fuzzFiles = matches.filter((file) => file.endsWith(".fuzz.ts"));
     return [...new Set(fuzzFiles)].sort((a, b) => a.localeCompare(b));
+}
+async function resolveSelectedTestInputs(configPath, selectors) {
+    const [specs, fuzz] = await Promise.all([
+        resolveSelectedFiles(configPath, selectors),
+        resolveSelectedFuzzFiles(configPath, selectors),
+    ]);
+    return { specs, fuzz };
 }
 async function buildNoTestFilesMatchedError(configPath, selectors, includeFuzz = false) {
     const scope = selectors.length > 0 ? selectors.join(", ") : "configured input patterns";
@@ -1503,6 +1515,7 @@ async function listExecutionPlan(command, configPath, selectors, modes, listFlag
         : command == "test" && fuzzEnabled
             ? await resolveSelectedFuzzFiles(configPath, selectors)
             : [];
+    const files = command == "fuzz" ? fuzzFiles : specFiles;
     if (!specFiles.length && !fuzzFiles.length) {
         const scope = selectors.length > 0 ? selectors.join(", ") : "configured input patterns";
         throw new Error(command == "fuzz"

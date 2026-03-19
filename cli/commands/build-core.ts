@@ -389,7 +389,7 @@ function resolveTryAsEnabled(override?: boolean): boolean {
       'try-as feature was enabled, but package "try-as" is not installed',
     );
   }
-  return installed;
+  return false;
 }
 
 function resolveCoverageEnabled(

@@ -265,7 +265,7 @@ function resolveTryAsEnabled(override) {
     if (override === true && !installed) {
         throw new Error('try-as feature was enabled, but package "try-as" is not installed');
     }
-    return installed;
+    return false;
 }
 function resolveCoverageEnabled(rawCoverage, override) {
     if (override != undefined)

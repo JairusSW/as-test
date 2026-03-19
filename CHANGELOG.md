@@ -33,9 +33,16 @@
 - feat: add built-in `FuzzSeed` generators for booleans, numbers, bytes, strings, arrays, and picks.
 - feat: treat failed expectations and `false` returns as fuzz failures, while traps and throws are reported as crashes.
 - feat: add top-level `fuzz` config for fuzz target discovery and default driver settings.
+- feat: add `xfuzz(...)` for skipped fuzz targets and report fuzz results through the built-in reporters, including TAP output.
+- feat: store fuzz and runtime crash artifacts under a shared `.as-test/crashes/<entry>/` root with `latest.*` and timestamped logs.
 - fix: fail `ast fuzz` and `ast test --fuzz` on logical fuzz failures, not only crashes.
 - fix: disambiguate duplicate fuzz basenames using the selected input set so same-named fuzz files do not overwrite one another.
 - fix: auto-inject `run()` correctly for fuzz files without being confused by generator-local `run(...)` parameters.
+- fix: make `try-as` opt-in even when the package is installed; it now only runs when explicitly enabled.
+
+### Mocking & Runtime API
+
+- fix: remove `snapshotImport(...)` and `restoreImport(...)` from the active runtime API in favor of the simpler mocking surface.
 
 ## 2026-03-11 - v1.0.1
 

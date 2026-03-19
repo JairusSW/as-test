@@ -1411,20 +1411,27 @@ function buildFuzzCompleteEvent(
 
 function summarizeFuzzResults(results: FuzzResult[]): {
   failed: number;
-  crashed: number;
+  skipped: number;
   total: number;
   runs: number;
 } {
   return {
     failed: results.reduce(
-      (sum, item) =>
-        sum + item.fuzzers.filter((fuzzer) => fuzzer.failed > 0).length,
+      (sum, item) => sum + (hasFuzzFailures(item) ? 1 : 0),
       0,
     ),
-    crashed: results.reduce((sum, item) => sum + item.crashes, 0),
+    skipped: results.reduce((sum, item) => sum + (isSkippedFuzzResult(item) ? 1 : 0), 0),
     total: results.length,
     runs: results.reduce((sum, item) => sum + item.runs, 0),
   };
+}
+
+function isSkippedFuzzResult(result: FuzzResult): boolean {
+  return (
+    result.crashes == 0 &&
+    result.fuzzers.length > 0 &&
+    result.fuzzers.every((fuzzer) => fuzzer.skipped > 0)
+  );
 }
 
 function renderMatrixFileResult(

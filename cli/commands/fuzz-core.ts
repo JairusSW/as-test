@@ -19,6 +19,7 @@ export type FuzzerRunResult = {
   passed: number;
   failed: number;
   crashed: number;
+  skipped: number;
   time: {
     start: number;
     end: number;

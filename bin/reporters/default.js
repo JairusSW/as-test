@@ -219,7 +219,7 @@ class DefaultReporter {
     onAssertionFail(_event) { }
     onSnapshotMissing(event) {
         this.fileHasWarning = true;
-        const warnLine = `${chalk.bgYellow.black(" WARN ")} missing snapshot for ${chalk.dim(event.key)}.\n`;
+        const warnLine = `${chalk.bgYellow.black(" WARN ")} missing snapshot for ${chalk.dim(event.key)}. Re-run with ${chalk.bold("--update-snapshots")} to create it.\n`;
         if (!this.canRewriteLine() || !this.currentFile) {
             this.context.stdout.write(warnLine);
             return;
@@ -259,10 +259,17 @@ class DefaultReporter {
 function renderFuzzSummary(context, event) {
     for (const result of event.results) {
         const itemFailed = result.crashes > 0 || result.fuzzers.some((fuzzer) => fuzzer.failed > 0);
+        const itemSkipped = !itemFailed &&
+            result.fuzzers.length > 0 &&
+            result.fuzzers.every((fuzzer) => fuzzer.skipped > 0);
         const itemBadge = itemFailed
             ? chalk.bgRed.white(" FAIL ")
-            : chalk.bgGreenBright.black(" PASS ");
-        const detail = `${formatTime(result.time)} seed: ${result.seed}`;
+            : itemSkipped
+                ? chalk.bgBlackBright.white(" SKIP ")
+                : chalk.bgGreenBright.black(" PASS ");
+        const detail = itemFailed
+            ? `${formatTime(result.time)} seed: ${result.seed}`
+            : formatTime(result.time);
         const crashSuffix = result.crashFiles.length > 0
             ? ` ${chalk.dim(`-> ${result.crashFiles[0]}`)}`
             : "";
@@ -333,6 +340,7 @@ function findFuzzLocation(file, name) {
     try {
         const source = readFileSync(path.resolve(process.cwd(), file), "utf8");
         const patterns = [`fuzz("${name}"`, `fuzz('${name}'`];
+        patterns.push(`xfuzz("${name}"`, `xfuzz('${name}'`);
         let index = -1;
         for (const pattern of patterns) {
             index = source.indexOf(pattern);
@@ -485,9 +493,9 @@ function renderFuzzTotals(summary) {
         ? chalk.bold.red(summary.failed + " failed")
         : chalk.bold.greenBright("0 failed"));
     process.stdout.write(", " +
-        (summary.crashed
-            ? chalk.bold.red(summary.crashed + " crashed")
-            : chalk.gray("0 crashed")));
+        (summary.skipped
+            ? chalk.gray(summary.skipped + " skipped")
+            : chalk.gray("0 skipped")));
     process.stdout.write(", " + summary.total + " total\n");
 }
 function renderCoverageSummary(summary) {
