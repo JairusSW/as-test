@@ -29,6 +29,11 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v1
 
+      - name: Setup Chrome for web example
+        if: matrix.example == '07-web'
+        id: setup-chrome
+        uses: browser-actions/setup-chrome@v1
+
       - name: Install root dependencies
         run: bun install
 
@@ -39,10 +44,14 @@ jobs:
         working-directory: examples/${{ matrix.example }}
         run: bun install
 
-      - name: Install Chromium for web example
+      - name: Run web example tests
         if: matrix.example == '07-web'
-        run: npx -y playwright@latest install --with-deps chromium
+        working-directory: examples/${{ matrix.example }}
+        env:
+          BROWSER: ${{ steps.setup-chrome.outputs.chrome-path }}
+        run: bun run test
 
       - name: Run example tests
+        if: matrix.example != '07-web'
         working-directory: examples/${{ matrix.example }}
         run: bun run test
