@@ -278,6 +278,7 @@ or
 
 ```bash
 npx ast test --mode wasi,bindings
+```
 
 This is the general idea throughout the project: write tests once, then choose the runtime that matches how your code actually runs.
 
