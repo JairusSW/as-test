@@ -337,6 +337,10 @@
                   "cmd": {
                     "type": "string",
                     "description": "Mode-specific runtime command."
+                  },
+                  "browser": {
+                    "type": "string",
+                    "description": "Mode-specific browser for web targets. Use chrome, chromium, firefox, webkit, or an executable path."
                   }
                 }
               },
@@ -428,10 +432,16 @@
               "type": "string",
               "description": "Runtime command; supports placeholders like <file> and <name>.",
               "default": "node ./.as-test/runners/default.wasi.js <file>"
+            },
+            "browser": {
+              "type": "string",
+              "description": "Browser for web targets. Use chrome, chromium, firefox, webkit, or an executable path.",
+              "default": ""
             }
           },
           "default": {
-            "cmd": "node ./.as-test/runners/default.wasi.js <file>"
+            "cmd": "node ./.as-test/runners/default.wasi.js <file>",
+            "browser": ""
           }
         },
         "reporter": {

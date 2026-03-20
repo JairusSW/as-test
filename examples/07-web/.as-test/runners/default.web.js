@@ -336,13 +336,24 @@ function spawnBrowserCommand(commandValue, url, headlessMode) {
   }
   const args = parts.slice(1);
   if (headlessMode) {
-    args.push(...HEADLESS_FLAGS);
+    args.push(...resolveHeadlessFlags(commandValue, command));
   }
   args.push(url);
   return spawn(command, args, {
     stdio: "ignore",
     detached: !headlessMode,
   });
+}
+
+function resolveHeadlessFlags(commandValue, command) {
+  const lower = String(commandValue + " " + command).toLowerCase();
+  if (lower.includes("firefox")) {
+    return ["-headless"];
+  }
+  if (lower.includes("webkit") || lower.includes("minibrowser")) {
+    return ["--headless"];
+  }
+  return HEADLESS_FLAGS;
 }
 
 function hasExecutable(command) {

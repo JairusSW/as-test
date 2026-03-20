@@ -38,6 +38,7 @@ export class RunOptions {
 
 export class Runtime {
   cmd: string = "node ./.as-test/runners/default.wasi.js <file>";
+  browser: string = "";
 }
 
 export class ModeConfig {

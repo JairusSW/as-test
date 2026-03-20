@@ -17,6 +17,7 @@ import {
   loadConfig,
   resolveModeNames,
 } from "./util.js";
+import { Config } from "./types.js";
 import * as path from "path";
 import { spawnSync } from "child_process";
 import { glob } from "glob";
@@ -82,6 +83,7 @@ if (!args.length) {
         resolveCommandArgs,
         resolveListFlags,
         resolveFeatureToggles,
+        resolveBrowserOverride,
         resolveExecutionModes,
         listExecutionPlan,
         runRuntimeModes,
@@ -94,6 +96,7 @@ if (!args.length) {
         resolveCommandArgs,
         resolveListFlags,
         resolveFeatureToggles,
+        resolveBrowserOverride,
         resolveFuzzOverrides,
         resolveExecutionModes,
         listExecutionPlan,
@@ -222,6 +225,12 @@ function info(): void {
       chalk.bold.blue("--mode <name[,name...]>") +
       "       " +
       "Run one or multiple named config modes",
+  );
+  console.log(
+    "   " +
+      chalk.bold.blue("--browser <name|path>") +
+      "        " +
+      "Use chrome, chromium, firefox, webkit, or an executable path for web modes",
   );
   console.log(
     "   " +
@@ -374,6 +383,9 @@ function printCommandHelp(command: string): void {
       "  --mode <name[,name...]>  Run one or multiple named config modes\n",
     );
     process.stdout.write(
+      "  --browser <name|path>    Use chrome, chromium, firefox, webkit, or an executable path for web modes\n",
+    );
+    process.stdout.write(
       "  --update-snapshots       Create/update snapshot files on mismatch\n",
     );
     process.stdout.write(
@@ -423,6 +435,9 @@ function printCommandHelp(command: string): void {
     );
     process.stdout.write(
       "  --mode <name[,name...]>  Run one or multiple named config modes\n",
+    );
+    process.stdout.write(
+      "  --browser <name|path>    Use chrome, chromium, firefox, webkit, or an executable path for web modes\n",
     );
     process.stdout.write(
       "  --update-snapshots       Create/update snapshot files on mismatch\n",
@@ -617,6 +632,7 @@ function resolveCommandArgs(rawArgs: string[], command: string): string[] {
     if (
       arg == "--runs" ||
       arg == "--seed" ||
+      arg == "--browser" ||
       arg == "--fuzz-runs" ||
       arg == "--fuzz-seed"
     ) {
@@ -626,6 +642,7 @@ function resolveCommandArgs(rawArgs: string[], command: string): string[] {
     if (
       arg.startsWith("--runs=") ||
       arg.startsWith("--seed=") ||
+      arg.startsWith("--browser=") ||
       arg.startsWith("--fuzz-runs=") ||
       arg.startsWith("--fuzz-seed=")
     ) {
@@ -798,6 +815,24 @@ function parseStringFlag(
   return null;
 }
 
+function resolveBrowserOverride(
+  rawArgs: string[],
+  command: "run" | "test",
+): string | undefined {
+  let seenCommand = false;
+  for (let i = 0; i < rawArgs.length; i++) {
+    const arg = rawArgs[i]!;
+    if (!seenCommand) {
+      if (arg == command) seenCommand = true;
+      continue;
+    }
+    const parsed = parseStringFlag(rawArgs, i, "--browser");
+    if (!parsed) continue;
+    return parsed.value.trim() || undefined;
+  }
+  return undefined;
+}
+
 function parseIntegerFlag(flag: string, value: string): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0) {
@@ -963,12 +998,13 @@ async function runRuntimeModes(
     showCoverage: boolean;
     verbose: boolean;
     coverage?: boolean;
+    browser?: string;
   },
   configPath: string | undefined,
   selectors: string[],
   modes: (string | undefined)[],
 ): Promise<void> {
-  await ensureWebBrowsersReady(configPath, modes);
+  await ensureWebBrowsersReady(configPath, modes, runFlags.browser);
   const modeSummaryTotal = resolveConfiguredModeTotal(configPath);
   const fileSummaryTotal = await resolveConfiguredFileTotal(configPath);
   if (modes.length > 1) {
@@ -1132,6 +1168,7 @@ async function runTestModes(
     showCoverage: boolean;
     verbose: boolean;
     coverage?: boolean;
+    browser?: string;
   },
   configPath: string | undefined,
   selectors: string[],
@@ -1140,7 +1177,7 @@ async function runTestModes(
   fuzzEnabled: boolean,
   fuzzOverrides: FuzzOverrides,
 ): Promise<void> {
-  await ensureWebBrowsersReady(configPath, modes);
+  await ensureWebBrowsersReady(configPath, modes, runFlags.browser);
   const modeSummaryTotal = resolveConfiguredModeTotal(configPath);
   const fileSummaryTotal = await resolveConfiguredFileTotal(
     configPath,
@@ -1931,6 +1968,7 @@ function resolveArtifactFileNameForPreview(
 async function ensureWebBrowsersReady(
   configPath: string | undefined,
   modes: (string | undefined)[],
+  browserOverride?: string,
 ): Promise<void> {
   const resolvedConfigPath =
     configPath ?? path.join(process.cwd(), "./as-test.config.json");
@@ -1940,12 +1978,15 @@ async function ensureWebBrowsersReady(
   for (const modeName of modes) {
     const applied = applyMode(config, modeName);
     const active = applied.config;
-    if (active.buildOptions.target != "web") continue;
-    const resolved = resolveBrowserSelection();
+    if (!usesWebBrowser(active)) continue;
+    const requestedBrowser =
+      browserOverride?.trim() || active.runOptions.runtime.browser.trim();
+    const resolved = resolveBrowserSelection(requestedBrowser);
     if (!resolved) {
-      missing.push({ modeName });
+      missing.push({ modeName, browser: requestedBrowser });
       continue;
     }
+    active.runOptions.runtime.browser = resolved.browser;
     process.env.BROWSER = resolved.browser;
   }
 
@@ -1953,10 +1994,14 @@ async function ensureWebBrowsersReady(
   await handleMissingWebBrowsers(missing);
 }
 
-function resolveBrowserSelection(): { browser: string } | null {
+function resolveBrowserSelection(requested: string = ""): { browser: string } | null {
+  if (requested.trim().length) {
+    return resolveNamedBrowser(requested);
+  }
+
   const envBrowser = process.env.BROWSER?.trim() ?? "";
-  if (envBrowser.length && hasExecutable(envBrowser)) {
-    return { browser: envBrowser };
+  if (envBrowser.length) {
+    return resolveNamedBrowser(envBrowser);
   }
 
   const candidates = [
@@ -1983,17 +2028,66 @@ function resolveBrowserSelection(): { browser: string } | null {
   return null;
 }
 
+function resolveNamedBrowser(browser: string): { browser: string } | null {
+  const normalized = browser.trim().toLowerCase();
+  if (!normalized.length) return null;
+  if (
+    browser.includes("/") ||
+    browser.includes("\\") ||
+    path.isAbsolute(browser)
+  ) {
+    return hasExecutable(browser) ? { browser } : null;
+  }
+
+  const aliases: Record<string, string[]> = {
+    chromium: ["chromium", "chromium-browser"],
+    chrome: [
+      "google-chrome",
+      "google-chrome-stable",
+      "chrome",
+      "chromium",
+      "chromium-browser",
+    ],
+    firefox: ["firefox"],
+    webkit: [],
+  };
+  const candidates = aliases[normalized] ?? [browser];
+  for (const candidate of candidates) {
+    if (hasExecutable(candidate)) {
+      return { browser: candidate };
+    }
+  }
+
+  const playwrightFallback = resolvePlaywrightBrowserExecutable(normalized);
+  if (playwrightFallback) {
+    return { browser: playwrightFallback };
+  }
+  return null;
+}
+
+function usesWebBrowser(config: Config): boolean {
+  return (
+    config.buildOptions.target == "web" ||
+    config.runOptions.runtime.browser.length > 0 ||
+    config.runOptions.runtime.cmd.includes("default.web.js")
+  );
+}
+
 async function handleMissingWebBrowsers(
-  missing: { modeName?: string }[],
+  missing: { modeName?: string; browser?: string }[],
 ): Promise<void> {
   const scope = missing
-    .map((entry) => entry.modeName ?? "default")
+    .map((entry) =>
+      entry.browser?.length
+        ? `${entry.modeName ?? "default"} (${entry.browser})`
+        : (entry.modeName ?? "default"),
+    )
     .join(", ");
   const details = "no web-capable browser was found in PATH, BROWSER, or Playwright cache";
 
   if (!canPromptForWebInstall()) {
     throw new Error(
-      `web target requires a browser for mode(s) ${scope}; ${details}. Export BROWSER or install one with "npx -y playwright install chromium".`,
+      `web target requires a browser for mode(s) ${scope}; ${details}. Export BROWSER or install one with "npx -y playwright install chromium" or "npx -y playwright install webkit".`,
     );
   }
 
@@ -2008,7 +2102,7 @@ async function handleMissingWebBrowsers(
   const normalized = choice.trim().toLowerCase();
   if (normalized == "n" || normalized == "no") {
     throw new Error(
-      'browser install skipped. Export BROWSER or install one with "npx -y playwright install chromium", then rerun.',
+      'browser install skipped. Export BROWSER or install one with "npx -y playwright install chromium" or "npx -y playwright install webkit", then rerun.',
     );
   }
   if (normalized != "" && normalized != "y" && normalized != "yes") {
@@ -2066,6 +2160,7 @@ function resolvePlaywrightBrowserExecutable(browser: string): string | null {
     chromium: ["chromium-*/chrome-linux64/chrome"],
     chrome: ["chromium-*/chrome-linux64/chrome"],
     firefox: ["firefox-*/firefox/firefox"],
+    webkit: ["webkit-*/pw_run.sh"],
   };
   const patterns = map[browser] ?? [];
   for (const pattern of patterns) {
@@ -2194,6 +2289,11 @@ async function listExecutionPlan(
     process.stdout.write(`  outDir: ${active.outDir}\n`);
     if (command == "run" || command == "test") {
       process.stdout.write(`  runtime: ${active.runOptions.runtime.cmd}\n`);
+      if (usesWebBrowser(active)) {
+        process.stdout.write(
+          `  browser: ${active.runOptions.runtime.browser || "(auto)"}\n`,
+        );
+      }
     }
     const envOverrides = {
       ...config.env,

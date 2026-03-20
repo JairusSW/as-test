@@ -6,6 +6,7 @@ type TestCommandDeps = {
   resolveCommandArgs(rawArgs: string[], command: string): string[];
   resolveListFlags(rawArgs: string[], command: string): CliListFlags;
   resolveFeatureToggles(rawArgs: string[], command: string): CliFeatureToggles;
+  resolveBrowserOverride(rawArgs: string[], command: "test"): string | undefined;
   resolveFuzzOverrides(rawArgs: string[], command: "test" | "fuzz"): FuzzOverrides;
   resolveExecutionModes(
     configPath: string | undefined,
@@ -51,6 +52,7 @@ export async function executeTestCommand(
     showCoverage: flags.includes("--show-coverage"),
     verbose: flags.includes("--verbose"),
     coverage: featureToggles.coverage,
+    browser: deps.resolveBrowserOverride(rawArgs, "test"),
   };
   const fuzzEnabled = flags.includes("--fuzz");
   const fuzzOverrides = deps.resolveFuzzOverrides(rawArgs, "test");

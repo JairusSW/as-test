@@ -13,6 +13,7 @@ export async function executeTestCommand(rawArgs, flags, configPath, selectedMod
         showCoverage: flags.includes("--show-coverage"),
         verbose: flags.includes("--verbose"),
         coverage: featureToggles.coverage,
+        browser: deps.resolveBrowserOverride(rawArgs, "test"),
     };
     const fuzzEnabled = flags.includes("--fuzz");
     const fuzzOverrides = deps.resolveFuzzOverrides(rawArgs, "test");

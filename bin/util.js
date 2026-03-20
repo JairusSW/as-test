@@ -101,6 +101,10 @@ export function loadConfig(CONFIG_PATH, warn = false) {
                     ? legacyRun
                     : runtime.cmd;
         runtime.cmd = cmd;
+        runtime.browser =
+            runtimeRaw && typeof runtimeRaw.browser == "string"
+                ? runtimeRaw.browser
+                : "";
         config.runOptions.runtime = runtime;
         config.runOptions.env = parseEnvValue(runOptionsRaw.env, configDir, "$.runOptions.env");
         const fuzzRaw = raw.fuzz ?? {};
@@ -147,7 +151,7 @@ const TOP_LEVEL_KEYS = new Set([
 ]);
 const BUILD_OPTION_KEYS = new Set(["cmd", "args", "target", "env"]);
 const RUN_OPTION_KEYS = new Set(["runtime", "reporter", "run", "env"]); // includes legacy "run"
-const RUNTIME_OPTION_KEYS = new Set(["cmd", "run"]); // includes legacy "run"
+const RUNTIME_OPTION_KEYS = new Set(["cmd", "run", "browser"]); // includes legacy "run"
 const REPORTER_OPTION_KEYS = new Set(["name", "options", "outDir", "outFile"]);
 const OUTPUT_OPTION_KEYS = new Set(["build", "logs", "coverage", "snapshots"]);
 const FUZZ_OPTION_KEYS = new Set([
@@ -484,6 +488,13 @@ function validateRunOptionsField(raw, key, pathPrefix, issues) {
                     fix: 'legacy "run" should be a command string',
                 });
             }
+            if ("browser" in runtimeObj && typeof runtimeObj.browser != "string") {
+                issues.push({
+                    path: `${pathPrefix}.${key}.runtime.browser`,
+                    message: "must be a string",
+                    fix: 'set to "chrome", "chromium", "firefox", "webkit", or an executable path',
+                });
+            }
         }
     }
     if ("reporter" in obj && obj.reporter != undefined) {
@@ -778,6 +789,8 @@ function parseModes(raw, configDir) {
                 else {
                     runtime.cmd = "";
                 }
+                runtime.browser =
+                    typeof runtimeRaw.browser == "string" ? runtimeRaw.browser : "";
                 run.runtime = runtime;
             }
             if (typeof runRaw.reporter == "string") {
@@ -938,12 +951,16 @@ export function applyMode(config, modeName) {
         merged.fuzz = Object.assign(new FuzzConfig(), config.fuzz);
         merged.fuzz.crashDir = appendPathSegment(config.fuzz.crashDir, "default");
         merged.fuzz.corpusDir = appendPathSegment(config.fuzz.corpusDir, "default");
+        const env = {
+            ...process.env,
+            ...config.env,
+        };
+        if (merged.runOptions.runtime.browser.length) {
+            env.BROWSER = merged.runOptions.runtime.browser;
+        }
         return {
             config: merged,
-            env: {
-                ...process.env,
-                ...config.env,
-            },
+            env,
         };
     }
     const mode = config.modes[modeName];
@@ -995,6 +1012,9 @@ export function applyMode(config, modeName) {
     if (mode.runOptions.runtime?.cmd) {
         merged.runOptions.runtime.cmd = mode.runOptions.runtime.cmd;
     }
+    if (mode.runOptions.runtime?.browser != undefined) {
+        merged.runOptions.runtime.browser = mode.runOptions.runtime.browser;
+    }
     if (mode.runOptions.reporter != undefined) {
         merged.runOptions.reporter = mode.runOptions.reporter;
     }
@@ -1004,13 +1024,17 @@ export function applyMode(config, modeName) {
             ...mode.runOptions.env,
         };
     }
+    const env = {
+        ...process.env,
+        ...config.env,
+        ...mode.env,
+    };
+    if (merged.runOptions.runtime.browser.length) {
+        env.BROWSER = merged.runOptions.runtime.browser;
+    }
     return {
         config: merged,
-        env: {
-            ...process.env,
-            ...config.env,
-            ...mode.env,
-        },
+        env,
         modeName,
     };
 }
