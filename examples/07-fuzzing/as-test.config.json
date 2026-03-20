@@ -1,0 +1,28 @@
+{
+  "$schema": "./node_modules/as-test/as-test.config.schema.json",
+  "input": ["./assembly/__tests__/*.spec.ts"],
+  "outDir": "./.as-test/build",
+  "logs": "./.as-test/logs",
+  "coverageDir": "./.as-test/coverage",
+  "snapshotDir": "./.as-test/snapshots",
+  "config": "./asconfig.json",
+  "coverage": true,
+  "fuzz": {
+    "input": ["./assembly/__fuzz__/*.fuzz.ts"],
+    "runs": 1000,
+    "seed": 1337,
+    "target": "bindings",
+    "corpusDir": "./.as-test/corpus",
+    "crashDir": "./.as-test/crashes"
+  },
+  "buildOptions": {
+    "cmd": "",
+    "args": [],
+    "target": "wasi"
+  },
+  "runOptions": {
+    "runtime": {
+      "cmd": "node ./.as-test/runners/default.wasi.js <file>"
+    }
+  }
+}

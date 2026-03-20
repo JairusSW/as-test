@@ -15,4 +15,5 @@ export type RunFlags = {
   showCoverage: boolean;
   verbose: boolean;
   coverage?: boolean;
+  browser?: string;
 };

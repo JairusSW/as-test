@@ -78,6 +78,22 @@ export class Expectation<T> extends Tests {
     this.message = isFail ? this._message : "";
     if (isFail) {
       sendAssertionFailure(this._snapshotKey, instr, left, right, this.message);
+      // @ts-ignore
+      if (isDefined(AS_TEST_FUZZ)) {
+        // @ts-ignore
+        __as_test_fuzz_failed = true;
+        // @ts-ignore
+        if (!__as_test_fuzz_failure_instr.length) {
+          // @ts-ignore
+          __as_test_fuzz_failure_instr = instr;
+          // @ts-ignore
+          __as_test_fuzz_failure_left = left;
+          // @ts-ignore
+          __as_test_fuzz_failure_right = right;
+          // @ts-ignore
+          __as_test_fuzz_failure_message = this.message;
+        }
+      }
     }
     this._not = false;
   }

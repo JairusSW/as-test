@@ -16,6 +16,7 @@ import {
 import { createReporter as createDefaultReporter } from "../reporters/default.js";
 import { createTapReporter } from "../reporters/tap.js";
 import type { TapReporterConfig } from "../reporters/tap.js";
+import { persistCrashRecord } from "../crash-store.js";
 
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 
@@ -390,6 +391,9 @@ export async function run(
     try {
       report = await runProcess(
         invocation,
+        file,
+        config.fuzz.crashDir,
+        options.modeName,
         snapshotStore,
         snapshotEnabled,
         updateSnapshots,
@@ -488,6 +492,7 @@ export async function run(
         total: totalModes,
       },
     });
+    reporter.flush?.();
   }
 
   const failed = Boolean(stats.failedFiles || snapshotSummary.failed);
@@ -717,7 +722,18 @@ try {
 
   const binary = readFileSync(wasmPath);
   const module = new WebAssembly.Module(binary);
+  const envImports = {
+    __as_test_request_fuzz_config() {
+      return 0;
+    },
+  };
+  for (const entry of WebAssembly.Module.imports(module)) {
+    if (entry.module == "env" && entry.kind == "function" && !(entry.name in envImports)) {
+      envImports[entry.name] = () => 0;
+    }
+  }
   const instance = new WebAssembly.Instance(module, {
+    env: envImports,
     wasi_snapshot_preview1: wasi.wasiImport,
   });
   wasi.start(instance);
@@ -1262,6 +1278,9 @@ function compareCoveragePoints(
 
 async function runProcess(
   invocation: RuntimeInvocation,
+  specFile: string,
+  crashDir: string,
+  modeName: string | undefined,
   snapshots: SnapshotStore,
   snapshotEnabled: boolean,
   updateSnapshots: boolean,
@@ -1277,6 +1296,7 @@ async function runProcess(
   let report: any = null;
   let parseError: string | null = null;
   let stderrBuffer = "";
+  let stdoutBuffer = "";
   let suppressTraceWarningLine = false;
   let spawnError: Error | null = null;
 
@@ -1302,6 +1322,7 @@ async function runProcess(
 
   class TestChannel extends Channel {
     protected onPassthrough(data: Buffer): void {
+      stdoutBuffer += data.toString("utf8");
       if (tapMode) {
         process.stderr.write(data);
       } else {
@@ -1404,13 +1425,37 @@ async function runProcess(
     }
   }
   if (spawnError) {
+    persistCrashRecord(crashDir, {
+      kind: "test",
+      file: specFile,
+      mode: modeName ?? "default",
+      error: spawnError.stack ?? spawnError.message,
+      stdout: stdoutBuffer,
+      stderr: stderrBuffer,
+    });
     throw spawnError;
   }
 
   if (parseError) {
+    persistCrashRecord(crashDir, {
+      kind: "test",
+      file: specFile,
+      mode: modeName ?? "default",
+      error: `could not parse report payload: ${parseError}`,
+      stdout: stdoutBuffer,
+      stderr: stderrBuffer,
+    });
     throw new Error(`could not parse report payload: ${parseError}`);
   }
   if (!report) {
+    persistCrashRecord(crashDir, {
+      kind: "test",
+      file: specFile,
+      mode: modeName ?? "default",
+      error: "missing report payload from test runtime",
+      stdout: stdoutBuffer,
+      stderr: stderrBuffer,
+    });
     throw new Error("missing report payload from test runtime");
   }
   if (code !== 0) {

@@ -99,9 +99,9 @@ function analyzeSourceText(sourceText) {
     const runAlias = detectRunAlias(text);
     const hasRunCall = runAlias
         ? new RegExp(`\\b${escapeRegex(runAlias)}\\s*\\(`).test(text)
-        : /\brun\s*\(/.test(text);
+        : false;
     return {
-        hasSuiteCalls: /\b(?:describe|test|it)\s*\(/.test(text),
+        hasSuiteCalls: /\b(?:describe|test|it|fuzz|xfuzz)\s*\(/.test(text),
         hasRunCall,
         runImportPath,
         hasMockCalls: /\b(?:mockFn|unmockFn|mockImport|unmockImport)\s*\(/.test(text),
@@ -135,7 +135,7 @@ function detectRunAlias(text) {
     return null;
 }
 function looksLikeAsTestImport(specifiers) {
-    return /\b(?:describe|test|it|expect|beforeAll|afterAll|beforeEach|afterEach|mockFn|unmockFn|mockImport|unmockImport|snapshotImport|restoreImport|log|run)\b/.test(specifiers);
+    return /\b(?:describe|test|it|fuzz|xfuzz|expect|beforeAll|afterAll|beforeEach|afterEach|mockFn|unmockFn|mockImport|unmockImport|snapshotFn|log|run)\b/.test(specifiers);
 }
 function stripComments(sourceText) {
     return sourceText.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");

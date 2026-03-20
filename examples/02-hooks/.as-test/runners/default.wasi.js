@@ -32,7 +32,18 @@ try {
 
   const binary = readFileSync(wasmPath);
   const module = new WebAssembly.Module(binary);
+  const envImports = {
+    __as_test_request_fuzz_config() {
+      return 0;
+    },
+  };
+  for (const entry of WebAssembly.Module.imports(module)) {
+    if (entry.module == "env" && entry.kind == "function" && !(entry.name in envImports)) {
+      envImports[entry.name] = () => 0;
+    }
+  }
   const instance = new WebAssembly.Instance(module, {
+    env: envImports,
     wasi_snapshot_preview1: wasi.wasiImport,
   });
   wasi.start(instance);

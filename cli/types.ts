@@ -10,6 +10,7 @@ export class Config {
   env: Record<string, string> = {};
   buildOptions: BuildOptions = new BuildOptions();
   runOptions: RunOptions = new RunOptions();
+  fuzz: FuzzConfig = new FuzzConfig();
   modes: Record<string, ModeConfig> = {};
 }
 
@@ -37,6 +38,7 @@ export class RunOptions {
 
 export class Runtime {
   cmd: string = "node ./.as-test/runners/default.wasi.js <file>";
+  browser: string = "";
 }
 
 export class ModeConfig {
@@ -56,4 +58,14 @@ export class ReporterConfig {
   options: string[] = [];
   outDir: string = "";
   outFile: string = "";
+}
+
+export class FuzzConfig {
+  input: string[] = ["./assembly/__fuzz__/*.fuzz.ts"];
+  runs: number = 1000;
+  seed: number = 1337;
+  maxInputBytes: number = 4096;
+  target: string = "bindings";
+  corpusDir: string = "./.as-test/fuzz/corpus";
+  crashDir: string = "./.as-test/crashes";
 }

@@ -59,6 +59,10 @@ function escape(value: string): string {
       out += '\\"';
     } else if (ch == 92) {
       out += "\\\\";
+    } else if (ch == 8) {
+      out += "\\b";
+    } else if (ch == 12) {
+      out += "\\f";
     } else if (ch == 10) {
       out += "\\n";
     } else if (ch == 13) {
@@ -66,13 +70,34 @@ function escape(value: string): string {
     } else if (ch == 9) {
       out += "\\t";
     } else if (ch < 32) {
-      out += "\\u00";
-      const hex = ch.toString(16);
-      if (hex.length < 2) out += "0";
-      out += hex;
+      out += unicodeEscape(ch);
+    } else if (ch >= 0xd800 && ch <= 0xdfff) {
+      if (ch <= 0xdbff && i + 1 < value.length) {
+        const next = value.charCodeAt(i + 1);
+        if (next >= 0xdc00 && next <= 0xdfff) {
+          out += value.charAt(i);
+          out += value.charAt(i + 1);
+          i++;
+          continue;
+        }
+      }
+      out += unicodeEscape(ch);
     } else {
       out += value.charAt(i);
     }
   }
   return out;
+}
+
+function unicodeEscape(code: i32): string {
+  let out = "\\u";
+  out += hexNibble((code >> 12) & 0xf);
+  out += hexNibble((code >> 8) & 0xf);
+  out += hexNibble((code >> 4) & 0xf);
+  out += hexNibble(code & 0xf);
+  return out;
+}
+
+function hexNibble(value: i32): string {
+  return String.fromCharCode(value < 10 ? 48 + value : 87 + value);
 }

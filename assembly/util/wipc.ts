@@ -1,3 +1,5 @@
+import { quote as q } from "./json";
+
 // @ts-ignore
 @external("env", "process.stdout.write")
 declare function process_stdout_write(data: ArrayBuffer): void;
@@ -45,6 +47,11 @@ enum MessageType {
 export class SnapshotReply {
   public ok: bool = false;
   public expected: string = "";
+}
+
+export class FuzzConfigReply {
+  public runs: i32 = 1000;
+  public seed: u64 = 1337;
 }
 
 export function sendAssertionFailure(
@@ -114,6 +121,26 @@ export function snapshotAssert(key: string, actual: string): SnapshotReply {
   const reply = new SnapshotReply();
   reply.ok = body.slice(0, sep) == "1";
   reply.expected = body.slice(sep + 1);
+  return reply;
+}
+
+export function requestFuzzConfig(): FuzzConfigReply {
+  sendJson(MessageType.CALL, `{"kind":"fuzz:config"}`);
+  const response = readFrame();
+  if (response == null || response.type != MessageType.CALL) {
+    return new FuzzConfigReply();
+  }
+  const body = String.UTF8.decode(response.payload);
+  if (!body.length) {
+    return new FuzzConfigReply();
+  }
+  const sep = body.indexOf("\n");
+  if (sep < 0) return new FuzzConfigReply();
+  const reply = new FuzzConfigReply();
+  const runs = body.slice(0, sep);
+  const seed = body.slice(sep + 1);
+  if (runs.length) reply.runs = I32.parseInt(runs);
+  if (seed.length) reply.seed = U64.parseInt(seed);
   return reply;
 }
 
@@ -258,29 +285,4 @@ function wasiRead(max: i32): ArrayBuffer {
   const partial = new ArrayBuffer(size);
   memory.copy(changetype<usize>(partial), changetype<usize>(out), size);
   return partial;
-}
-
-function q(value: string): string {
-  return '"' + escape(value) + '"';
-}
-
-function escape(value: string): string {
-  let out = "";
-  for (let i = 0; i < value.length; i++) {
-    const ch = value.charCodeAt(i);
-    if (ch == 34) {
-      out += '\\"';
-    } else if (ch == 92) {
-      out += "\\\\";
-    } else if (ch == 10) {
-      out += "\\n";
-    } else if (ch == 13) {
-      out += "\\r";
-    } else if (ch == 9) {
-      out += "\\t";
-    } else {
-      out += String.fromCharCode(ch);
-    }
-  }
-  return out;
 }

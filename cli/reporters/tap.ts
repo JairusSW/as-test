@@ -1,4 +1,5 @@
 import {
+  FuzzCompleteEvent,
   ReporterContext,
   ReporterFactory,
   RunCompleteEvent,
@@ -55,15 +56,34 @@ export const createReporter: ReporterFactory = (
 };
 
 class TapReporter implements TestReporter {
+  private pendingRunEvent: RunCompleteEvent | null = null;
+  private pendingFuzzEvent: FuzzCompleteEvent | null = null;
+
   constructor(
     private readonly context: ReporterContext,
     private readonly config: TapReporterResolvedConfig,
   ) {}
 
   onRunComplete(event: RunCompleteEvent): void {
-    const points = collectTapPoints(event.reports);
-    const output = buildTapDocument(points);
+    this.pendingRunEvent = event;
+  }
 
+  onFuzzComplete(event: FuzzCompleteEvent): void {
+    this.pendingFuzzEvent = event;
+  }
+
+  flush(): void {
+    if (!this.pendingRunEvent && !this.pendingFuzzEvent) return;
+
+    const points: TapPoint[] = [];
+    if (this.pendingRunEvent) {
+      points.push(...collectTapPoints(this.pendingRunEvent.reports));
+    }
+    if (this.pendingFuzzEvent) {
+      points.push(...collectFuzzTapPoints(this.pendingFuzzEvent));
+    }
+
+    const output = buildTapDocument(points);
     this.context.stdout.write(output);
 
     for (const point of points) {
@@ -72,6 +92,8 @@ class TapReporter implements TestReporter {
     }
 
     this.writeArtifacts(points, output);
+    this.pendingRunEvent = null;
+    this.pendingFuzzEvent = null;
   }
 
   private writeArtifacts(points: TapPoint[], output: string): void {
@@ -221,6 +243,65 @@ function collectTapPoints(reports: unknown[]): TapPoint[] {
   }
 
   return points;
+}
+
+function collectFuzzTapPoints(event: FuzzCompleteEvent): TapPoint[] {
+  const points: TapPoint[] = [];
+
+  for (const result of event.results) {
+    const durationMs = result.time;
+    if (!result.fuzzers.length) {
+      points.push({
+        name: `fuzz ${path.basename(result.file)}`,
+        status: result.crashes > 0 ? "fail" : "ok",
+        file: result.file,
+        message:
+          result.crashes > 0
+            ? buildFuzzMessage(result.runs, result.seed, result.crashFiles[0])
+            : `fuzz passed after ${result.runs} runs (seed ${result.seed})`,
+        durationMs,
+      });
+      continue;
+    }
+
+    for (const fuzzer of result.fuzzers) {
+      const crashed = fuzzer.crashed > 0 || result.crashes > 0;
+      const failed = crashed || fuzzer.failed > 0;
+      points.push({
+        name: `fuzz ${path.basename(result.file)} > ${fuzzer.name}`,
+        status: failed ? "fail" : "ok",
+        file: result.file,
+        message: failed
+          ? buildFuzzerFailureMessage(result, fuzzer)
+          : `fuzz passed after ${fuzzer.runs} runs (seed ${result.seed})`,
+        durationMs: fuzzer.time.end - fuzzer.time.start,
+      });
+    }
+  }
+
+  return points;
+}
+
+function buildFuzzerFailureMessage(
+  result: FuzzCompleteEvent["results"][number],
+  fuzzer: FuzzCompleteEvent["results"][number]["fuzzers"][number],
+): string {
+  if (fuzzer.crashed > 0 || result.crashes > 0) {
+    return buildFuzzMessage(result.runs, result.seed, result.crashFiles[0]);
+  }
+  if (fuzzer.failure?.message?.length) {
+    return `${fuzzer.failure.message} (runs ${fuzzer.runs}, seed ${result.seed})`;
+  }
+  return `fuzz failed after ${fuzzer.runs} runs (seed ${result.seed})`;
+}
+
+function buildFuzzMessage(
+  runs: number,
+  seed: number,
+  crashFile?: string,
+): string {
+  const crashSuffix = crashFile?.length ? `, crash ${crashFile}` : "";
+  return `fuzz crashed after ${runs} runs (seed ${seed}${crashSuffix})`;
 }
 
 function collectTapPointsFromSuite(

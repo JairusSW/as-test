@@ -17,6 +17,45 @@
 ### Docs
 
 - docs: remove outdated `run()` calls from README usage snippets where they are no longer needed.
+- docs: add a `docs/` directory with focused guides for setup, tests, fuzzing, mocking, snapshots, coverage, reporters, assertions, config, CLI usage, and diagnostics.
+- docs: link the new docs index from the main README.
+- docs: reorder the README to follow the beginner workflow from installation through tests, mocking, snapshots, fuzzing, and runtimes.
+- docs: simplify the main README and replace stale examples with snippets that reflect the current config shape and working APIs.
+
+### CI
+
+- fix: add a dedicated `test:ci` script and `as-test.ci.config.json` so CI stays on the Wasmtime/WASI path instead of fanning out into `web-headless`.
+- fix: remove the baked-in `web-headless` mode from the repo's default config so the project defaults stay on the Wasmtime/WASI runner.
+- feat: add a dedicated `examples.yml` workflow that runs the standalone examples individually on push.
+- feat: install Chromium through Playwright for the `07-web` example job and pass its executable through `BROWSER`.
+- feat: add local `act` defaults and package scripts so GitHub Actions workflows can be exercised before pushing.
+
+### Init & Examples
+
+- feat: `ast init` can scaffold a basic fuzzer example and now writes `assembly/tsconfig.json` for editor-friendly AssemblyScript setup.
+- feat: update the generated `.gitignore` block to keep the `.as-test/` root while excluding runners and snapshots.
+- feat: add more standalone fuzzing examples and a dedicated `07-web` example project.
+- fix: rename `05-mocking-and-import-snapshots` to `05-mocking-and-imports` and align its file/test labels with the new name.
+
+### Fuzzing
+
+- feat: add `ast fuzz` to build and run dedicated `*.fuzz.ts` bindings targets.
+- feat: add `ast test --fuzz` to run fuzz targets after the normal spec pass and print a combined console summary.
+- feat: add an AssemblyScript-first fuzz API via `fuzz("name", callback).generate((seed, run) => ...)`.
+- feat: add built-in `FuzzSeed` generators for booleans, numbers, bytes, strings, arrays, and picks.
+- feat: treat failed expectations and `false` returns as fuzz failures, while traps and throws are reported as crashes.
+- feat: add top-level `fuzz` config for fuzz target discovery and default driver settings.
+- feat: add `xfuzz(...)` for skipped fuzz targets and report fuzz results through the built-in reporters, including TAP output.
+- feat: store fuzz and runtime crash artifacts under a shared `.as-test/crashes/<entry>/` root with `latest.*` and timestamped logs.
+- fix: fail `ast fuzz` and `ast test --fuzz` on logical fuzz failures, not only crashes.
+- fix: disambiguate duplicate fuzz basenames using the selected input set so same-named fuzz files do not overwrite one another.
+- fix: auto-inject `run()` correctly for fuzz files without being confused by generator-local `run(...)` parameters.
+- fix: make `try-as` opt-in even when the package is installed; it now only runs when explicitly enabled.
+
+### Mocking & Runtime API
+
+- fix: remove `snapshotImport(...)` and `restoreImport(...)` from the active runtime API in favor of the simpler mocking surface.
+- fix: escape control bytes and invalid surrogate code units consistently in runtime JSON serialization, including WIPC event frames and fuzz failure payloads.
 
 ## 2026-03-11 - v1.0.1
 

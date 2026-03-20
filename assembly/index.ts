@@ -9,31 +9,33 @@ import {
   CoverPoint,
 } from "as-test/assembly/coverage";
 import { Log } from "./src/log";
-import { sendFileEnd, sendFileStart, sendReport } from "./util/wipc";
+import {
+  requestFuzzConfig as requestHostFuzzConfig,
+  sendFileEnd,
+  sendFileStart,
+  sendReport,
+} from "./util/wipc";
 import { quote } from "./util/json";
+import {
+  createFuzzer,
+  FuzzerBase,
+  FuzzSeed,
+  FuzzerResult,
+  prepareFuzzIteration,
+} from "./src/fuzz";
+export { FuzzSeed } from "./src/fuzz";
 
 let entrySuites: Suite[] = [];
+let entryFuzzers: FuzzerBase[] = [];
 
 // @ts-ignore
 const FILE = isDefined(ENTRY_FILE) ? ENTRY_FILE : "unknown";
-
-class ImportSnapshot {
-  hasValue: bool = false;
-  value: u32 = 0;
-}
-
-const DEFAULT_IMPORT_SNAPSHOT_VERSION = "default";
 
 // Globals
 // @ts-ignore
 @global let __mock_global: Map<string, u32> = new Map<string, u32>();
 // @ts-ignore
 @global let __mock_import: Map<string, u32> = new Map<string, u32>();
-// @ts-ignore
-@global let __mock_import_snapshots: Map<string, ImportSnapshot> = new Map<
-  string,
-  ImportSnapshot
->();
 // @ts-ignore
 @global let __mock_import_target_by_index: Map<u32, string> = new Map<
   u32,
@@ -127,6 +129,24 @@ export function xtest(description: string, callback: () => void): void {
  */
 export function xit(description: string, callback: () => void): void {
   registerSuite(description, callback, "xit");
+}
+
+export function fuzz<T extends Function>(
+  description: string,
+  callback: T,
+): FuzzerBase {
+  const entry = createFuzzer(description, callback);
+  entryFuzzers.push(entry);
+  return entry;
+}
+
+export function xfuzz<T extends Function>(
+  description: string,
+  callback: T,
+): FuzzerBase {
+  const entry = createFuzzer(description, callback, true);
+  entryFuzzers.push(entry);
+  return entry;
 }
 
 /**
@@ -270,40 +290,12 @@ export function unmockImport(oldFn: string): void {
 }
 
 /**
- * Save a single import mock value for the given version.
- *
- * Accepts either:
- * - `snapshotImport(importOrPath, version)`
- * - `snapshotImport(importOrPath, () => { ... })` (uses default version)
- *
- * `imp` accepts either a string import path (e.g. "mock.foo") or the imported function.
+ * Capture the current return value of a zero-arg callback and return a new function
+ * that always returns the captured value.
  */
-export function snapshotImport<T, V>(imp: T, versionOrCapture: V): void {
-  const importKey = resolveImportKey<T>(imp);
-  if (isFunction<V>(versionOrCapture)) {
-    // @ts-ignore
-    versionOrCapture();
-    saveImportSnapshot(importKey, DEFAULT_IMPORT_SNAPSHOT_VERSION);
-    return;
-  }
-  saveImportSnapshot(importKey, versionKey<V>(versionOrCapture));
-}
-
-/**
- * Restore a single import mock value for the given version.
- *
- * Accepts either a string import path (e.g. "mock.foo") or the imported function.
- */
-export function restoreImport<T, V>(imp: T, version: V): void {
-  const importKey = resolveImportKey<T>(imp);
-  const snapshotKey = importSnapshotKey(importKey, versionKey<V>(version));
-  if (!__mock_import_snapshots.has(snapshotKey)) return;
-  const snapshot = __mock_import_snapshots.get(snapshotKey);
-  if (snapshot.hasValue) {
-    __mock_import.set(importKey, snapshot.value);
-  } else {
-    __mock_import.delete(importKey);
-  }
+export function snapshotFn<T>(callback: () => T): () => T {
+  const value = callback();
+  return (): T => value;
 }
 
 /**
@@ -339,6 +331,11 @@ class RunOptions {
  * ```
  */
 export function run(options: RunOptions = new RunOptions()): void {
+  // @ts-ignore
+  if (isDefined(AS_TEST_FUZZ)) {
+    runFuzzers();
+    return;
+  }
   __test_options = options;
   const time = new Time();
   let fileVerdict = "none";
@@ -372,6 +369,46 @@ export function run(options: RunOptions = new RunOptions()): void {
   report.suites = entrySuites;
   report.coverage = collectCoverage();
   sendReport(report.serialize());
+}
+
+class FuzzConfig {
+  runs: i32 = 1000;
+  seed: u64 = 1337;
+}
+
+class FuzzReport {
+  fuzzers: FuzzerResult[] = [];
+
+  serialize(): string {
+    let out = '{"fuzzers":[';
+    for (let i = 0; i < this.fuzzers.length; i++) {
+      if (i) out += ",";
+      out += unchecked(this.fuzzers[i]).serialize();
+    }
+    out += "]}";
+    return out;
+  }
+}
+
+function runFuzzers(): void {
+  __test_options = new RunOptions();
+  const config = requestFuzzConfig();
+  const report = new FuzzReport();
+  for (let i = 0; i < entryFuzzers.length; i++) {
+    const fuzzer = unchecked(entryFuzzers[i]);
+    prepareFuzzIteration();
+    const result = fuzzer.run(config.seed, config.runs);
+    report.fuzzers.push(result);
+  }
+  sendReport(report.serialize());
+}
+
+function requestFuzzConfig(): FuzzConfig {
+  const out = new FuzzConfig();
+  const reply = requestHostFuzzConfig();
+  out.runs = reply.runs;
+  out.seed = reply.seed;
+  return out;
 }
 
 function registerSuite(
@@ -525,46 +562,6 @@ function snapshotKey(): string {
   }
   const path = parts.join(" > ");
   return FILE + "::" + path + "::" + suite.tests.length.toString();
-}
-
-function resolveImportKey<T>(imp: T): string {
-  if (isString<T>()) {
-    // @ts-ignore
-    return imp as string;
-  }
-  // @ts-ignore
-  const index = imp.index as u32;
-  if (__mock_import_target_by_index.has(index)) {
-    return __mock_import_target_by_index.get(index);
-  }
-  return index.toString();
-}
-
-function importSnapshotKey(importKey: string, version: string): string {
-  return importKey + "::" + version;
-}
-
-function versionKey<V>(version: V): string {
-  if (isString<V>()) {
-    // @ts-ignore
-    return version as string;
-  }
-  if (isInteger<V>()) {
-    // @ts-ignore
-    return (<i64>version).toString();
-  }
-  ERROR("snapshot/restore version must be string or integer");
-  return "";
-}
-
-function saveImportSnapshot(importKey: string, version: string): void {
-  const snapshotKey = importSnapshotKey(importKey, version);
-  const snapshot = new ImportSnapshot();
-  if (__mock_import.has(importKey)) {
-    snapshot.hasValue = true;
-    snapshot.value = __mock_import.get(importKey);
-  }
-  __mock_import_snapshots.set(snapshotKey, snapshot);
 }
 
 export class Result {

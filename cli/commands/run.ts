@@ -7,6 +7,7 @@ type RunCommandDeps = {
   resolveCommandArgs(rawArgs: string[], command: string): string[];
   resolveListFlags(rawArgs: string[], command: string): CliListFlags;
   resolveFeatureToggles(rawArgs: string[], command: string): CliFeatureToggles;
+  resolveBrowserOverride(rawArgs: string[], command: "run"): string | undefined;
   resolveExecutionModes(
     configPath: string | undefined,
     selectedModes: string[],
@@ -43,6 +44,7 @@ export async function executeRunCommand(
     showCoverage: flags.includes("--show-coverage"),
     verbose: flags.includes("--verbose"),
     coverage: featureToggles.coverage,
+    browser: deps.resolveBrowserOverride(rawArgs, "run"),
   };
   const modeTargets = deps.resolveExecutionModes(configPath, selectedModes);
   if (listFlags.list || listFlags.listModes) {

@@ -1,2 +1,5 @@
+# Include essential as-test artifacts
+!.as-test/
+.as-test/*
 !.as-test/runners/
 !.as-test/snapshots/

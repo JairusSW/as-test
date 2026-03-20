@@ -5,17 +5,24 @@ import { spawnSync } from "child_process";
 import * as path from "path";
 import { applyMode, getPkgRunner, loadConfig, tokenizeCommand, resolveProjectModule, } from "../util.js";
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
-export async function build(configPath = DEFAULT_CONFIG_PATH, selectors = [], modeName, featureToggles = {}) {
+export async function build(configPath = DEFAULT_CONFIG_PATH, selectors = [], modeName, featureToggles = {}, overrides = {}) {
     const loadedConfig = loadConfig(configPath, false);
     const mode = applyMode(loadedConfig, modeName);
-    const config = mode.config;
+    const config = Object.assign(Object.create(Object.getPrototypeOf(mode.config)), mode.config);
+    config.buildOptions = Object.assign(Object.create(Object.getPrototypeOf(mode.config.buildOptions)), mode.config.buildOptions);
+    if (overrides.target) {
+        config.buildOptions.target = overrides.target;
+    }
+    if (overrides.args?.length) {
+        config.buildOptions.args = [...config.buildOptions.args, ...overrides.args];
+    }
     if (!hasCustomBuildCommand(config)) {
         ensureDeps(config);
     }
     const pkgRunner = getPkgRunner();
     const inputPatterns = resolveInputPatterns(config.input, selectors);
     const inputFiles = (await glob(inputPatterns)).sort((a, b) => a.localeCompare(b));
-    const duplicateSpecBasenames = await resolveDuplicateSpecBasenames(config.input);
+    const duplicateSpecBasenames = resolveDuplicateBasenames(inputFiles);
     const coverageEnabled = resolveCoverageEnabled(config.coverage, featureToggles.coverage);
     const buildEnv = {
         ...mode.env,
@@ -99,9 +106,7 @@ function resolveArtifactFileName(file, target, modeName, duplicateSpecBasenames 
     const stem = ext.length ? legacy.slice(0, -ext.length) : legacy;
     return `${stem}.${disambiguator}${ext}`;
 }
-async function resolveDuplicateSpecBasenames(configured) {
-    const patterns = Array.isArray(configured) ? configured : [configured];
-    const files = await glob(patterns);
+function resolveDuplicateBasenames(files) {
     const counts = new Map();
     for (const file of files) {
         const base = path.basename(file);
@@ -260,7 +265,7 @@ function resolveTryAsEnabled(override) {
     if (override === true && !installed) {
         throw new Error('try-as feature was enabled, but package "try-as" is not installed');
     }
-    return installed;
+    return false;
 }
 function resolveCoverageEnabled(rawCoverage, override) {
     if (override != undefined)

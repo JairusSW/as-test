@@ -63,7 +63,12 @@
   },
   "scripts": {
     "test": "node ./bin/index.js test",
+    "test:ci": "node ./bin/index.js test --tap --config ./as-test.ci.config.json",
     "test:examples": "npm --prefix ./examples run test",
+    "ci:act": "bash ./tools/act.sh push",
+    "ci:act:pr": "bash ./tools/act.sh pull_request",
+    "ci:act:tests": "act push -W .github/workflows/as-test.yml",
+    "ci:act:examples": "act push -W .github/workflows/examples.yml",
     "typecheck": "tsc -p cli --noEmit && tsc -p transform --noEmit",
     "lint": "eslint transform/src/**/*.ts tools/**/*.js eslint.config.js",
     "build:transform": "tsc -p ./transform",

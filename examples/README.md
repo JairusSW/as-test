@@ -8,8 +8,10 @@ Each example is now a standalone project initialized with `ast init`.
 - `02-hooks`: `beforeEach` and `afterEach` behavior.
 - `03-matchers`: Common numeric, string, and array matchers.
 - `04-snapshots`: unnamed and named `toMatchSnapshot` usage.
-- `05-mocking-and-import-snapshots`: `mockFn`, `unmockFn`, `mockImport`, `unmockImport`, `snapshotImport`, and `restoreImport`.
+- `05-mocking-and-imports`: `mockFn`, `unmockFn`, `mockImport`, and `unmockImport`.
 - `06-skips`: `xdescribe`, `xtest`, `xit`, and `xexpect`.
+- `07-fuzzing`: `fuzz(...)`, custom generators, `ast fuzz`, and `ast test --fuzz`.
+- `07-web`: browser-runner example using `default.web.js` and a `web-headless` mode.
 
 ## Run One Example
 
@@ -29,4 +31,6 @@ npm test
 ## Notes
 
 - `01` through `06` run both `wasi` and `bindings` modes.
+- `07` focuses on the fuzzing workflow and runs `ast test --fuzz`.
+- `07-web` needs a runnable browser. Use `npm test` there with `BROWSER` set, or install Chromium / Firefox locally.
 - Artifacts are isolated under each example's local `.as-test/` directory.

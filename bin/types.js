@@ -11,6 +11,7 @@ export class Config {
         this.env = {};
         this.buildOptions = new BuildOptions();
         this.runOptions = new RunOptions();
+        this.fuzz = new FuzzConfig();
         this.modes = {};
     }
 }
@@ -43,6 +44,7 @@ export class RunOptions {
 export class Runtime {
     constructor() {
         this.cmd = "node ./.as-test/runners/default.wasi.js <file>";
+        this.browser = "";
     }
 }
 export class ModeConfig {
@@ -58,5 +60,16 @@ export class ReporterConfig {
         this.options = [];
         this.outDir = "";
         this.outFile = "";
+    }
+}
+export class FuzzConfig {
+    constructor() {
+        this.input = ["./assembly/__fuzz__/*.fuzz.ts"];
+        this.runs = 1000;
+        this.seed = 1337;
+        this.maxInputBytes = 4096;
+        this.target = "bindings";
+        this.corpusDir = "./.as-test/fuzz/corpus";
+        this.crashDir = "./.as-test/crashes";
     }
 }

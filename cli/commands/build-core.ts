@@ -19,6 +19,11 @@ export type BuildFeatureToggles = {
   coverage?: boolean;
 };
 
+export type BuildConfigOverrides = {
+  target?: string;
+  args?: string[];
+};
+
 type BuildInvocation = {
   command: string;
   args: string[];
@@ -29,10 +34,21 @@ export async function build(
   selectors: string[] = [],
   modeName?: string,
   featureToggles: BuildFeatureToggles = {},
+  overrides: BuildConfigOverrides = {},
 ) {
   const loadedConfig = loadConfig(configPath, false);
   const mode = applyMode(loadedConfig, modeName);
-  const config = mode.config;
+  const config = Object.assign(Object.create(Object.getPrototypeOf(mode.config)), mode.config) as Config;
+  config.buildOptions = Object.assign(
+    Object.create(Object.getPrototypeOf(mode.config.buildOptions)),
+    mode.config.buildOptions,
+  );
+  if (overrides.target) {
+    config.buildOptions.target = overrides.target;
+  }
+  if (overrides.args?.length) {
+    config.buildOptions.args = [...config.buildOptions.args, ...overrides.args];
+  }
 
   if (!hasCustomBuildCommand(config)) {
     ensureDeps(config);
@@ -43,9 +59,7 @@ export async function build(
   const inputFiles = (await glob(inputPatterns)).sort((a, b) =>
     a.localeCompare(b),
   );
-  const duplicateSpecBasenames = await resolveDuplicateSpecBasenames(
-    config.input,
-  );
+  const duplicateSpecBasenames = resolveDuplicateBasenames(inputFiles);
 
   const coverageEnabled = resolveCoverageEnabled(
     config.coverage,
@@ -181,11 +195,7 @@ function resolveArtifactFileName(
   return `${stem}.${disambiguator}${ext}`;
 }
 
-async function resolveDuplicateSpecBasenames(
-  configured: string[] | string,
-): Promise<Set<string>> {
-  const patterns = Array.isArray(configured) ? configured : [configured];
-  const files = await glob(patterns);
+function resolveDuplicateBasenames(files: string[]): Set<string> {
   const counts = new Map<string, number>();
   for (const file of files) {
     const base = path.basename(file);
@@ -379,7 +389,7 @@ function resolveTryAsEnabled(override?: boolean): boolean {
       'try-as feature was enabled, but package "try-as" is not installed',
     );
   }
-  return installed;
+  return false;
 }
 
 function resolveCoverageEnabled(

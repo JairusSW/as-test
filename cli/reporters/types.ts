@@ -80,11 +80,56 @@ export type RunCompleteEvent = {
   coverageSummary: CoverageSummary;
   stats: RunStats;
   reports: unknown[];
+  fuzzSummary?: {
+    failed: number;
+    skipped: number;
+    total: number;
+    runs: number;
+  };
   modeSummary?: {
     failed: number;
     skipped: number;
     total: number;
   };
+};
+
+export type FuzzerRunResult = {
+  name: string;
+  runs: number;
+  passed: number;
+  failed: number;
+  crashed: number;
+  skipped: number;
+  time: {
+    start: number;
+    end: number;
+  };
+  failure?: {
+    instr: string;
+    left: string;
+    right: string;
+    message: string;
+  };
+};
+
+export type FuzzResult = {
+  file: string;
+  target: string;
+  runs: number;
+  crashes: number;
+  crashFiles: string[];
+  seed: number;
+  time: number;
+  fuzzers: FuzzerRunResult[];
+};
+
+export type FuzzCompleteEvent = {
+  modeName: string;
+  results: FuzzResult[];
+  executions: number;
+  crashes: number;
+  failedTargets: number;
+  time: number;
 };
 
 export type ReporterContext = {
@@ -101,6 +146,8 @@ export interface TestReporter {
   onAssertionFail?(event: RealtimeFailureEvent): void;
   onSnapshotMissing?(event: SnapshotMissingEvent): void;
   onRunComplete?(event: RunCompleteEvent): void;
+  onFuzzComplete?(event: FuzzCompleteEvent): void;
+  flush?(): void;
 }
 
 export type ReporterFactory = (context: ReporterContext) => TestReporter;

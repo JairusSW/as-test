@@ -15,8 +15,7 @@ const COVERAGE_IGNORED_CALLS = new Set([
     "unmockFn",
     "mockImport",
     "unmockImport",
-    "snapshotImport",
-    "restoreImport",
+    "snapshotFn",
 ]);
 const COVERAGE_IGNORED_BUILTINS = new Set([
     "alignof",

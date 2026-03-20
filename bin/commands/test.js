@@ -13,11 +13,14 @@ export async function executeTestCommand(rawArgs, flags, configPath, selectedMod
         showCoverage: flags.includes("--show-coverage"),
         verbose: flags.includes("--verbose"),
         coverage: featureToggles.coverage,
+        browser: deps.resolveBrowserOverride(rawArgs, "test"),
     };
+    const fuzzEnabled = flags.includes("--fuzz");
+    const fuzzOverrides = deps.resolveFuzzOverrides(rawArgs, "test");
     const modeTargets = deps.resolveExecutionModes(configPath, selectedModes);
     if (listFlags.list || listFlags.listModes) {
-        await deps.listExecutionPlan("test", configPath, commandArgs, modeTargets, listFlags);
+        await deps.listExecutionPlan("test", configPath, commandArgs, modeTargets, listFlags, fuzzEnabled);
         return;
     }
-    await deps.runTestModes(runFlags, configPath, commandArgs, modeTargets, buildFeatureToggles);
+    await deps.runTestModes(runFlags, configPath, commandArgs, modeTargets, buildFeatureToggles, fuzzEnabled, fuzzOverrides);
 }

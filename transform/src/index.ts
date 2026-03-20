@@ -154,9 +154,9 @@ function analyzeSourceText(sourceText: string): SourceInfo {
   const runAlias = detectRunAlias(text);
   const hasRunCall = runAlias
     ? new RegExp(`\\b${escapeRegex(runAlias)}\\s*\\(`).test(text)
-    : /\brun\s*\(/.test(text);
+    : false;
   return {
-    hasSuiteCalls: /\b(?:describe|test|it)\s*\(/.test(text),
+    hasSuiteCalls: /\b(?:describe|test|it|fuzz|xfuzz)\s*\(/.test(text),
     hasRunCall,
     runImportPath,
     hasMockCalls: /\b(?:mockFn|unmockFn|mockImport|unmockImport)\s*\(/.test(
@@ -196,7 +196,7 @@ function detectRunAlias(text: string): string | null {
 }
 
 function looksLikeAsTestImport(specifiers: string): boolean {
-  return /\b(?:describe|test|it|expect|beforeAll|afterAll|beforeEach|afterEach|mockFn|unmockFn|mockImport|unmockImport|snapshotImport|restoreImport|log|run)\b/.test(
+  return /\b(?:describe|test|it|fuzz|xfuzz|expect|beforeAll|afterAll|beforeEach|afterEach|mockFn|unmockFn|mockImport|unmockImport|snapshotFn|log|run)\b/.test(
     specifiers,
   );
 }
