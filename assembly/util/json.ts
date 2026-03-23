@@ -31,12 +31,21 @@ export function stringifyValue<T>(value: T): string {
     return stringifyArray<valueof<T>>(value as valueof<T>[]);
   }
 
+  if (isManaged<T>()) {
+    // @ts-expect-error: method exists
+    return value.__as_test_json();
+  }
+
   const formatted = stringify<T>(value);
   if (formatted != "none") {
     return quote(formatted);
   }
 
   return quote(nameof<T>());
+}
+
+export function __as_test_json_value<T>(value: T): string {
+  return stringifyValue<T>(value);
 }
 
 function stringifyArray<T>(values: T[]): string {

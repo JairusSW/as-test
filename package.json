@@ -11,7 +11,8 @@
     "as-console": "^7.0.0",
     "chalk": "^5.6.2",
     "glob": "^13.0.3",
-    "typer-diff": "^1.1.1"
+    "typer-diff": "^1.1.1",
+    "wipc-js": "^0.1.1"
   },
   "devDependencies": {
     "@assemblyscript/wasi-shim": "^0.1.0",
@@ -50,13 +51,7 @@
     "index.ts"
   ],
   "homepage": "https://github.com/JairusSW/as-test#readme",
-  "keywords": [
-    "assemblyscript",
-    "testing",
-    "test",
-    "as-pect",
-    "aspect"
-  ],
+  "keywords": ["assemblyscript", "testing", "test", "as-pect", "aspect"],
   "license": "MIT",
   "publishConfig": {
     "access": "public"

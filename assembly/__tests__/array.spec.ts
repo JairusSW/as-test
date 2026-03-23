@@ -14,7 +14,7 @@ describe("Array manipulation", () => {
   test("Array check", () => {
     const a = [1, 2, 3];
     const b = [1, 2, 3];
-    expect(a).toBe(b);
+    expect(a).toEqual(b);
   });
 
   it("should be empty", () => {});

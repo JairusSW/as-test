@@ -1,6 +1,7 @@
 import chalk from "chalk";
 import { spawn } from "child_process";
 import { glob } from "glob";
+import { Channel, MessageType } from "wipc-js";
 import { applyMode, getExec, loadConfig, tokenizeCommand } from "../util.js";
 import * as path from "path";
 import { pathToFileURL } from "url";
@@ -19,93 +20,6 @@ import type { TapReporterConfig } from "../reporters/tap.js";
 import { persistCrashRecord } from "../crash-store.js";
 
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
-
-enum MessageType {
-  OPEN = 0x00,
-  CLOSE = 0x01,
-  CALL = 0x02,
-  DATA = 0x03,
-}
-
-class Channel {
-  private static readonly MAGIC = Buffer.from("WIPC");
-  private static readonly HEADER_SIZE = 9;
-  private buffer = Buffer.alloc(0);
-
-  constructor(
-    private readonly input: NodeJS.ReadableStream,
-    private readonly output: NodeJS.WritableStream,
-  ) {
-    this.input.on("data", (chunk) => this.onData(chunk as Buffer));
-  }
-
-  protected send(type: MessageType, payload?: Buffer): void {
-    const body = payload ?? Buffer.alloc(0);
-    const header = Buffer.alloc(Channel.HEADER_SIZE);
-    Channel.MAGIC.copy(header, 0);
-    header.writeUInt8(type, 4);
-    header.writeUInt32LE(body.length, 5);
-    this.output.write(Buffer.concat([header, body]));
-  }
-
-  protected sendJSON(type: MessageType, msg: unknown): void {
-    this.send(type, Buffer.from(JSON.stringify(msg), "utf8"));
-  }
-
-  private onData(chunk: Buffer): void {
-    this.buffer = Buffer.concat([this.buffer, chunk]);
-
-    while (true) {
-      if (this.buffer.length === 0) return;
-      const idx = this.buffer.indexOf(Channel.MAGIC);
-
-      if (idx === -1) {
-        this.onPassthrough(this.buffer);
-        this.buffer = Buffer.alloc(0);
-        return;
-      }
-      if (idx > 0) {
-        this.onPassthrough(this.buffer.subarray(0, idx));
-        this.buffer = this.buffer.subarray(idx);
-      }
-      if (this.buffer.length < Channel.HEADER_SIZE) return;
-
-      const type = this.buffer.readUInt8(4);
-      const length = this.buffer.readUInt32LE(5);
-      const frameSize = Channel.HEADER_SIZE + length;
-      if (this.buffer.length < frameSize) return;
-
-      const payload = this.buffer.subarray(Channel.HEADER_SIZE, frameSize);
-      this.buffer = this.buffer.subarray(frameSize);
-      this.handleFrame(type, payload);
-    }
-  }
-
-  private handleFrame(type: MessageType, payload: Buffer): void {
-    switch (type) {
-      case MessageType.OPEN:
-        this.onOpen();
-        break;
-      case MessageType.CLOSE:
-        this.onClose();
-        break;
-      case MessageType.CALL:
-        this.onCall(JSON.parse(payload.toString("utf8")));
-        break;
-      case MessageType.DATA:
-        this.onDataMessage(payload);
-        break;
-      default:
-        this.onPassthrough(payload);
-    }
-  }
-
-  protected onPassthrough(_data: Buffer): void {}
-  protected onOpen(): void {}
-  protected onClose(): void {}
-  protected onCall(_msg: unknown): void {}
-  protected onDataMessage(_data: Buffer): void {}
-}
 
 type RunFlags = {
   snapshot?: boolean;

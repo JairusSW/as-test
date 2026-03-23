@@ -4,7 +4,7 @@
     "module": "ES2020",
     "outDir": "../bin",
     "importHelpers": false,
-    "moduleResolution": "Node10",
+    "moduleResolution": "Bundler",
     "resolveJsonModule": true
   }
 }

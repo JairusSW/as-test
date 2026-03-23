@@ -24,6 +24,8 @@ import {
   prepareFuzzIteration,
 } from "./src/fuzz";
 export { FuzzSeed } from "./src/fuzz";
+export { __as_test_deep_equal } from "./src/expectation";
+export { __as_test_json_value } from "./util/json";
 
 let entrySuites: Suite[] = [];
 let entryFuzzers: FuzzerBase[] = [];

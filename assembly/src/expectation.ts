@@ -6,6 +6,7 @@ import {
   sendWarning,
   snapshotAssert,
 } from "../util/wipc";
+import { OBJECT, TOTAL_OVERHEAD } from "~lib/rt/common";
 
 let warnedToThrowDisabled = false;
 
@@ -429,21 +430,7 @@ export class Expectation<T> extends Tests {
    * Tests for equality
    */
   toBe(equals: T): void {
-    let passed = false;
-    if (isArray<T>()) {
-      // @ts-ignore
-      passed = arrayEquals(this._left, equals);
-    } else if (
-      isBoolean<T>() ||
-      isString<T>() ||
-      isInteger<T>() ||
-      isFloat<T>()
-    ) {
-      passed = this._left === equals;
-    } else {
-      // Fallback for reference/value types where strict equality is not enough.
-      passed = stringifyValue<T>(this._left) == stringifyValue<T>(equals);
-    }
+    const passed = this._left === equals;
 
     this._resolve(
       passed,
@@ -452,11 +439,91 @@ export class Expectation<T> extends Tests {
       stringifyValue<T>(equals),
     );
   }
+
+  /**
+   * Tests for deep equality
+   */
+  toEqual(equals: T): void {
+    const passed = valueEquals<T>(this._left, equals, false);
+    this._resolve(
+      passed,
+      "toEqual",
+      stringifyValue<T>(this._left),
+      stringifyValue<T>(equals),
+    );
+  }
+
+  /**
+   * Tests for strict deep equality
+   */
+  toStrictEqual(equals: T): void {
+    const passed = valueEquals<T>(this._left, equals, true);
+    this._resolve(
+      passed,
+      "toStrictEqual",
+      stringifyValue<T>(this._left),
+      stringifyValue<T>(equals),
+    );
+  }
 }
 
-function arrayEquals<T extends any[]>(a: T, b: T): boolean {
+function arrayEquals<T>(a: T[], b: T[], strict: bool): boolean {
   if (a.length != b.length) return false;
-  return stringifyValue(a) == stringifyValue(b);
+  for (let i = 0; i < a.length; i++) {
+    if (!valueEquals<T>(unchecked(a[i]), unchecked(b[i]), strict)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function valueEquals<T>(left: T, right: T, strict: bool): bool {
+  if (isBoolean<T>() || isString<T>() || isInteger<T>() || isFloat<T>()) {
+    return left === right;
+  }
+
+  if (isNullable<T>()) {
+    const leftPtr = changetype<usize>(left);
+    const rightPtr = changetype<usize>(right);
+    if (leftPtr == 0 || rightPtr == 0) return leftPtr == rightPtr;
+  }
+
+  if (isArray<T>()) {
+    return arrayEquals<valueof<T>>(
+      changetype<valueof<T>[]>(left),
+      changetype<valueof<T>[]>(right),
+      strict,
+    );
+  }
+
+  if (isManaged<T>()) {
+    return managedEquals<T>(left, right, strict);
+  }
+
+  abort(
+    `Unsupported equality matcher for ${nameof<T>()}. Use toBe() for identity or compare fields explicitly.`,
+  );
+  return false;
+}
+
+export function __as_test_deep_equal<T>(left: T, right: T, strict: bool): bool {
+  return valueEquals<T>(left, right, strict);
+}
+
+function managedEquals<T>(left: T, right: T, strict: bool): bool {
+  const leftPtr = changetype<usize>(left);
+  const rightPtr = changetype<usize>(right);
+  if (leftPtr == rightPtr) return true;
+  if (leftPtr == 0 || rightPtr == 0) return false;
+
+  if (strict) {
+    const leftObject = changetype<OBJECT>(leftPtr - TOTAL_OVERHEAD);
+    const rightObject = changetype<OBJECT>(rightPtr - TOTAL_OVERHEAD);
+    if (leftObject.rtId != rightObject.rtId) return false;
+  }
+
+  // @ts-ignore
+  return left.__as_test_equals(right, strict);
 }
 
 function isTruthy<T>(value: T): bool {

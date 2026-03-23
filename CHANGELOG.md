@@ -2,6 +2,21 @@
 
 ## 2026-03-17 - Unreleased
 
+### Assertions & Serialization
+
+- feat: split equality matchers into `toBe`, `toEqual`, and `toStrictEqual` with explicit semantics:
+  - `toBe` uses identity / exact primitive equality
+  - `toEqual` uses deep equality
+  - `toStrictEqual` uses deep equality plus runtime-type matching for managed values.
+- feat: support method-based class equality via `__as_test_equals(other, strict)`, with compile-time errors for unsupported managed classes instead of silent fallback behavior.
+- feat: support method-based managed-value JSON serialization via `__as_test_json()`, with `__as_test_json_value()` exported for nested field serialization.
+
+### Runtime & Tooling
+
+- refactor: replace the handwritten JS WIPC channel implementation with the `wipc-js` dependency.
+- chore: switch CLI TypeScript module resolution to `Bundler` so package export maps resolve correctly.
+- chore: run linting in the main test workflow in addition to the existing release workflow.
+
 ### Config & Environment
 
 - feat: allow `env` config values to come from a `.env` path, `KEY=value` array, or object map.
@@ -73,7 +88,8 @@
 - feat: reject unknown config keys with nearest-key suggestions.
 - feat: show structured validation diagnostics with JSON paths and fix hints.
 - feat: fail fast on invalid config JSON with parser error details.
-- 
+-
+
 ### Release Readiness
 
 - fix: resolve `@assemblyscript/wasi-shim` and `try-as` with package resolution instead of assuming a local `./node_modules` folder, so nested example projects and other valid installs run correctly.

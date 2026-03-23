@@ -1,6 +1,7 @@
 import chalk from "chalk";
 import { spawn } from "child_process";
 import { glob } from "glob";
+import { Channel, MessageType } from "wipc-js";
 import { applyMode, getExec, loadConfig, tokenizeCommand } from "../util.js";
 import * as path from "path";
 import { pathToFileURL } from "url";
@@ -10,84 +11,6 @@ import { createReporter as createDefaultReporter } from "../reporters/default.js
 import { createTapReporter } from "../reporters/tap.js";
 import { persistCrashRecord } from "../crash-store.js";
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
-var MessageType;
-(function (MessageType) {
-    MessageType[MessageType["OPEN"] = 0] = "OPEN";
-    MessageType[MessageType["CLOSE"] = 1] = "CLOSE";
-    MessageType[MessageType["CALL"] = 2] = "CALL";
-    MessageType[MessageType["DATA"] = 3] = "DATA";
-})(MessageType || (MessageType = {}));
-class Channel {
-    constructor(input, output) {
-        this.input = input;
-        this.output = output;
-        this.buffer = Buffer.alloc(0);
-        this.input.on("data", (chunk) => this.onData(chunk));
-    }
-    send(type, payload) {
-        const body = payload ?? Buffer.alloc(0);
-        const header = Buffer.alloc(Channel.HEADER_SIZE);
-        Channel.MAGIC.copy(header, 0);
-        header.writeUInt8(type, 4);
-        header.writeUInt32LE(body.length, 5);
-        this.output.write(Buffer.concat([header, body]));
-    }
-    sendJSON(type, msg) {
-        this.send(type, Buffer.from(JSON.stringify(msg), "utf8"));
-    }
-    onData(chunk) {
-        this.buffer = Buffer.concat([this.buffer, chunk]);
-        while (true) {
-            if (this.buffer.length === 0)
-                return;
-            const idx = this.buffer.indexOf(Channel.MAGIC);
-            if (idx === -1) {
-                this.onPassthrough(this.buffer);
-                this.buffer = Buffer.alloc(0);
-                return;
-            }
-            if (idx > 0) {
-                this.onPassthrough(this.buffer.subarray(0, idx));
-                this.buffer = this.buffer.subarray(idx);
-            }
-            if (this.buffer.length < Channel.HEADER_SIZE)
-                return;
-            const type = this.buffer.readUInt8(4);
-            const length = this.buffer.readUInt32LE(5);
-            const frameSize = Channel.HEADER_SIZE + length;
-            if (this.buffer.length < frameSize)
-                return;
-            const payload = this.buffer.subarray(Channel.HEADER_SIZE, frameSize);
-            this.buffer = this.buffer.subarray(frameSize);
-            this.handleFrame(type, payload);
-        }
-    }
-    handleFrame(type, payload) {
-        switch (type) {
-            case MessageType.OPEN:
-                this.onOpen();
-                break;
-            case MessageType.CLOSE:
-                this.onClose();
-                break;
-            case MessageType.CALL:
-                this.onCall(JSON.parse(payload.toString("utf8")));
-                break;
-            case MessageType.DATA:
-                this.onDataMessage(payload);
-                break;
-            default:
-                this.onPassthrough(payload);
-        }
-    }
-    onPassthrough(_data) { }
-    onOpen() { }
-    onClose() { }
-    onCall(_msg) { }
-    onDataMessage(_data) { }
-}
-Channel.MAGIC = Buffer.from("WIPC");
-Channel.HEADER_SIZE = 9;
 class SnapshotStore {
     constructor(specFile, snapshotDir, duplicateSpecBasenames = new Set()) {
         this.dirty = false;
