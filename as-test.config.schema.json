@@ -99,17 +99,33 @@
           "properties": {
             "enabled": {
               "type": "boolean",
-              "default": true
+              "default": false
             },
             "includeSpecs": {
               "type": "boolean",
               "description": "Include *.spec.ts files in coverage collection.",
               "default": false
+            },
+            "include": {
+              "type": "array",
+              "description": "Only include matching source files in coverage reports when this list is not empty.",
+              "items": {
+                "type": "string"
+              },
+              "default": []
+            },
+            "exclude": {
+              "type": "array",
+              "description": "Exclude matching source files from coverage reports.",
+              "items": {
+                "type": "string"
+              },
+              "default": []
             }
           }
         }
       ],
-      "default": true
+      "default": false
     },
     "env": {
       "description": "Environment variables injected when building/running. Accepts a .env file path, an array of KEY=value strings, or an object map.",

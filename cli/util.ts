@@ -155,7 +155,9 @@ export function loadConfig(CONFIG_PATH: string, warn: boolean = false): Config {
     const fuzzRaw = (raw.fuzz as Record<string, unknown> | undefined) ?? {};
     config.fuzz = Object.assign(new FuzzConfig(), fuzzRaw);
     config.fuzz.input = Array.isArray(config.fuzz.input)
-      ? config.fuzz.input.filter((item): item is string => typeof item == "string")
+      ? config.fuzz.input.filter(
+          (item): item is string => typeof item == "string",
+        )
       : typeof fuzzRaw.input == "string"
         ? [fuzzRaw.input]
         : new FuzzConfig().input;
@@ -414,7 +416,7 @@ function validateCoverageValue(
     issues.push({
       path,
       message: "must be a boolean or object",
-      fix: 'use true/false or { "enabled": true, "includeSpecs": false }',
+      fix: 'use true/false or { "enabled": true, "includeSpecs": false, "include": ["assembly/**/*.ts"], "exclude": ["assembly/__tests__/**/*.spec.ts"] }',
     });
     return;
   }
@@ -431,6 +433,34 @@ function validateCoverageValue(
       path: `${path}.includeSpecs`,
       message: "must be a boolean",
       fix: "set to true or false",
+    });
+  }
+  validateStringArrayField(obj, "include", path, issues);
+  validateStringArrayField(obj, "exclude", path, issues);
+}
+
+function validateStringArrayField(
+  raw: Record<string, unknown>,
+  key: string,
+  pathPrefix: string,
+  issues: ValidationIssue[],
+): void {
+  if (!(key in raw) || raw[key] == undefined) return;
+  const value = raw[key];
+  if (!Array.isArray(value)) {
+    issues.push({
+      path: `${pathPrefix}.${key}`,
+      message: "must be an array of strings",
+      fix: `set "${key}" to an array of glob patterns`,
+    });
+    return;
+  }
+  for (let i = 0; i < value.length; i++) {
+    if (typeof value[i] == "string" && value[i]!.length) continue;
+    issues.push({
+      path: `${pathPrefix}.${key}[${i}]`,
+      message: "must be a non-empty string",
+      fix: "remove invalid entries or replace them with valid glob strings",
     });
   }
 }
@@ -478,7 +508,8 @@ function validateEnvField(
   if (!value || typeof value != "object") {
     issues.push({
       path: `${pathPrefix}.${key}`,
-      message: "must be a .env file path, array of KEY=value strings, or object of string values",
+      message:
+        "must be a .env file path, array of KEY=value strings, or object of string values",
       fix: 'example: "env": "./secrets/.env" or ["MY_FLAG=1"] or { "MY_FLAG": "1" }',
     });
     return;
@@ -1159,7 +1190,10 @@ export function applyMode(
 } {
   if (!modeName) {
     const merged = Object.assign(new Config(), config) as Config;
-    merged.buildOptions = Object.assign(new BuildOptions(), config.buildOptions);
+    merged.buildOptions = Object.assign(
+      new BuildOptions(),
+      config.buildOptions,
+    );
     merged.runOptions = Object.assign(new RunOptions(), config.runOptions);
     merged.runOptions.runtime = Object.assign(
       new Runtime(),

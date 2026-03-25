@@ -1,8 +1,8 @@
 import chalk from "chalk";
 import { spawn } from "child_process";
 import { glob } from "glob";
-import { Channel, MessageType } from "wipc-js";
-import { applyMode, getExec, loadConfig, tokenizeCommand } from "../util.js";
+import { Channel, MessageType } from "../wipc.js";
+import { applyMode, formatTime, getExec, loadConfig, tokenizeCommand, } from "../util.js";
 import * as path from "path";
 import { pathToFileURL } from "url";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
@@ -19,30 +19,24 @@ class SnapshotStore {
         this.matched = 0;
         this.failed = 0;
         this.warnedMissing = new Set();
-        const base = path.basename(specFile, ".ts");
-        const disambiguator = resolveDisambiguator(specFile, duplicateSpecBasenames);
-        const snapshotBase = disambiguator.length
-            ? `${base}.${disambiguator}`
-            : base;
         const dir = path.join(process.cwd(), snapshotDir);
-        if (!existsSync(dir))
-            mkdirSync(dir, { recursive: true });
-        this.filePath = path.join(dir, `${snapshotBase}.snap.json`);
-        const legacyFilePath = path.join(dir, `${base}.snap.json`);
-        const sourcePath = existsSync(this.filePath)
-            ? this.filePath
-            : existsSync(legacyFilePath)
-                ? legacyFilePath
-                : null;
-        this.data = sourcePath
-            ? JSON.parse(readFileSync(sourcePath, "utf8"))
-            : {};
+        const relative = resolveArtifactRelativePath(specFile, "__tests__").replace(/\.ts$/, ".snap");
+        this.filePath = path.join(dir, relative);
+        const sourcePath = resolveSnapshotSourcePath(specFile, dir, duplicateSpecBasenames, this.filePath) ?? null;
+        const loaded = sourcePath
+            ? readSnapshotFile(sourcePath, specFile)
+            : { data: {}, normalized: false, preamble: "" };
+        this.data = loaded.data;
+        this.preamble = loaded.preamble;
+        this.existed = Boolean(sourcePath && existsSync(sourcePath));
+        this.dirty = Boolean((sourcePath && sourcePath != this.filePath) || loaded.normalized);
     }
-    assert(key, actual, allowSnapshot, updateSnapshots) {
+    assert(key, actual, allowSnapshot, createSnapshots, overwriteSnapshots) {
+        key = canonicalizeSnapshotKey(key);
         if (!allowSnapshot)
             return { ok: true, expected: actual, warnMissing: false };
         if (!(key in this.data)) {
-            if (!updateSnapshots) {
+            if (!createSnapshots) {
                 this.failed++;
                 const warnMissing = !this.warnedMissing.has(key);
                 if (warnMissing)
@@ -63,7 +57,7 @@ class SnapshotStore {
             this.matched++;
             return { ok: true, expected, warnMissing: false };
         }
-        if (!updateSnapshots) {
+        if (!overwriteSnapshots) {
             this.failed++;
             return { ok: false, expected, warnMissing: false };
         }
@@ -75,8 +69,335 @@ class SnapshotStore {
     flush() {
         if (!this.dirty)
             return;
-        writeFileSync(this.filePath, JSON.stringify(this.data, null, 2));
+        const outDir = path.dirname(this.filePath);
+        if (!existsSync(outDir))
+            mkdirSync(outDir, { recursive: true });
+        writeFileSync(this.filePath, formatSnapshotFile(this.data, this.filePath, this.existed ? this.preamble : defaultSnapshotPreamble()));
     }
+}
+function resolveSnapshotSourcePath(specFile, snapshotDir, duplicateSpecBasenames, preferredPath) {
+    if (existsSync(preferredPath))
+        return preferredPath;
+    const base = path.basename(specFile, ".ts");
+    const legacyFlat = path.join(snapshotDir, `${base}.snap.json`);
+    if (existsSync(legacyFlat))
+        return legacyFlat;
+    const disambiguator = resolveDisambiguator(specFile, duplicateSpecBasenames);
+    if (disambiguator.length) {
+        const legacyDisambiguated = path.join(snapshotDir, `${base}.${disambiguator}.snap.json`);
+        if (existsSync(legacyDisambiguated))
+            return legacyDisambiguated;
+    }
+    return null;
+}
+function readSnapshotFile(filePath, specFile) {
+    const raw = readFileSync(filePath, "utf8");
+    if (filePath.endsWith(".json")) {
+        const normalized = normalizeSnapshotRecord(JSON.parse(raw));
+        return { ...normalized, preamble: "" };
+    }
+    return parseSnapshotText(raw, specFile);
+}
+function parseSnapshotText(source, specFile) {
+    const out = {};
+    const lines = source.split(/\r?\n/);
+    let i = 0;
+    let normalized = false;
+    const preambleLines = [];
+    while (i < lines.length) {
+        const header = lines[i] ?? "";
+        if (isSnapshotOuterComment(header) || !header.length) {
+            if (!Object.keys(out).length)
+                preambleLines.push(header);
+            i++;
+            continue;
+        }
+        const match = header.match(/^=== (.+) ===$/);
+        if (!match) {
+            i++;
+            continue;
+        }
+        const localKey = match[1];
+        i++;
+        let value = "";
+        if ((lines[i] ?? "") == "<<<") {
+            i++;
+            const block = [];
+            while (i < lines.length && (lines[i] ?? "") != ">>>") {
+                block.push(lines[i] ?? "");
+                i++;
+            }
+            value = block.join("\n");
+            if ((lines[i] ?? "") == ">>>")
+                i++;
+        }
+        else {
+            value = lines[i] ?? "";
+            i++;
+        }
+        while (i < lines.length && !(lines[i] ?? "").startsWith("=== ")) {
+            if (!lines[i]?.length || isSnapshotOuterComment(lines[i] ?? "")) {
+                i++;
+                continue;
+            }
+            break;
+        }
+        while (i < lines.length && isSnapshotOuterComment(lines[i] ?? "")) {
+            i++;
+        }
+        const qualified = qualifySnapshotKey(specFile, localKey);
+        const canonical = canonicalizeSnapshotKey(qualified);
+        if (canonical != qualified)
+            normalized = true;
+        out[canonical] = value;
+    }
+    return {
+        data: out,
+        normalized,
+        preamble: trimSnapshotPreamble(preambleLines),
+    };
+}
+function normalizeSnapshotRecord(data) {
+    const out = {};
+    let normalized = false;
+    for (const [key, value] of Object.entries(data)) {
+        const canonical = canonicalizeSnapshotKey(key);
+        if (canonical != key)
+            normalized = true;
+        out[canonical] = value;
+    }
+    return { data: out, normalized };
+}
+function isSnapshotOuterComment(line) {
+    const trimmed = line.trim();
+    return trimmed.startsWith("#") || trimmed.startsWith("//");
+}
+function formatSnapshotFile(data, filePath, preamble) {
+    const specFile = resolveSnapshotSpecFile(filePath);
+    const seen = new Set();
+    const sections = [];
+    for (const key of Object.keys(data)) {
+        const localKey = canonicalizeSnapshotLocalKey(localizeSnapshotKey(specFile, key));
+        if (seen.has(localKey))
+            continue;
+        seen.add(localKey);
+        const value = data[key] ?? "";
+        if (value.includes("\n")) {
+            sections.push(`=== ${localKey} ===\n<<<\n${value}\n>>>`);
+        }
+        else {
+            sections.push(`=== ${localKey} ===\n${value}`);
+        }
+    }
+    if (!sections.length)
+        return "";
+    const prefix = preamble.length ? preamble + "\n\n" : "";
+    return prefix + sections.join("\n\n") + "\n";
+}
+function defaultSnapshotPreamble() {
+    return [
+        "# as-test snapshot file",
+        "#",
+        "# IDs use this format:",
+        "#   Suite > test",
+        "#   Suite > test [name]",
+        "#   Suite > test #2",
+        "#",
+        "# Examples:",
+        '#   test("renders card", () => {',
+        "#     expect(view()).toMatchSnapshot();",
+        "#   })",
+        "#   -> renders card",
+        "#",
+        '#   test("renders card", () => {',
+        '#     expect(view()).toMatchSnapshot("mobile");',
+        "#   })",
+        "#   -> renders card [mobile]",
+        "#",
+        '#   test("renders card", () => {',
+        "#     expect(header()).toMatchSnapshot();",
+        "#     expect(body()).toMatchSnapshot();",
+        "#   })",
+        "#   -> renders card",
+        "#   -> renders card #2",
+        "#",
+        '#   describe("Card", () => {',
+        '#     test("renders", () => {',
+        "#       expect(view()).toMatchSnapshot();",
+        "#     })",
+        "#   })",
+        "#   -> Card > renders",
+        "#",
+        "# Single-line values are written directly below the ID.",
+        "# Multi-line values use delimiters:",
+        "#   <<<",
+        "#   ...",
+        "#   >>>",
+    ].join("\n");
+}
+function trimSnapshotPreamble(lines) {
+    let end = lines.length;
+    while (end > 0 && !(lines[end - 1] ?? "").trim().length)
+        end--;
+    return lines.slice(0, end).join("\n");
+}
+function resolveSnapshotSpecFile(filePath) {
+    const normalized = filePath.replace(/\\/g, "/");
+    const marker = "/snapshots/";
+    const markerIndex = normalized.lastIndexOf(marker);
+    const suffix = markerIndex >= 0
+        ? normalized.slice(markerIndex + marker.length)
+        : path.basename(normalized);
+    const withoutMode = suffix.replace(/^default\//, "");
+    const relative = withoutMode.replace(/\.snap$/, ".ts");
+    return `assembly/__tests__/${relative}`;
+}
+function localizeSnapshotKey(specFile, key) {
+    const prefix = `${path.basename(specFile)}::`;
+    return key.startsWith(prefix) ? key.slice(prefix.length) : key;
+}
+function qualifySnapshotKey(specFile, key) {
+    return `${path.basename(specFile)}::${key}`;
+}
+function canonicalizeSnapshotKey(key) {
+    const sep = key.indexOf("::");
+    if (sep < 0)
+        return canonicalizeSnapshotLocalKey(key);
+    const prefix = key.slice(0, sep + 2);
+    const local = key.slice(sep + 2);
+    return prefix + canonicalizeSnapshotLocalKey(local);
+}
+function canonicalizeSnapshotLocalKey(localKey) {
+    const named = localKey.match(/^(.*)::\d+::(.+)$/);
+    if (named) {
+        return `${named[1]} [${named[2]}]`;
+    }
+    const simpleNamed = localKey.match(/^(.*)::([^:]+)$/);
+    if (simpleNamed && !/^\d+$/.test(simpleNamed[2])) {
+        return `${simpleNamed[1]} [${simpleNamed[2]}]`;
+    }
+    const unnamed = localKey.match(/^(.*)::(\d+)$/);
+    if (unnamed) {
+        const index = Number(unnamed[2]);
+        if (!Number.isFinite(index) || index < 0)
+            return localKey;
+        return index === 0 ? unnamed[1] : `${unnamed[1]} #${index + 1}`;
+    }
+    return localKey;
+}
+function resolveArtifactRelativePath(sourceFile, segment) {
+    const normalized = sourceFile.replace(/\\/g, "/");
+    const marker = `/${segment}/`;
+    const index = normalized.lastIndexOf(marker);
+    if (index >= 0)
+        return normalized.slice(index + marker.length);
+    return path.basename(normalized);
+}
+function writeReadableLog(logRoot, file, suites, modeName, buildCommand, runCommand, snapshotSummary) {
+    const relative = resolveArtifactRelativePath(file, "__tests__").replace(/\.ts$/, ".log");
+    const filePath = path.join(logRoot, relative);
+    const dir = path.dirname(filePath);
+    if (!existsSync(dir))
+        mkdirSync(dir, { recursive: true });
+    writeFileSync(filePath, formatReadableLog(file, suites, modeName, buildCommand, runCommand, snapshotSummary));
+}
+function formatReadableLog(file, suites, modeName, buildCommand, runCommand, snapshotSummary) {
+    const stats = collectRunStats([suites]);
+    const verdict = stats.failedFiles
+        ? "FAIL"
+        : stats.passedFiles
+            ? "PASS"
+            : "SKIP";
+    const lines = [
+        `Mode: ${modeName ?? "default"}`,
+        `Build: ${buildCommand || "(unknown)"}`,
+        `Run: ${runCommand}`,
+        "",
+        `${verdict}  ${file}`,
+        "",
+        `Snapshots: ${snapshotSummary.matched} matched, ${snapshotSummary.created} created, ${snapshotSummary.updated} updated, ${snapshotSummary.failed} failed`,
+        "",
+        `Suites: ${stats.passedSuites} passed, ${stats.failedSuites} failed, ${stats.skippedSuites} skipped`,
+        `Tests: ${stats.passedTests} passed, ${stats.failedTests} failed, ${stats.skippedTests} skipped`,
+        `Time: ${formatTime(stats.time)}`,
+    ];
+    const failures = collectReadableFailures(suites, file, []);
+    if (failures.length) {
+        lines.push("", "Failures:");
+        for (const failure of failures) {
+            lines.push(`FAIL  ${failure.title}${failure.where.length ? ` (${failure.where})` : ""}`);
+            if (failure.message.length)
+                lines.push(`Message: ${failure.message}`);
+            if (failure.left.length)
+                lines.push(`Expected: ${failure.right}`);
+            if (failure.right.length)
+                lines.push(`Received: ${failure.left}`);
+            lines.push("");
+        }
+        if (!lines[lines.length - 1].length)
+            lines.pop();
+    }
+    const logs = collectReadableLogs(suites);
+    if (logs.length) {
+        lines.push("", "Log:");
+        for (const entry of logs) {
+            lines.push(entry);
+        }
+    }
+    return lines.join("\n") + "\n";
+}
+function formatInvocation(invocation) {
+    return [invocation.command, ...invocation.args]
+        .map((part) => (/[\s"'\\]/.test(part) ? JSON.stringify(part) : part))
+        .join(" ");
+}
+function collectReadableFailures(suites, file, pathParts) {
+    const out = [];
+    for (const suite of suites) {
+        const suiteAny = suite;
+        const nextPath = [...pathParts, String(suiteAny.description ?? "unknown")];
+        const tests = Array.isArray(suiteAny.tests)
+            ? suiteAny.tests
+            : [];
+        for (let i = 0; i < tests.length; i++) {
+            const test = tests[i];
+            if (String(test.verdict ?? "none") != "fail")
+                continue;
+            out.push({
+                title: `${nextPath.join(" > ")}#${i + 1}`,
+                where: String(test.location ?? "").length
+                    ? `${path.basename(file)}:${String(test.location ?? "")}`
+                    : path.basename(file),
+                message: String(test.message ?? ""),
+                left: JSON.stringify(test.left ?? ""),
+                right: JSON.stringify(test.right ?? ""),
+            });
+        }
+        const childSuites = Array.isArray(suiteAny.suites)
+            ? suiteAny.suites
+            : [];
+        out.push(...collectReadableFailures(childSuites, file, nextPath));
+    }
+    return out;
+}
+function collectReadableLogs(suites) {
+    const out = [];
+    for (const suite of suites) {
+        const suiteAny = suite;
+        const logs = Array.isArray(suiteAny.logs)
+            ? suiteAny.logs
+            : [];
+        for (const log of logs) {
+            const value = String(log.value ?? log.message ?? "");
+            if (value.length)
+                out.push(value);
+        }
+        const childSuites = Array.isArray(suiteAny.suites)
+            ? suiteAny.suites
+            : [];
+        out.push(...collectReadableLogs(childSuites));
+    }
+    return out;
 }
 export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selectors = [], shouldExit = true, options = {}) {
     const resolvedConfigPath = configPath ?? DEFAULT_CONFIG_PATH;
@@ -88,7 +409,8 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
     const inputFiles = (await glob(inputPatterns)).sort((a, b) => a.localeCompare(b));
     const duplicateSpecBasenames = await resolveDuplicateSpecBasenames(config.input);
     const snapshotEnabled = flags.snapshot !== false;
-    const updateSnapshots = Boolean(flags.updateSnapshots);
+    const createSnapshots = Boolean(flags.createSnapshots);
+    const overwriteSnapshots = Boolean(flags.overwriteSnapshots);
     const cleanOutput = Boolean(flags.clean);
     const showCoverage = Boolean(flags.showCoverage);
     const coverage = resolveCoverageOptions(config.coverage);
@@ -125,7 +447,7 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
             clean: cleanOutput,
             verbose: Boolean(flags.verbose),
             snapshotEnabled,
-            updateSnapshots,
+            createSnapshots,
         });
     }
     if (showCoverage && !coverageEnabled) {
@@ -154,10 +476,11 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
                 .slice(1)
                 .map((token) => token.replace(/<name>/g, fileBase).replace(/<file>/g, fileToken)),
         };
+        const runCommandForLog = formatInvocation(invocation);
         const snapshotStore = new SnapshotStore(file, config.snapshotDir, duplicateSpecBasenames);
         let report;
         try {
-            report = await runProcess(invocation, file, config.fuzz.crashDir, options.modeName, snapshotStore, snapshotEnabled, updateSnapshots, reporter, reporterKind == "tap", {
+            report = await runProcess(invocation, file, config.fuzz.crashDir, options.modeName, snapshotStore, snapshotEnabled, createSnapshots, overwriteSnapshots, reporter, reporterKind == "tap", {
                 ...mode.env,
                 ...config.runOptions.env,
             });
@@ -177,17 +500,25 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
             file,
             suites: normalized.suites,
             coverage: normalized.coverage,
+            runCommand: runCommandForLog,
+            snapshotSummary: {
+                matched: snapshotStore.matched,
+                created: snapshotStore.created,
+                updated: snapshotStore.updated,
+                failed: snapshotStore.failed,
+            },
         });
     }
     if (config.logs && config.logs != "none") {
-        if (!existsSync(path.join(process.cwd(), config.logs))) {
-            mkdirSync(path.join(process.cwd(), config.logs), { recursive: true });
+        const logRoot = path.join(process.cwd(), config.logs);
+        if (!existsSync(logRoot)) {
+            mkdirSync(logRoot, { recursive: true });
         }
-        const logReports = reports.map((report) => ({
-            file: report.file,
-            suites: report.suites,
-        }));
-        writeFileSync(path.join(process.cwd(), config.logs, options.logFileName ?? "test.log.json"), JSON.stringify(logReports, null, 2));
+        for (const report of reports) {
+            writeReadableLog(logRoot, report.file, report.suites, options.modeName, options.buildCommandsByFile?.[report.file] ??
+                options.buildCommand ??
+                "", report.runCommand, report.snapshotSummary);
+        }
     }
     const stats = collectRunStats(reports.map((report) => report.suites));
     if (options.fileSummaryTotal != undefined) {
@@ -839,7 +1170,56 @@ function isIgnoredCoverageFile(file, coverage) {
         return true;
     if (!coverage.includeSpecs && normalized.endsWith(".spec.ts"))
         return true;
+    if (coverage.include.length &&
+        !coverage.include.some((pattern) => matchesCoverageGlob(normalized, pattern))) {
+        return true;
+    }
+    if (coverage.exclude.some((pattern) => matchesCoverageGlob(normalized, pattern))) {
+        return true;
+    }
     return false;
+}
+function matchesCoverageGlob(file, pattern) {
+    const normalizedPattern = pattern.replace(/\\/g, "/").trim();
+    if (!normalizedPattern.length)
+        return false;
+    const regex = globPatternToRegExp(normalizedPattern);
+    return regex.test(file);
+}
+function globPatternToRegExp(pattern) {
+    let source = "^";
+    for (let i = 0; i < pattern.length; i++) {
+        const char = pattern[i];
+        if (char == "*") {
+            const next = pattern[i + 1];
+            if (next == "*") {
+                const after = pattern[i + 2];
+                if (after == "/") {
+                    source += "(?:.*/)?";
+                    i += 2;
+                }
+                else {
+                    source += ".*";
+                    i += 1;
+                }
+            }
+            else {
+                source += "[^/]*";
+            }
+            continue;
+        }
+        if (char == "?") {
+            source += "[^/]";
+            continue;
+        }
+        if ("\\.[]{}()+-^$|".includes(char)) {
+            source += `\\${char}`;
+            continue;
+        }
+        source += char;
+    }
+    source += "$";
+    return new RegExp(source);
 }
 function isAllowedCoverageSourceFile(file) {
     const lower = file.toLowerCase();
@@ -861,18 +1241,28 @@ function resolveCoverageOptions(raw) {
         return {
             enabled: raw,
             includeSpecs: false,
+            include: [],
+            exclude: [],
         };
     }
     if (raw && typeof raw == "object") {
         const obj = raw;
         return {
-            enabled: obj.enabled == null ? true : Boolean(obj.enabled),
+            enabled: obj.enabled == null ? false : Boolean(obj.enabled),
             includeSpecs: Boolean(obj.includeSpecs),
+            include: Array.isArray(obj.include)
+                ? obj.include.filter((item) => typeof item == "string")
+                : [],
+            exclude: Array.isArray(obj.exclude)
+                ? obj.exclude.filter((item) => typeof item == "string")
+                : [],
         };
     }
     return {
         enabled: false,
         includeSpecs: false,
+        include: [],
+        exclude: [],
     };
 }
 function compareCoveragePoints(a, b) {
@@ -884,7 +1274,7 @@ function compareCoveragePoints(a, b) {
         return a.type.localeCompare(b.type);
     return a.hash.localeCompare(b.hash);
 }
-async function runProcess(invocation, specFile, crashDir, modeName, snapshots, snapshotEnabled, updateSnapshots, reporter, tapMode = false, env = process.env) {
+async function runProcess(invocation, specFile, crashDir, modeName, snapshots, snapshotEnabled, createSnapshots, overwriteSnapshots, reporter, tapMode = false, env = process.env) {
     const child = spawn(invocation.command, invocation.args, {
         stdio: ["pipe", "pipe", "pipe"],
         shell: false,
@@ -980,7 +1370,7 @@ async function runProcess(invocation, specFile, crashDir, modeName, snapshots, s
             if (kind === "snapshot:assert") {
                 const key = String(event.key ?? "");
                 const actual = String(event.actual ?? "");
-                const result = snapshots.assert(key, actual, snapshotEnabled, updateSnapshots);
+                const result = snapshots.assert(key, actual, snapshotEnabled, createSnapshots, overwriteSnapshots);
                 if (result.warnMissing) {
                     reporter.onSnapshotMissing?.({ key });
                 }

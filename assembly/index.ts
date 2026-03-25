@@ -19,7 +19,6 @@ import { quote } from "./util/json";
 import {
   createFuzzer,
   FuzzerBase,
-  FuzzSeed,
   FuzzerResult,
   prepareFuzzIteration,
 } from "./src/fuzz";
@@ -110,6 +109,27 @@ export function test(description: string, callback: () => void): void {
  */
 export function it(description: string, callback: () => void): void {
   registerSuite(description, callback, "it");
+}
+
+/**
+ * Creates a focused test case.
+ */
+export function only(description: string, callback: () => void): void {
+  registerSuite(description, callback, "only");
+}
+
+/**
+ * Creates a skipped focused test case.
+ */
+export function xonly(description: string, callback: () => void): void {
+  registerSuite(description, callback, "xonly");
+}
+
+/**
+ * Creates a todo test case placeholder.
+ */
+export function todo(description: string): void {
+  registerSuite(description, (): void => {}, "todo");
 }
 
 /**
@@ -341,6 +361,7 @@ export function run(options: RunOptions = new RunOptions()): void {
   __test_options = options;
   const time = new Time();
   let fileVerdict = "none";
+  const hasTopLevelOnly = containsOnlySuites(entrySuites);
   sendFileStart(FILE);
   time.start = performance.now();
   for (let i = 0; i < entrySuites.length; i++) {
@@ -352,7 +373,11 @@ export function run(options: RunOptions = new RunOptions()): void {
     depth = -1;
     current_suite = null;
 
-    suite.run();
+    if (hasTopLevelOnly && suite.kind != "only") {
+      suite.skip();
+    } else {
+      suite.run();
+    }
     if (suite.verdict == "fail") {
       fileVerdict = "fail";
     } else if (fileVerdict != "fail" && suite.verdict == "ok") {
@@ -371,6 +396,13 @@ export function run(options: RunOptions = new RunOptions()): void {
   report.suites = entrySuites;
   report.coverage = collectCoverage();
   sendReport(report.serialize());
+}
+
+function containsOnlySuites(values: Suite[]): bool {
+  for (let i = 0; i < values.length; i++) {
+    if (unchecked(values[i]).kind == "only") return true;
+  }
+  return false;
 }
 
 class FuzzConfig {
@@ -554,7 +586,7 @@ function toCoveragePointReport(point: CoverPoint): CoveragePointReport {
 }
 
 function snapshotKey(): string {
-  if (!current_suite) return FILE + "::global::0";
+  if (!current_suite) return FILE + "::global";
   const suite = current_suite!;
   const parts = new Array<string>();
   let cursor: Suite | null = suite;
@@ -562,8 +594,19 @@ function snapshotKey(): string {
     parts.unshift(cursor.description);
     cursor = cursor.parent;
   }
-  const path = parts.join(" > ");
-  return FILE + "::" + path + "::" + suite.tests.length.toString();
+  return FILE + "::" + parts.join(" > ");
+}
+
+export function nextUnnamedSnapshotKey(baseKey: string): string {
+  if (!current_suite) return baseKey;
+  const suite = current_suite!;
+  suite.snapshotCount++;
+  if (suite.snapshotCount <= 1) return baseKey;
+  return baseKey + " #" + suite.snapshotCount.toString();
+}
+
+export function namedSnapshotKey(baseKey: string, name: string): string {
+  return baseKey + " [" + name + "]";
 }
 
 export class Result {

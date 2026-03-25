@@ -159,7 +159,7 @@ describe("report", () => {
 The first time you run a snapshot test, create the snapshot with:
 
 ```bash
-npx ast test --update-snapshots
+npx ast test --create-snapshots
 ```
 
 After that, a normal `npx ast test` will verify it.

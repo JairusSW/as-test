@@ -6,7 +6,7 @@ export class Config {
   coverageDir: string = "./.as-test/coverage";
   snapshotDir: string = "./.as-test/snapshots";
   config: string = "none";
-  coverage: boolean | CoverageOptions = true;
+  coverage: boolean | CoverageOptions = false;
   env: Record<string, string> = {};
   buildOptions: BuildOptions = new BuildOptions();
   runOptions: RunOptions = new RunOptions();
@@ -15,8 +15,10 @@ export class Config {
 }
 
 export class CoverageOptions {
-  enabled: boolean = true;
+  enabled: boolean = false;
   includeSpecs: boolean = false;
+  include: string[] = [];
+  exclude: string[] = [];
 }
 
 export class Suite {

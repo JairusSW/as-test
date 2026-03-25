@@ -1,16 +1,12 @@
 {
   "$schema": "node_modules/as-test/as-test.config.schema.json",
-  "input": [
-    "assembly/__tests__/*.spec.ts"
-  ],
+  "input": ["assembly/__tests__/*.spec.ts"],
   "output": ".as-test/",
   "config": "none",
-  "coverage": true,
+  "coverage": false,
   "env": {},
   "fuzz": {
-    "input": [
-      "assembly/__fuzz__/*.fuzz.ts"
-    ],
+    "input": ["assembly/__fuzz__/*.fuzz.ts"],
     "runs": 1000,
     "seed": 1337,
     "maxInputBytes": 4096,

@@ -319,7 +319,7 @@ function validateCoverageValue(value, path, issues) {
         issues.push({
             path,
             message: "must be a boolean or object",
-            fix: 'use true/false or { "enabled": true, "includeSpecs": false }',
+            fix: 'use true/false or { "enabled": true, "includeSpecs": false, "include": ["assembly/**/*.ts"], "exclude": ["assembly/__tests__/**/*.spec.ts"] }',
         });
         return;
     }
@@ -336,6 +336,30 @@ function validateCoverageValue(value, path, issues) {
             path: `${path}.includeSpecs`,
             message: "must be a boolean",
             fix: "set to true or false",
+        });
+    }
+    validateStringArrayField(obj, "include", path, issues);
+    validateStringArrayField(obj, "exclude", path, issues);
+}
+function validateStringArrayField(raw, key, pathPrefix, issues) {
+    if (!(key in raw) || raw[key] == undefined)
+        return;
+    const value = raw[key];
+    if (!Array.isArray(value)) {
+        issues.push({
+            path: `${pathPrefix}.${key}`,
+            message: "must be an array of strings",
+            fix: `set "${key}" to an array of glob patterns`,
+        });
+        return;
+    }
+    for (let i = 0; i < value.length; i++) {
+        if (typeof value[i] == "string" && value[i].length)
+            continue;
+        issues.push({
+            path: `${pathPrefix}.${key}[${i}]`,
+            message: "must be a non-empty string",
+            fix: "remove invalid entries or replace them with valid glob strings",
         });
     }
 }

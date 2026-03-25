@@ -69,7 +69,7 @@ export type RunStartEvent = {
   clean: boolean;
   verbose: boolean;
   snapshotEnabled: boolean;
-  updateSnapshots: boolean;
+  createSnapshots: boolean;
 };
 
 export type RunCompleteEvent = {

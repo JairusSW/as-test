@@ -41,6 +41,21 @@ export async function build(configPath = DEFAULT_CONFIG_PATH, selectors = [], mo
         }
     }
 }
+export async function getBuildInvocationPreview(configPath = DEFAULT_CONFIG_PATH, file, modeName, featureToggles = {}, overrides = {}) {
+    const loadedConfig = loadConfig(configPath, false);
+    const mode = applyMode(loadedConfig, modeName);
+    const config = Object.assign(Object.create(Object.getPrototypeOf(mode.config)), mode.config);
+    config.buildOptions = Object.assign(Object.create(Object.getPrototypeOf(mode.config.buildOptions)), mode.config.buildOptions);
+    if (overrides.target) {
+        config.buildOptions.target = overrides.target;
+    }
+    if (overrides.args?.length) {
+        config.buildOptions.args = [...config.buildOptions.args, ...overrides.args];
+    }
+    const duplicateSpecBasenames = resolveDuplicateBasenames([file]);
+    const outFile = `${config.outDir}/${resolveArtifactFileName(file, config.buildOptions.target, modeName, duplicateSpecBasenames)}`;
+    return getBuildCommand(config, getPkgRunner(), file, outFile, modeName, featureToggles);
+}
 function hasCustomBuildCommand(config) {
     return !!config.buildOptions.cmd.trim().length;
 }
@@ -211,6 +226,7 @@ function formatInvocation(invocation) {
         .map((token) => (/\s/.test(token) ? JSON.stringify(token) : token))
         .join(" ");
 }
+export { getBuildCommand, formatInvocation };
 function getBuildStderr(error) {
     const err = error;
     const stderr = err?.stderr;

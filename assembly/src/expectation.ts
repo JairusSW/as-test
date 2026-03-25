@@ -1,6 +1,7 @@
 import { visualize } from "../util/helpers";
 import { Tests } from "./tests";
 import { quote, stringifyValue } from "../util/json";
+import { namedSnapshotKey, nextUnnamedSnapshotKey } from "..";
 import {
   sendAssertionFailure,
   sendWarning,
@@ -392,8 +393,9 @@ export class Expectation<T> extends Tests {
    * Tests if serialized value matches stored snapshot.
    */
   toMatchSnapshot(name: string = ""): void {
-    let key = this._snapshotKey;
-    if (name.length) key += "::" + name;
+    let key = name.length
+      ? namedSnapshotKey(this._snapshotKey, name)
+      : nextUnnamedSnapshotKey(this._snapshotKey);
 
     const actual = stringifyValue<T>(this._left);
     const res = snapshotAssert(key, actual);

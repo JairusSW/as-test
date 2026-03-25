@@ -1,4 +1,4 @@
-import { describe, expect, run, test } from "..";
+import { describe, expect, test } from "..";
 
 describe("Snapshot support", () => {
   test("string snapshot", () => {

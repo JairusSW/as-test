@@ -5,7 +5,8 @@ export async function executeRunCommand(rawArgs, flags, configPath, selectedMode
     const featureToggles = deps.resolveFeatureToggles(rawArgs, "run");
     const runFlags = {
         snapshot: !flags.includes("--no-snapshot"),
-        updateSnapshots: flags.includes("--update-snapshots"),
+        createSnapshots: flags.includes("--create-snapshots"),
+        overwriteSnapshots: flags.includes("--overwrite-snapshots"),
         clean: flags.includes("--clean"),
         showCoverage: flags.includes("--show-coverage"),
         verbose: flags.includes("--verbose"),

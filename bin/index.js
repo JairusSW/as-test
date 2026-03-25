@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import chalk from "chalk";
-import { build } from "./commands/build.js";
+import { build, formatInvocation as formatBuildInvocation, getBuildInvocationPreview, } from "./commands/build.js";
 import { createRunReporter, run } from "./commands/run.js";
 import { executeBuildCommand } from "./commands/build.js";
 import { executeRunCommand } from "./commands/run.js";
@@ -197,9 +197,13 @@ function info() {
         "                    " +
         "Snapshot assertions (enabled by default)");
     console.log("   " +
-        chalk.bold.blue("--update-snapshots") +
+        chalk.bold.blue("--create-snapshots") +
         "            " +
-        "Create/update snapshot files on mismatch");
+        "Create missing snapshot entries");
+    console.log("   " +
+        chalk.bold.blue("--overwrite-snapshots") +
+        "         " +
+        "Overwrite existing snapshot entries on mismatch");
     console.log("   " +
         chalk.bold.blue("--no-snapshot") +
         "                 " +
@@ -285,7 +289,8 @@ function printCommandHelp(command) {
         process.stdout.write("  --config <path>          Use a specific config file\n");
         process.stdout.write("  --mode <name[,name...]>  Run one or multiple named config modes\n");
         process.stdout.write("  --browser <name|path>    Use chrome, chromium, firefox, webkit, or an executable path for web modes\n");
-        process.stdout.write("  --update-snapshots       Create/update snapshot files on mismatch\n");
+        process.stdout.write("  --create-snapshots       Create missing snapshot entries\n");
+        process.stdout.write("  --overwrite-snapshots    Overwrite existing snapshot entries on mismatch\n");
         process.stdout.write("  --no-snapshot            Disable snapshot assertions for this run\n");
         process.stdout.write("  --show-coverage          Print uncovered coverage point details\n");
         process.stdout.write("  --enable <feature>       Enable feature (coverage|try-as)\n");
@@ -306,7 +311,8 @@ function printCommandHelp(command) {
         process.stdout.write("  --config <path>          Use a specific config file\n");
         process.stdout.write("  --mode <name[,name...]>  Run one or multiple named config modes\n");
         process.stdout.write("  --browser <name|path>    Use chrome, chromium, firefox, webkit, or an executable path for web modes\n");
-        process.stdout.write("  --update-snapshots       Create/update snapshot files on mismatch\n");
+        process.stdout.write("  --create-snapshots       Create missing snapshot entries\n");
+        process.stdout.write("  --overwrite-snapshots    Overwrite existing snapshot entries on mismatch\n");
         process.stdout.write("  --no-snapshot            Disable snapshot assertions for this run\n");
         process.stdout.write("  --show-coverage          Print uncovered coverage point details\n");
         process.stdout.write("  --enable <feature>       Enable feature (coverage|try-as)\n");
@@ -644,13 +650,14 @@ async function runTestSequential(runFlags, configPath, selectors, buildFeatureTo
         clean: runFlags.clean,
         verbose: runFlags.verbose,
         snapshotEnabled,
-        updateSnapshots: runFlags.updateSnapshots,
+        createSnapshots: runFlags.createSnapshots,
     });
     const results = [];
     let failed = false;
     const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
     for (const file of files) {
         await build(configPath, [file], modeName, buildFeatureToggles);
+        const buildInvocation = await getBuildInvocationPreview(configPath, file, modeName, buildFeatureToggles);
         const artifactKey = resolvePerFileArtifactKey(file, duplicateSpecBasenames);
         const result = await run(runFlags, configPath, [file], false, {
             reporter,
@@ -658,6 +665,7 @@ async function runTestSequential(runFlags, configPath, selectors, buildFeatureTo
             emitRunComplete: false,
             logFileName: `test.${artifactKey}.log.json`,
             coverageFileName: `coverage.${artifactKey}.log.json`,
+            buildCommand: formatBuildInvocation(buildInvocation),
             modeName,
         });
         results.push(result);
@@ -704,12 +712,14 @@ async function runRuntimeModes(runFlags, configPath, selectors, modes) {
         return;
     }
     let failed = false;
+    const buildCommandsByFile = await previewBuildCommands(configPath, selectors, modes[0], {});
     for (const modeName of modes) {
         const result = await run(runFlags, configPath, selectors, false, {
             modeName,
             modeSummaryTotal,
             modeSummaryExecuted: 1,
             fileSummaryTotal,
+            buildCommandsByFile,
         });
         if (result.failed)
             failed = true;
@@ -729,7 +739,7 @@ async function runRuntimeMatrix(runFlags, configPath, selectors, modes, modeSumm
         clean: runFlags.clean,
         verbose: runFlags.verbose,
         snapshotEnabled,
-        updateSnapshots: runFlags.updateSnapshots,
+        createSnapshots: runFlags.createSnapshots,
     });
     const silentReporter = {};
     const allResults = [];
@@ -756,6 +766,7 @@ async function runRuntimeMatrix(runFlags, configPath, selectors, modes, modeSumm
         for (let i = 0; i < modes.length; i++) {
             const modeName = modes[i];
             try {
+                const buildInvocation = await getBuildInvocationPreview(configPath, file, modeName, {});
                 const artifactKey = resolvePerFileArtifactKey(file, duplicateSpecBasenames);
                 const result = await run(runFlags, configPath, [file], false, {
                     reporter: silentReporter,
@@ -764,6 +775,7 @@ async function runRuntimeMatrix(runFlags, configPath, selectors, modes, modeSumm
                     emitRunComplete: false,
                     logFileName: `run.${artifactKey}.log.json`,
                     coverageFileName: `coverage.${artifactKey}.log.json`,
+                    buildCommand: formatBuildInvocation(buildInvocation),
                     modeName,
                 });
                 modeTimes[i] = formatMatrixModeTime(result.stats.time);
@@ -862,7 +874,7 @@ async function runTestMatrix(runFlags, configPath, selectors, modes, buildFeatur
         clean: runFlags.clean,
         verbose: runFlags.verbose,
         snapshotEnabled,
-        updateSnapshots: runFlags.updateSnapshots,
+        createSnapshots: runFlags.createSnapshots,
     });
     const silentReporter = {};
     const allResults = [];
@@ -890,6 +902,7 @@ async function runTestMatrix(runFlags, configPath, selectors, modes, buildFeatur
             const modeName = modes[i];
             try {
                 await build(configPath, [file], modeName, buildFeatureToggles);
+                const buildInvocation = await getBuildInvocationPreview(configPath, file, modeName, buildFeatureToggles);
                 const artifactKey = resolvePerFileArtifactKey(file, duplicateSpecBasenames);
                 const result = await run(runFlags, configPath, [file], false, {
                     reporter: silentReporter,
@@ -898,6 +911,7 @@ async function runTestMatrix(runFlags, configPath, selectors, modes, buildFeatur
                     emitRunComplete: false,
                     logFileName: `test.${artifactKey}.log.json`,
                     coverageFileName: `coverage.${artifactKey}.log.json`,
+                    buildCommand: formatBuildInvocation(buildInvocation),
                     modeName,
                 });
                 modeTimes[i] = formatMatrixModeTime(result.stats.time);
@@ -1119,6 +1133,15 @@ async function resolveConfiguredFileTotal(configPath, selectors = []) {
     const files = await resolveSelectedFiles(configPath, selectors);
     return files.length;
 }
+async function previewBuildCommands(configPath, selectors, modeName, featureToggles) {
+    const files = await resolveSelectedFiles(configPath, selectors);
+    const out = {};
+    for (const file of files) {
+        const invocation = await getBuildInvocationPreview(configPath, file, modeName, featureToggles);
+        out[file] = formatBuildInvocation(invocation);
+    }
+    return out;
+}
 function resolveExecutionModes(configPath, selectedModes) {
     if (selectedModes.length)
         return selectedModes;
@@ -1163,7 +1186,9 @@ async function buildNoTestFilesMatchedError(configPath, selectors, includeFuzz =
         lines.push('No specs were discovered from configured input patterns. Check "input" in config or run "ast doctor".');
         return new Error(lines.join("\n"));
     }
-    const suggestions = suggestClosestSuites(selectors, includeFuzz ? [...configuredFiles, ...configuredFuzzFiles] : configuredFiles);
+    const suggestions = suggestClosestSuites(selectors, includeFuzz
+        ? [...configuredFiles, ...configuredFuzzFiles]
+        : configuredFiles);
     if (suggestions.length) {
         lines.push(`Closest suite names: ${suggestions.join(", ")}`);
     }

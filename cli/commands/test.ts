@@ -6,8 +6,14 @@ type TestCommandDeps = {
   resolveCommandArgs(rawArgs: string[], command: string): string[];
   resolveListFlags(rawArgs: string[], command: string): CliListFlags;
   resolveFeatureToggles(rawArgs: string[], command: string): CliFeatureToggles;
-  resolveBrowserOverride(rawArgs: string[], command: "test"): string | undefined;
-  resolveFuzzOverrides(rawArgs: string[], command: "test" | "fuzz"): FuzzOverrides;
+  resolveBrowserOverride(
+    rawArgs: string[],
+    command: "test",
+  ): string | undefined;
+  resolveFuzzOverrides(
+    rawArgs: string[],
+    command: "test" | "fuzz",
+  ): FuzzOverrides;
   resolveExecutionModes(
     configPath: string | undefined,
     selectedModes: string[],
@@ -47,7 +53,8 @@ export async function executeTestCommand(
   };
   const runFlags: RunFlags = {
     snapshot: !flags.includes("--no-snapshot"),
-    updateSnapshots: flags.includes("--update-snapshots"),
+    createSnapshots: flags.includes("--create-snapshots"),
+    overwriteSnapshots: flags.includes("--overwrite-snapshots"),
     clean: flags.includes("--clean"),
     showCoverage: flags.includes("--show-coverage"),
     verbose: flags.includes("--verbose"),

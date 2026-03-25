@@ -7,7 +7,7 @@ export class Config {
         this.coverageDir = "./.as-test/coverage";
         this.snapshotDir = "./.as-test/snapshots";
         this.config = "none";
-        this.coverage = true;
+        this.coverage = false;
         this.env = {};
         this.buildOptions = new BuildOptions();
         this.runOptions = new RunOptions();
@@ -17,8 +17,10 @@ export class Config {
 }
 export class CoverageOptions {
     constructor() {
-        this.enabled = true;
+        this.enabled = false;
         this.includeSpecs = false;
+        this.include = [];
+        this.exclude = [];
     }
 }
 export class Suite {

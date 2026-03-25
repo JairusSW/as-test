@@ -12,6 +12,7 @@ export class Suite {
   public time: Time = new Time();
   public description: string;
   public depth: i32 = 0;
+  public snapshotCount: i32 = 0;
   public suites: Suite[] = [];
   public tests: Tests[] = [];
   public logs: Log[] = [];
@@ -54,12 +55,19 @@ export class Suite {
     this.time.start = performance.now();
     sendSuiteStart(this.file, this.depth, this.kind, this.description);
     const isSkippedCase =
-      this.kind == "xdescribe" || this.kind == "xtest" || this.kind == "xit";
+      this.kind == "xdescribe" ||
+      this.kind == "xtest" ||
+      this.kind == "xit" ||
+      this.kind == "xonly" ||
+      this.kind == "todo";
     const isTestCase =
       this.kind == "test" ||
       this.kind == "it" ||
+      this.kind == "only" ||
       this.kind == "xtest" ||
-      this.kind == "xit";
+      this.kind == "xit" ||
+      this.kind == "xonly" ||
+      this.kind == "todo";
 
     if (isSkippedCase) {
       this.time.end = performance.now();
@@ -85,12 +93,18 @@ export class Suite {
     // @ts-ignore
     depth--;
 
+    const hasOnlyChildren = this.hasOnlyChildren();
+
     let hasFail = false;
     let hasOk = false;
     let hasSkip = false;
     for (let i = 0; i < this.suites.length; i++) {
       const suite = unchecked(this.suites[i]);
-      suite.run();
+      if (hasOnlyChildren && suite.kind != "only") {
+        suite.skip();
+      } else {
+        suite.run();
+      }
       if (suite.verdict == "fail") {
         hasFail = true;
       } else if (suite.verdict == "ok") {
@@ -126,6 +140,33 @@ export class Suite {
       this.description,
       this.verdict,
     );
+  }
+
+  skip(): void {
+    // @ts-ignore
+    current_suite = this;
+    // @ts-ignore
+    depth++;
+    this.time.start = performance.now();
+    this.time.end = this.time.start;
+    this.verdict = "skip";
+    sendSuiteStart(this.file, this.depth, this.kind, this.description);
+    // @ts-ignore
+    depth--;
+    sendSuiteEnd(
+      this.file,
+      this.depth,
+      this.kind,
+      this.description,
+      this.verdict,
+    );
+  }
+
+  private hasOnlyChildren(): bool {
+    for (let i = 0; i < this.suites.length; i++) {
+      if (unchecked(this.suites[i]).kind == "only") return true;
+    }
+    return false;
   }
 
   serialize(): string {

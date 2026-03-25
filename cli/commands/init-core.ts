@@ -574,7 +574,9 @@ function printPlan(
   console.log(chalk.bold.blue("◇  Planned Changes"));
   console.log("│" + chalk.dim(`  - Target: ${target}`));
   console.log("│" + chalk.dim(`  - Example: ${example}`));
-  console.log("│" + chalk.dim(`  - Fuzzer example: ${fuzzExample ? "yes" : "no"}`));
+  console.log(
+    "│" + chalk.dim(`  - Fuzzer example: ${fuzzExample ? "yes" : "no"}`),
+  );
   console.log("│" + chalk.dim(`  - Directory: ${displayRoot()}`));
   console.log(
     "│" + chalk.dim(`  - Install dependencies: ${install ? "yes" : "no"}`),
@@ -626,7 +628,7 @@ function applyInit(
     input: ["assembly/__tests__/*.spec.ts"],
     output: ".as-test/",
     config: "none",
-    coverage: true,
+    coverage: false,
     env: {},
     ...(fuzzExample
       ? {

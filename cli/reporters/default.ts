@@ -24,7 +24,11 @@ export const createReporter: ReporterFactory = (
 class DefaultReporter implements TestReporter {
   private currentFile: string | null = null;
   private openSuites: { depth: number; description: string }[] = [];
-  private verboseSuites: { depth: number; description: string; verdict: string }[] = [];
+  private verboseSuites: {
+    depth: number;
+    description: string;
+    verdict: string;
+  }[] = [];
   private renderedLines = 0;
   private fileHasWarning = false;
   private verboseMode = false;
@@ -91,7 +95,9 @@ class DefaultReporter implements TestReporter {
         suite.verdict == "running"
           ? this.badgeRunning()
           : this.badgeFromVerdict(suite.verdict);
-      lines.push(`${"  ".repeat(suite.depth + 1)}${badge} ${suite.description}`);
+      lines.push(
+        `${"  ".repeat(suite.depth + 1)}${badge} ${suite.description}`,
+      );
     }
     this.drawLiveBlock(lines);
   }
@@ -145,10 +151,12 @@ class DefaultReporter implements TestReporter {
   private renderFileResult(event: ProgressEvent): string {
     const verdict = event.verdict ?? "none";
     const time = event.time ? ` ${chalk.dim(event.time)}` : "";
-    if (verdict == "fail") return `${chalk.bgRed.white(" FAIL ")} ${event.file}${time}`;
+    if (verdict == "fail")
+      return `${chalk.bgRed.white(" FAIL ")} ${event.file}${time}`;
     if (this.fileHasWarning)
       return `${chalk.bgYellow.black(" WARN ")} ${event.file}${time}`;
-    if (verdict == "ok") return `${chalk.bgGreenBright.black(" PASS ")} ${event.file}${time}`;
+    if (verdict == "ok")
+      return `${chalk.bgGreenBright.black(" PASS ")} ${event.file}${time}`;
     return `${chalk.bgBlackBright.white(" SKIP ")} ${event.file}${time}`;
   }
 
@@ -157,7 +165,7 @@ class DefaultReporter implements TestReporter {
     clean: boolean;
     verbose: boolean;
     snapshotEnabled: boolean;
-    updateSnapshots: boolean;
+    createSnapshots: boolean;
   }): void {
     this.verboseMode = Boolean(event.verbose);
     this.cleanMode = Boolean(event.clean);
@@ -262,7 +270,7 @@ class DefaultReporter implements TestReporter {
 
   onSnapshotMissing(event: SnapshotMissingEvent): void {
     this.fileHasWarning = true;
-    const warnLine = `${chalk.bgYellow.black(" WARN ")} missing snapshot for ${chalk.dim(event.key)}. Re-run with ${chalk.bold("--update-snapshots")} to create it.\n`;
+    const warnLine = `${chalk.bgYellow.black(" WARN ")} missing snapshot for ${chalk.dim(event.key)}. Re-run with ${chalk.bold("--create-snapshots")} to create it.\n`;
     if (!this.canRewriteLine() || !this.currentFile) {
       this.context.stdout.write(warnLine);
       return;
@@ -399,7 +407,10 @@ function buildFuzzReproCommand(file: string, seed: number): string {
 }
 
 function toRelativeResultPath(file: string): string {
-  const relative = path.relative(process.cwd(), path.resolve(process.cwd(), file));
+  const relative = path.relative(
+    process.cwd(),
+    path.resolve(process.cwd(), file),
+  );
   return relative.length ? relative : file;
 }
 
@@ -520,18 +531,21 @@ function renderSnapshotSummary(snapshotSummary: SnapshotSummary): void {
   );
 }
 
-function renderTotals(stats: {
-  failedFiles: number;
-  passedFiles: number;
-  skippedFiles: number;
-  failedSuites: number;
-  passedSuites: number;
-  skippedSuites: number;
-  failedTests: number;
-  passedTests: number;
-  skippedTests: number;
-  time: number;
-}, event: RunCompleteEvent): void {
+function renderTotals(
+  stats: {
+    failedFiles: number;
+    passedFiles: number;
+    skippedFiles: number;
+    failedSuites: number;
+    passedSuites: number;
+    skippedSuites: number;
+    failedTests: number;
+    passedTests: number;
+    skippedTests: number;
+    time: number;
+  },
+  event: RunCompleteEvent,
+): void {
   console.log("");
   process.stdout.write(chalk.bold("Files:  "));
   process.stdout.write(
@@ -582,7 +596,9 @@ function renderTotals(stats: {
         : chalk.gray("0 skipped")),
   );
   process.stdout.write(
-    ", " + (stats.failedTests + stats.passedTests + stats.skippedTests) + " total\n",
+    ", " +
+      (stats.failedTests + stats.passedTests + stats.skippedTests) +
+      " total\n",
   );
 
   if (event.modeSummary) {

@@ -457,7 +457,7 @@ function applyInit(root, target, example, fuzzExample, force) {
         input: ["assembly/__tests__/*.spec.ts"],
         output: ".as-test/",
         config: "none",
-        coverage: true,
+        coverage: false,
         env: {},
         ...(fuzzExample
             ? {

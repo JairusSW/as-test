@@ -8,7 +8,8 @@ export async function executeTestCommand(rawArgs, flags, configPath, selectedMod
     };
     const runFlags = {
         snapshot: !flags.includes("--no-snapshot"),
-        updateSnapshots: flags.includes("--update-snapshots"),
+        createSnapshots: flags.includes("--create-snapshots"),
+        overwriteSnapshots: flags.includes("--overwrite-snapshots"),
         clean: flags.includes("--clean"),
         showCoverage: flags.includes("--show-coverage"),
         verbose: flags.includes("--verbose"),

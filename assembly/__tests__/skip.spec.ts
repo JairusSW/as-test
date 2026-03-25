@@ -1,14 +1,19 @@
 import {
   describe,
   expect,
+  only,
   test,
+  todo,
   xdescribe,
   xexpect,
   xit,
+  xonly,
   xtest,
 } from "..";
 
 let ran = 0;
+let focusedRan = 0;
+let unfocusedRan = 0;
 
 xtest("xtest is skipped", () => {
   ran++;
@@ -36,4 +41,27 @@ describe("skip helpers", () => {
 
 test("skipped callbacks were not executed", () => {
   expect(ran).toBe(0);
+});
+
+describe("todo and only helpers", () => {
+  only("only runs the focused test", () => {
+    focusedRan++;
+    expect(true).toBe(true);
+  });
+
+  xonly("xonly stays skipped", () => {
+    unfocusedRan++;
+    expect(false).toBe(true);
+  });
+
+  test("non-focused sibling is skipped", () => {
+    unfocusedRan++;
+  });
+
+  todo("placeholder test");
+});
+
+test("only skipped unfocused siblings", () => {
+  expect(focusedRan).toBe(1);
+  expect(unfocusedRan).toBe(0);
 });

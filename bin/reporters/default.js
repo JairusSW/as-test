@@ -219,7 +219,7 @@ class DefaultReporter {
     onAssertionFail(_event) { }
     onSnapshotMissing(event) {
         this.fileHasWarning = true;
-        const warnLine = `${chalk.bgYellow.black(" WARN ")} missing snapshot for ${chalk.dim(event.key)}. Re-run with ${chalk.bold("--update-snapshots")} to create it.\n`;
+        const warnLine = `${chalk.bgYellow.black(" WARN ")} missing snapshot for ${chalk.dim(event.key)}. Re-run with ${chalk.bold("--create-snapshots")} to create it.\n`;
         if (!this.canRewriteLine() || !this.currentFile) {
             this.context.stdout.write(warnLine);
             return;
@@ -467,7 +467,9 @@ function renderTotals(stats, event) {
         (stats.skippedTests
             ? chalk.gray(stats.skippedTests + " skipped")
             : chalk.gray("0 skipped")));
-    process.stdout.write(", " + (stats.failedTests + stats.passedTests + stats.skippedTests) + " total\n");
+    process.stdout.write(", " +
+        (stats.failedTests + stats.passedTests + stats.skippedTests) +
+        " total\n");
     if (event.modeSummary) {
         renderModeSummary(event.modeSummary);
     }

@@ -29,6 +29,8 @@ type BuildInvocation = {
   args: string[];
 };
 
+export type { BuildInvocation };
+
 export async function build(
   configPath: string = DEFAULT_CONFIG_PATH,
   selectors: string[] = [],
@@ -38,7 +40,10 @@ export async function build(
 ) {
   const loadedConfig = loadConfig(configPath, false);
   const mode = applyMode(loadedConfig, modeName);
-  const config = Object.assign(Object.create(Object.getPrototypeOf(mode.config)), mode.config) as Config;
+  const config = Object.assign(
+    Object.create(Object.getPrototypeOf(mode.config)),
+    mode.config,
+  ) as Config;
   config.buildOptions = Object.assign(
     Object.create(Object.getPrototypeOf(mode.config.buildOptions)),
     mode.config.buildOptions,
@@ -95,6 +100,47 @@ export async function build(
       );
     }
   }
+}
+
+export async function getBuildInvocationPreview(
+  configPath: string = DEFAULT_CONFIG_PATH,
+  file: string,
+  modeName?: string,
+  featureToggles: BuildFeatureToggles = {},
+  overrides: BuildConfigOverrides = {},
+): Promise<BuildInvocation> {
+  const loadedConfig = loadConfig(configPath, false);
+  const mode = applyMode(loadedConfig, modeName);
+  const config = Object.assign(
+    Object.create(Object.getPrototypeOf(mode.config)),
+    mode.config,
+  ) as Config;
+  config.buildOptions = Object.assign(
+    Object.create(Object.getPrototypeOf(mode.config.buildOptions)),
+    mode.config.buildOptions,
+  );
+  if (overrides.target) {
+    config.buildOptions.target = overrides.target;
+  }
+  if (overrides.args?.length) {
+    config.buildOptions.args = [...config.buildOptions.args, ...overrides.args];
+  }
+
+  const duplicateSpecBasenames = resolveDuplicateBasenames([file]);
+  const outFile = `${config.outDir}/${resolveArtifactFileName(
+    file,
+    config.buildOptions.target,
+    modeName,
+    duplicateSpecBasenames,
+  )}`;
+  return getBuildCommand(
+    config,
+    getPkgRunner(),
+    file,
+    outFile,
+    modeName,
+    featureToggles,
+  );
 }
 
 function hasCustomBuildCommand(config: Config): boolean {
@@ -317,6 +363,8 @@ function formatInvocation(invocation: BuildInvocation): string {
     .join(" ");
 }
 
+export { getBuildCommand, formatInvocation };
+
 function getBuildStderr(error: unknown): string {
   const err = error as { stderr?: unknown; message?: unknown };
   const stderr = err?.stderr;
@@ -410,7 +458,9 @@ function hasTryAsRuntime(): boolean {
 }
 
 function resolveWasiShim(): { configPath: string } | null {
-  const resolved = resolveProjectModule("@assemblyscript/wasi-shim/asconfig.json");
+  const resolved = resolveProjectModule(
+    "@assemblyscript/wasi-shim/asconfig.json",
+  );
   if (!resolved) return null;
   if (!existsSync(resolved)) return null;
   const relative = path.relative(process.cwd(), resolved).replace(/\\/g, "/");

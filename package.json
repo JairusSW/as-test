@@ -21,8 +21,8 @@
     "as-sleep": "^0.0.2",
     "as-test": "./",
     "assemblyscript": "^0.28.9",
-    "assemblyscript-prettier": "^3.0.1",
-    "prettier": "3.6.2",
+    "assemblyscript-prettier": "^3.0.4",
+    "prettier": "3.8.1",
     "try-as": "^0.2.5",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.55.0"
@@ -51,7 +51,13 @@
     "index.ts"
   ],
   "homepage": "https://github.com/JairusSW/as-test#readme",
-  "keywords": ["assemblyscript", "testing", "test", "as-pect", "aspect"],
+  "keywords": [
+    "assemblyscript",
+    "testing",
+    "test",
+    "as-pect",
+    "aspect"
+  ],
   "license": "MIT",
   "publishConfig": {
     "access": "public"

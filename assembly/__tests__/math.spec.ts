@@ -1,4 +1,4 @@
-import { describe, expect, test, run } from "..";
+import "as-test";
 
 describe("Math operations", () => {
   test("Addition", () => {

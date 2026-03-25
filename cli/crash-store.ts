@@ -25,16 +25,11 @@ export function persistCrashRecord(
   logPath: string;
 } {
   const entry = crashEntryKey(record.file);
-  const dir = path.resolve(process.cwd(), rootDir, entry);
+  const dir = path.resolve(process.cwd(), rootDir);
   mkdirSync(dir, { recursive: true });
 
-  const stamp = utcStamp();
-  const jsonName = `${stamp}.json`;
-  const logName = `${stamp}.log`;
-  const jsonPath = path.join(dir, jsonName);
-  const logPath = path.join(dir, logName);
-  const latestJsonPath = path.join(dir, "latest.json");
-  const latestLogPath = path.join(dir, "latest.log");
+  const jsonPath = path.join(dir, `${entry}.json`);
+  const logPath = path.join(dir, `${entry}.log`);
 
   const payload = {
     timestamp: new Date().toISOString(),
@@ -44,8 +39,6 @@ export function persistCrashRecord(
 
   writeFileSync(jsonPath, JSON.stringify(payload, null, 2));
   writeFileSync(logPath, log);
-  writeFileSync(latestJsonPath, JSON.stringify(payload, null, 2));
-  writeFileSync(latestLogPath, log);
 
   return { jsonPath, logPath };
 }
@@ -54,13 +47,7 @@ function crashEntryKey(file: string): string {
   return path.basename(file).replace(/\.ts$/, "");
 }
 
-function utcStamp(): string {
-  return new Date().toISOString().replace(/:/g, "-");
-}
-
-function buildCrashLog(
-  payload: CrashRecord & { timestamp: string },
-): string {
+function buildCrashLog(payload: CrashRecord & { timestamp: string }): string {
   const lines = [
     `timestamp: ${payload.timestamp}`,
     `kind: ${payload.kind}`,

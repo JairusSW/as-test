@@ -10,7 +10,8 @@ export type CliListFlags = {
 
 export type RunFlags = {
   snapshot: boolean;
-  updateSnapshots: boolean;
+  createSnapshots: boolean;
+  overwriteSnapshots: boolean;
   clean: boolean;
   showCoverage: boolean;
   verbose: boolean;

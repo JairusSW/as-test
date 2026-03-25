@@ -1,7 +1,12 @@
 #!/usr/bin/env node
 
 import chalk from "chalk";
-import { build, BuildFeatureToggles } from "./commands/build.js";
+import {
+  build,
+  BuildFeatureToggles,
+  formatInvocation as formatBuildInvocation,
+  getBuildInvocationPreview,
+} from "./commands/build.js";
 import { createRunReporter, run, RunResult } from "./commands/run.js";
 import { executeBuildCommand } from "./commands/build.js";
 import { executeRunCommand } from "./commands/run.js";
@@ -246,9 +251,15 @@ function info(): void {
   );
   console.log(
     "   " +
-      chalk.bold.blue("--update-snapshots") +
+      chalk.bold.blue("--create-snapshots") +
       "            " +
-      "Create/update snapshot files on mismatch",
+      "Create missing snapshot entries",
+  );
+  console.log(
+    "   " +
+      chalk.bold.blue("--overwrite-snapshots") +
+      "         " +
+      "Overwrite existing snapshot entries on mismatch",
   );
   console.log(
     "   " +
@@ -386,7 +397,10 @@ function printCommandHelp(command: string): void {
       "  --browser <name|path>    Use chrome, chromium, firefox, webkit, or an executable path for web modes\n",
     );
     process.stdout.write(
-      "  --update-snapshots       Create/update snapshot files on mismatch\n",
+      "  --create-snapshots       Create missing snapshot entries\n",
+    );
+    process.stdout.write(
+      "  --overwrite-snapshots    Overwrite existing snapshot entries on mismatch\n",
     );
     process.stdout.write(
       "  --no-snapshot            Disable snapshot assertions for this run\n",
@@ -440,7 +454,10 @@ function printCommandHelp(command: string): void {
       "  --browser <name|path>    Use chrome, chromium, firefox, webkit, or an executable path for web modes\n",
     );
     process.stdout.write(
-      "  --update-snapshots       Create/update snapshot files on mismatch\n",
+      "  --create-snapshots       Create missing snapshot entries\n",
+    );
+    process.stdout.write(
+      "  --overwrite-snapshots    Overwrite existing snapshot entries on mismatch\n",
     );
     process.stdout.write(
       "  --no-snapshot            Disable snapshot assertions for this run\n",
@@ -502,9 +519,7 @@ function printCommandHelp(command: string): void {
     process.stdout.write(
       "  --runs <n>               Override fuzz iteration count\n",
     );
-    process.stdout.write(
-      "  --seed <n>               Override fuzz seed\n",
-    );
+    process.stdout.write("  --seed <n>               Override fuzz seed\n");
     process.stdout.write(
       "  --list                   Preview resolved fuzz files without running\n",
     );
@@ -765,9 +780,7 @@ function parseNumberFlag(
   rawArgs: string[],
   index: number,
   flag: string,
-):
-  | { key: string; number: number; consumeNext: boolean }
-  | null {
+): { key: string; number: number; consumeNext: boolean } | null {
   const arg = rawArgs[index]!;
   if (arg == flag) {
     const next = rawArgs[index + 1];
@@ -794,9 +807,7 @@ function parseStringFlag(
   rawArgs: string[],
   index: number,
   flag: string,
-):
-  | { key: string; value: string; consumeNext: boolean }
-  | null {
+): { key: string; value: string; consumeNext: boolean } | null {
   const arg = rawArgs[index]!;
   if (arg == flag) {
     const next = rawArgs[index + 1];
@@ -877,7 +888,8 @@ function resolveCommandTokens(rawArgs: string[], command: string): string[] {
 async function runTestSequential(
   runFlags: {
     snapshot: boolean;
-    updateSnapshots: boolean;
+    createSnapshots: boolean;
+    overwriteSnapshots: boolean;
     clean: boolean;
     showCoverage: boolean;
     verbose: boolean;
@@ -925,7 +937,7 @@ async function runTestSequential(
     clean: runFlags.clean,
     verbose: runFlags.verbose,
     snapshotEnabled,
-    updateSnapshots: runFlags.updateSnapshots,
+    createSnapshots: runFlags.createSnapshots,
   });
 
   const results: RunResult[] = [];
@@ -933,6 +945,12 @@ async function runTestSequential(
   const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
   for (const file of files) {
     await build(configPath, [file], modeName, buildFeatureToggles);
+    const buildInvocation = await getBuildInvocationPreview(
+      configPath,
+      file,
+      modeName,
+      buildFeatureToggles,
+    );
     const artifactKey = resolvePerFileArtifactKey(file, duplicateSpecBasenames);
     const result = await run(runFlags, configPath, [file], false, {
       reporter,
@@ -940,6 +958,7 @@ async function runTestSequential(
       emitRunComplete: false,
       logFileName: `test.${artifactKey}.log.json`,
       coverageFileName: `coverage.${artifactKey}.log.json`,
+      buildCommand: formatBuildInvocation(buildInvocation),
       modeName,
     });
     results.push(result);
@@ -993,7 +1012,8 @@ async function runBuildModes(
 async function runRuntimeModes(
   runFlags: {
     snapshot: boolean;
-    updateSnapshots: boolean;
+    createSnapshots: boolean;
+    overwriteSnapshots: boolean;
     clean: boolean;
     showCoverage: boolean;
     verbose: boolean;
@@ -1021,12 +1041,19 @@ async function runRuntimeModes(
   }
 
   let failed = false;
+  const buildCommandsByFile = await previewBuildCommands(
+    configPath,
+    selectors,
+    modes[0],
+    {},
+  );
   for (const modeName of modes) {
     const result = await run(runFlags, configPath, selectors, false, {
       modeName,
       modeSummaryTotal,
       modeSummaryExecuted: 1,
       fileSummaryTotal,
+      buildCommandsByFile,
     });
     if (result.failed) failed = true;
   }
@@ -1036,7 +1063,8 @@ async function runRuntimeModes(
 async function runRuntimeMatrix(
   runFlags: {
     snapshot: boolean;
-    updateSnapshots: boolean;
+    createSnapshots: boolean;
+    overwriteSnapshots: boolean;
     clean: boolean;
     showCoverage: boolean;
     verbose: boolean;
@@ -1061,7 +1089,7 @@ async function runRuntimeMatrix(
     clean: runFlags.clean,
     verbose: runFlags.verbose,
     snapshotEnabled,
-    updateSnapshots: runFlags.updateSnapshots,
+    createSnapshots: runFlags.createSnapshots,
   });
 
   const silentReporter: TestReporter = {};
@@ -1091,6 +1119,12 @@ async function runRuntimeMatrix(
     for (let i = 0; i < modes.length; i++) {
       const modeName = modes[i];
       try {
+        const buildInvocation = await getBuildInvocationPreview(
+          configPath,
+          file,
+          modeName,
+          {},
+        );
         const artifactKey = resolvePerFileArtifactKey(
           file,
           duplicateSpecBasenames,
@@ -1102,6 +1136,7 @@ async function runRuntimeMatrix(
           emitRunComplete: false,
           logFileName: `run.${artifactKey}.log.json`,
           coverageFileName: `coverage.${artifactKey}.log.json`,
+          buildCommand: formatBuildInvocation(buildInvocation),
           modeName,
         });
         modeTimes[i] = formatMatrixModeTime(result.stats.time);
@@ -1163,7 +1198,8 @@ async function runRuntimeMatrix(
 async function runTestModes(
   runFlags: {
     snapshot: boolean;
-    updateSnapshots: boolean;
+    createSnapshots: boolean;
+    overwriteSnapshots: boolean;
     clean: boolean;
     showCoverage: boolean;
     verbose: boolean;
@@ -1254,7 +1290,8 @@ async function runTestModes(
 async function runTestMatrix(
   runFlags: {
     snapshot: boolean;
-    updateSnapshots: boolean;
+    createSnapshots: boolean;
+    overwriteSnapshots: boolean;
     clean: boolean;
     showCoverage: boolean;
     verbose: boolean;
@@ -1288,7 +1325,7 @@ async function runTestMatrix(
     clean: runFlags.clean,
     verbose: runFlags.verbose,
     snapshotEnabled,
-    updateSnapshots: runFlags.updateSnapshots,
+    createSnapshots: runFlags.createSnapshots,
   });
 
   const silentReporter: TestReporter = {};
@@ -1319,6 +1356,12 @@ async function runTestMatrix(
       const modeName = modes[i];
       try {
         await build(configPath, [file], modeName, buildFeatureToggles);
+        const buildInvocation = await getBuildInvocationPreview(
+          configPath,
+          file,
+          modeName,
+          buildFeatureToggles,
+        );
         const artifactKey = resolvePerFileArtifactKey(
           file,
           duplicateSpecBasenames,
@@ -1330,6 +1373,7 @@ async function runTestMatrix(
           emitRunComplete: false,
           logFileName: `test.${artifactKey}.log.json`,
           coverageFileName: `coverage.${artifactKey}.log.json`,
+          buildCommand: formatBuildInvocation(buildInvocation),
           modeName,
         });
         modeTimes[i] = formatMatrixModeTime(result.stats.time);
@@ -1457,7 +1501,10 @@ function summarizeFuzzResults(results: FuzzResult[]): {
       (sum, item) => sum + (hasFuzzFailures(item) ? 1 : 0),
       0,
     ),
-    skipped: results.reduce((sum, item) => sum + (isSkippedFuzzResult(item) ? 1 : 0), 0),
+    skipped: results.reduce(
+      (sum, item) => sum + (isSkippedFuzzResult(item) ? 1 : 0),
+      0,
+    ),
     total: results.length,
     runs: results.reduce((sum, item) => sum + item.runs, 0),
   };
@@ -1645,6 +1692,26 @@ async function resolveConfiguredFileTotal(
   return files.length;
 }
 
+async function previewBuildCommands(
+  configPath: string | undefined,
+  selectors: string[],
+  modeName: string | undefined,
+  featureToggles: BuildFeatureToggles,
+): Promise<Record<string, string>> {
+  const files = await resolveSelectedFiles(configPath, selectors);
+  const out: Record<string, string> = {};
+  for (const file of files) {
+    const invocation = await getBuildInvocationPreview(
+      configPath,
+      file,
+      modeName,
+      featureToggles,
+    );
+    out[file] = formatBuildInvocation(invocation);
+  }
+  return out;
+}
+
 function resolveExecutionModes(
   configPath: string | undefined,
   selectedModes: string[],
@@ -1720,7 +1787,9 @@ async function buildNoTestFilesMatchedError(
 
   const suggestions = suggestClosestSuites(
     selectors,
-    includeFuzz ? [...configuredFiles, ...configuredFuzzFiles] : configuredFiles,
+    includeFuzz
+      ? [...configuredFiles, ...configuredFuzzFiles]
+      : configuredFiles,
   );
   if (suggestions.length) {
     lines.push(`Closest suite names: ${suggestions.join(", ")}`);
@@ -1856,7 +1925,9 @@ function resolveFuzzPatterns(
     if (isBareSuiteSelector(selector)) {
       const base = selector.replace(/\.fuzz\.ts$/, "").replace(/\.ts$/, "");
       for (const configuredInput of configuredInputs) {
-        patterns.add(path.join(path.dirname(configuredInput), `${base}.fuzz.ts`));
+        patterns.add(
+          path.join(path.dirname(configuredInput), `${base}.fuzz.ts`),
+        );
       }
       continue;
     }
@@ -1994,7 +2065,9 @@ async function ensureWebBrowsersReady(
   await handleMissingWebBrowsers(missing);
 }
 
-function resolveBrowserSelection(requested: string = ""): { browser: string } | null {
+function resolveBrowserSelection(
+  requested: string = "",
+): { browser: string } | null {
   if (requested.trim().length) {
     return resolveNamedBrowser(requested);
   }
@@ -2083,7 +2156,8 @@ async function handleMissingWebBrowsers(
         : (entry.modeName ?? "default"),
     )
     .join(", ");
-  const details = "no web-capable browser was found in PATH, BROWSER, or Playwright cache";
+  const details =
+    "no web-capable browser was found in PATH, BROWSER, or Playwright cache";
 
   if (!canPromptForWebInstall()) {
     throw new Error(
@@ -2098,7 +2172,9 @@ async function handleMissingWebBrowsers(
       "│\n",
   );
 
-  const choice = await promptLine("Install Chromium with Playwright now? [Y/n] ");
+  const choice = await promptLine(
+    "Install Chromium with Playwright now? [Y/n] ",
+  );
   const normalized = choice.trim().toLowerCase();
   if (normalized == "n" || normalized == "no") {
     throw new Error(
@@ -2109,17 +2185,11 @@ async function handleMissingWebBrowsers(
     throw new Error(`invalid answer "${choice}". Expected yes or no.`);
   }
   const selected = "chromium";
-  process.stdout.write(
-    chalk.dim(`installing ${selected} via Playwright...\n`),
-  );
-  const install = spawnSync(
-    "npx",
-    ["-y", "playwright", "install", selected],
-    {
-      stdio: "inherit",
-      shell: false,
-    },
-  );
+  process.stdout.write(chalk.dim(`installing ${selected} via Playwright...\n`));
+  const install = spawnSync("npx", ["-y", "playwright", "install", selected], {
+    stdio: "inherit",
+    shell: false,
+  });
   if (install.status !== 0) {
     throw new Error(`Playwright browser install failed for ${selected}`);
   }
@@ -2319,7 +2389,9 @@ async function listExecutionPlan(
           modeName,
           duplicateSpecBasenames,
         );
-        process.stdout.write(`    - ${path.join(active.outDir, artifactName)}\n`);
+        process.stdout.write(
+          `    - ${path.join(active.outDir, artifactName)}\n`,
+        );
       }
     }
     if (fuzzFiles.length && command == "test") {
@@ -2331,7 +2403,9 @@ async function listExecutionPlan(
           modeName,
           duplicateFuzzBasenames,
         );
-        process.stdout.write(`    - ${path.join(active.outDir, artifactName)}\n`);
+        process.stdout.write(
+          `    - ${path.join(active.outDir, artifactName)}\n`,
+        );
       }
     } else if (command == "fuzz") {
       process.stdout.write("  artifacts:\n");
@@ -2342,7 +2416,9 @@ async function listExecutionPlan(
           modeName,
           duplicateFuzzBasenames,
         );
-        process.stdout.write(`    - ${path.join(active.outDir, artifactName)}\n`);
+        process.stdout.write(
+          `    - ${path.join(active.outDir, artifactName)}\n`,
+        );
       }
     }
     process.stdout.write("\n");

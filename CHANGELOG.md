@@ -16,11 +16,13 @@
 - refactor: replace the handwritten JS WIPC channel implementation with the `wipc-js` dependency.
 - chore: switch CLI TypeScript module resolution to `Bundler` so package export maps resolve correctly.
 - chore: run linting in the main test workflow in addition to the existing release workflow.
+- chore: update `prettier` to `3.8.1` and `assemblyscript-prettier` to `3.0.4`.
 
 ### Config & Environment
 
 - feat: allow `env` config values to come from a `.env` path, `KEY=value` array, or object map.
 - feat: support merged env overrides at the top level, `buildOptions`, `runOptions`, and per-mode build/run config.
+- feat: disable coverage by default and add `coverage.include` / `coverage.exclude` glob filters so projects can opt in and scope reports explicitly.
 
 ### Web Runner
 
@@ -36,6 +38,7 @@
 - docs: link the new docs index from the main README.
 - docs: reorder the README to follow the beginner workflow from installation through tests, mocking, snapshots, fuzzing, and runtimes.
 - docs: simplify the main README and replace stale examples with snippets that reflect the current config shape and working APIs.
+- docs: update snapshot CLI examples to use `--create-snapshots`.
 
 ### CI
 
@@ -61,11 +64,20 @@
 - feat: treat failed expectations and `false` returns as fuzz failures, while traps and throws are reported as crashes.
 - feat: add top-level `fuzz` config for fuzz target discovery and default driver settings.
 - feat: add `xfuzz(...)` for skipped fuzz targets and report fuzz results through the built-in reporters, including TAP output.
-- feat: store fuzz and runtime crash artifacts under a shared `.as-test/crashes/<entry>/` root with `latest.*` and timestamped logs.
+- feat: store fuzz and runtime crash artifacts as stable `.as-test/crashes/<entry>.json` and `.as-test/crashes/<entry>.log` files.
 - fix: fail `ast fuzz` and `ast test --fuzz` on logical fuzz failures, not only crashes.
 - fix: disambiguate duplicate fuzz basenames using the selected input set so same-named fuzz files do not overwrite one another.
 - fix: auto-inject `run()` correctly for fuzz files without being confused by generator-local `run(...)` parameters.
 - fix: make `try-as` opt-in even when the package is installed; it now only runs when explicitly enabled.
+
+### Snapshots & Logs
+
+- feat: switch text snapshots to readable `.snap` files with path-preserving output under `.as-test/snapshots/`.
+- feat: add comment support in `.snap` files and use clearer snapshot IDs like `Suite > test`, `Suite > test [name]`, and `Suite > test #2`.
+- feat: add readable per-file `.log` artifacts with mode, build command, run command, snapshot summary, suite/test totals, and failure details.
+- feat: split snapshot write flags into `--create-snapshots` and `--overwrite-snapshots`.
+- fix: preserve existing snapshot file preambles/comments on rewrite and only generate the default snapshot header when a new `.snap` file is first created.
+- fix: canonicalize legacy snapshot IDs on load/assert/write so old `::0` and `::name` variants collapse into the new readable IDs.
 
 ### Mocking & Runtime API
 
