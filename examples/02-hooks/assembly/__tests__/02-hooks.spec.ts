@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, run, test } from "as-test";
+import "as-test";
 
 let beforeCount = 0;
 let afterCount = 0;
@@ -22,5 +22,3 @@ describe("02 hooks", () => {
     expect(afterCount).toBe(1);
   });
 });
-
-run();

@@ -44,6 +44,7 @@ export class Suite {
     log.order = this.order++;
     this.logs.push(log);
     log.depth = this.depth + 1;
+    log.file = this.file;
     log.display();
   }
 

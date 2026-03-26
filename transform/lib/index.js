@@ -106,6 +106,7 @@ const AUTO_IMPORT_SYMBOLS = [
     "beforeEach",
     "describe",
     "expect",
+    "FuzzSeed",
     "fuzz",
     "it",
     "log",

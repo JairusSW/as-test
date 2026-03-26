@@ -121,7 +121,10 @@ async function runFuzzTarget(
   let report: FuzzPayload | null = null;
   const captured = captureFrames((type, payload, respond) => {
     if (type == 0x02) {
-      const event = JSON.parse(payload.toString("utf8")) as Record<string, unknown>;
+      const event = JSON.parse(payload.toString("utf8")) as Record<
+        string,
+        unknown
+      >;
       if (String(event.kind ?? "") == "fuzz:config") {
         respond(`${config.runs}\n${config.seed}`);
       } else {
@@ -138,7 +141,8 @@ async function runFuzzTarget(
     await helper.instantiate(module, {});
   } catch (error) {
     const passthrough = captured.restore();
-    const crashMessage = error instanceof Error ? error.stack ?? error.message : String(error);
+    const crashMessage =
+      error instanceof Error ? (error.stack ?? error.message) : String(error);
     const crash = persistCrashRecord(config.crashDir, {
       kind: "fuzz",
       file,
@@ -196,7 +200,11 @@ async function runFuzzTarget(
 }
 
 function captureFrames(
-  onFrame: (type: number, payload: Buffer, respond: (body: string) => void) => void,
+  onFrame: (
+    type: number,
+    payload: Buffer,
+    respond: (body: string) => void,
+  ) => void,
 ): {
   restore(): { stdout: string };
 } {
@@ -222,7 +230,10 @@ function captureFrames(
     const available = Math.min(length, replies.length);
     const view = replies.subarray(0, available);
     replies = replies.subarray(available);
-    return view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength);
+    return view.buffer.slice(
+      view.byteOffset,
+      view.byteOffset + view.byteLength,
+    );
   }
 
   process.stdout.write = ((chunk: unknown, ...args: unknown[]) => {
@@ -297,7 +308,9 @@ function resolveFuzzInputPatterns(
     if (isBareSelector(selector)) {
       const base = selector.replace(/\.fuzz\.ts$/, "").replace(/\.ts$/, "");
       for (const configuredInput of configuredInputs) {
-        patterns.add(path.join(path.dirname(configuredInput), `${base}.fuzz.ts`));
+        patterns.add(
+          path.join(path.dirname(configuredInput), `${base}.fuzz.ts`),
+        );
       }
       continue;
     }

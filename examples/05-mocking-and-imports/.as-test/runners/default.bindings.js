@@ -91,10 +91,7 @@ export async function runBindingsModule(wasmPathArg, extraImports = {}) {
   if (typeof mod.instantiate !== "function") {
     throw new Error("bindings helper missing instantiate export");
   }
-  return mod.instantiate(
-    module,
-    withNodeIo(createRunnerImports(extraImports)),
-  );
+  return mod.instantiate(module, withNodeIo(createRunnerImports(extraImports)));
 }
 
 function isMainModule() {
@@ -105,7 +102,9 @@ function isMainModule() {
 
 if (isMainModule()) {
   runBindingsModule(process.argv[2]).catch((error) => {
-    process.stderr.write("failed to run bindings module: " + String(error) + "\n");
+    process.stderr.write(
+      "failed to run bindings module: " + String(error) + "\n",
+    );
     process.exit(1);
   });
 }

@@ -1,4 +1,4 @@
-import { expect, fuzz, FuzzSeed } from "as-test";
+import "as-test";
 
 fuzz("ascii identifiers stay non-empty", (value: string): bool => {
   expect(value.length > 0).toBe(true);

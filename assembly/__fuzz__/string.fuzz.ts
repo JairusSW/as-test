@@ -1,12 +1,15 @@
 import { expect, fuzz, FuzzSeed } from "as-test";
 
-fuzz("ascii strings survive concatenation boundaries", (input: string): bool => {
-  const wrapped = "[" + input + "]";
-  const restored = wrapped.substr(1, input.length);
+fuzz(
+  "ascii strings survive concatenation boundaries",
+  (input: string): bool => {
+    const wrapped = "[" + input + "]";
+    const restored = wrapped.substr(1, input.length);
 
-  expect(restored).toBe(input);
-  return input.length <= 40;
-}).generate((seed: FuzzSeed, run: (input: string) => bool): void => {
+    expect(restored).toBe(input);
+    return input.length <= 40;
+  },
+).generate((seed: FuzzSeed, run: (input: string) => bool): void => {
   run(
     seed.string({
       charset: "ascii",

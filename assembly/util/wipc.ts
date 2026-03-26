@@ -103,6 +103,13 @@ export function sendSuiteEnd(
   );
 }
 
+export function sendLog(file: string, depth: i32, text: string): void {
+  sendJson(
+    MessageType.CALL,
+    `{"kind":"event:log","file":${q(file)},"depth":${depth.toString()},"text":${q(text)}}`,
+  );
+}
+
 export function snapshotAssert(key: string, actual: string): SnapshotReply {
   sendJson(
     MessageType.CALL,
@@ -149,7 +156,7 @@ export function sendReport(report: string): void {
 }
 
 export function sendWarning(message: string): void {
-  writeStdout(String.UTF8.encode("[WARN] " + message + "\n"));
+  sendJson(MessageType.CALL, `{"kind":"event:warn","message":${q(message)}}`);
 }
 
 function sendJson(type: MessageType, body: string): void {

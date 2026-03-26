@@ -7,6 +7,7 @@
 
 - [Why as-test](#why-as-test)
 - [Installation](#installation)
+- [Docs](#docs)
 - [Project Layout](#project-layout)
 - [Writing Tests](#writing-tests)
 - [Mocking](#mocking)
@@ -49,6 +50,12 @@ If you already have a project and just want the package:
 npm install --save-dev as-test
 ```
 
+## Docs
+
+Full documentation lives at:
+
+<https://docs.jairus.dev/as-test>
+
 ## Project Layout
 
 By default, `as-test` looks for:
@@ -61,12 +68,26 @@ Generated files go into `.as-test/`.
 
 ## Writing Tests
 
+### Importing
+
+You may import `as-test` in two ways:
+
+```ts
+import "as-test";
+```
+
+or
+
+```ts
+import { describe, test, expect } from "as-test";
+```
+
 Tests usually live in `assembly/__tests__/*.spec.ts`.
 
 Example:
 
 ```ts
-import { describe, expect, test } from "as-test";
+import "as-test";
 
 describe("math", () => {
   test("adds numbers", () => {
@@ -108,7 +129,7 @@ This keeps tests focused. You can still verify the logic in your AssemblyScript 
 Example:
 
 ```ts
-import { describe, expect, mockFn, test, unmockFn } from "as-test";
+import "as-test";
 
 function getConfig(): string {
   return "name=prod\nmode=live";
@@ -143,7 +164,7 @@ That lets you keep tests readable while still locking down behavior that should 
 Example:
 
 ```ts
-import { describe, expect, test } from "as-test";
+import "as-test";
 
 function renderReport(): string {
   return "name=demo\nmode=test";
@@ -171,17 +192,14 @@ Fuzzers usually live in `assembly/__fuzz__/*.fuzz.ts`.
 Example:
 
 ```ts
-import { expect, fuzz, FuzzSeed } from "as-test";
+import "as-test";
 
 fuzz("bounded integer addition", (left: i32, right: i32): bool => {
   const sum = left + right;
   expect(sum - right).toBe(left);
   return sum >= i32.MIN_VALUE;
 }).generate((seed: FuzzSeed, run: (left: i32, right: i32) => bool): void => {
-  run(
-    seed.i32({ min: -1000, max: 1000 }),
-    seed.i32({ min: -1000, max: 1000 }),
-  );
+  run(seed.i32({ min: -1000, max: 1000 }), seed.i32({ min: -1000, max: 1000 }));
 });
 ```
 

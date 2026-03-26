@@ -1,3 +1,4 @@
+
 @external("env", "now")
 export declare function now(): i32;
 

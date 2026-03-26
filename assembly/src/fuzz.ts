@@ -55,7 +55,9 @@ export class FuzzSeed {
   }
 
   f32(options: FloatOptions<f32> = new FloatOptions<f32>()): f32 {
-    return <f32>this.nextF64InRange<f32>(options.min, options.max, options.exclude);
+    return <f32>(
+      this.nextF64InRange<f32>(options.min, options.max, options.exclude)
+    );
   }
 
   f64(options: FloatOptions<f64> = new FloatOptions<f64>()): f64 {
@@ -109,7 +111,9 @@ export class FuzzSeed {
     const exclude = options.exclude;
     if (include.length) {
       for (let attempts = 0; attempts < 1024; attempts++) {
-        const picked = unchecked(include[this.nextRange(0, include.length - 1)]);
+        const picked = unchecked(
+          include[this.nextRange(0, include.length - 1)],
+        );
         if (!exclude.includes(picked)) return picked;
       }
       panic();
@@ -125,7 +129,8 @@ export class FuzzSeed {
   private nextI32InRange(min: i32, max: i32, exclude: i32[]): i32 {
     if (max < min) panic();
     for (let attempts = 0; attempts < 1024; attempts++) {
-      const value = max <= min ? min : min + <i32>(this.nextU32() % <u32>(max - min + 1));
+      const value =
+        max <= min ? min : min + <i32>(this.nextU32() % <u32>(max - min + 1));
       if (!containsValue<i32>(exclude, value)) return value;
     }
     panic();
@@ -251,7 +256,12 @@ function __fuzz_run0(): usize {
   if (callback == null) panic();
   const result = callback();
   if (__fuzz_returns_bool && result == 0) {
-    failFuzzIteration("return", "false", "true", "fuzz callback returned false");
+    failFuzzIteration(
+      "return",
+      "false",
+      "true",
+      "fuzz callback returned false",
+    );
   }
   return result;
 }
@@ -262,7 +272,12 @@ function __fuzz_run1(a: usize): usize {
   if (callback == null) panic();
   const result = callback(a);
   if (__fuzz_returns_bool && result == 0) {
-    failFuzzIteration("return", "false", "true", "fuzz callback returned false");
+    failFuzzIteration(
+      "return",
+      "false",
+      "true",
+      "fuzz callback returned false",
+    );
   }
   return result;
 }
@@ -273,7 +288,12 @@ function __fuzz_run2(a: usize, b: usize): usize {
   if (callback == null) panic();
   const result = callback(a, b);
   if (__fuzz_returns_bool && result == 0) {
-    failFuzzIteration("return", "false", "true", "fuzz callback returned false");
+    failFuzzIteration(
+      "return",
+      "false",
+      "true",
+      "fuzz callback returned false",
+    );
   }
   return result;
 }
@@ -284,7 +304,12 @@ function __fuzz_run3(a: usize, b: usize, c: usize): usize {
   if (callback == null) panic();
   const result = callback(a, b, c);
   if (__fuzz_returns_bool && result == 0) {
-    failFuzzIteration("return", "false", "true", "fuzz callback returned false");
+    failFuzzIteration(
+      "return",
+      "false",
+      "true",
+      "fuzz callback returned false",
+    );
   }
   return result;
 }
@@ -332,9 +357,8 @@ export class Fuzzer0<R> extends FuzzerBase {
   }
 
   generate<T extends Function>(generator: T): this {
-    this.generator = changetype<(seed: FuzzSeed, run: () => R) => void>(
-      generator,
-    );
+    this.generator =
+      changetype<(seed: FuzzSeed, run: () => R) => void>(generator);
     return this;
   }
 
@@ -387,9 +411,8 @@ export class Fuzzer1<A, R> extends FuzzerBase {
   }
 
   generate<T extends Function>(generator: T): this {
-    this.generator = changetype<(seed: FuzzSeed, run: (a: A) => R) => void>(
-      generator,
-    );
+    this.generator =
+      changetype<(seed: FuzzSeed, run: (a: A) => R) => void>(generator);
     return this;
   }
 
@@ -434,7 +457,8 @@ export class Fuzzer1<A, R> extends FuzzerBase {
 }
 
 export class Fuzzer2<A, B, R> extends FuzzerBase {
-  private generator: ((seed: FuzzSeed, run: (a: A, b: B) => R) => void) | null = null;
+  private generator: ((seed: FuzzSeed, run: (a: A, b: B) => R) => void) | null =
+    null;
   private returnsBool: bool;
 
   constructor(
@@ -447,13 +471,14 @@ export class Fuzzer2<A, B, R> extends FuzzerBase {
   }
 
   generate<T extends Function>(generator: T): this {
-    this.generator = changetype<
-      (seed: FuzzSeed, run: (a: A, b: B) => R) => void
-    >(generator);
+    this.generator =
+      changetype<(seed: FuzzSeed, run: (a: A, b: B) => R) => void>(generator);
     return this;
   }
 
-  generateTyped(generator: (seed: FuzzSeed, run: (a: A, b: B) => R) => void): this {
+  generateTyped(
+    generator: (seed: FuzzSeed, run: (a: A, b: B) => R) => void,
+  ): this {
     this.generator = generator;
     return this;
   }
@@ -494,7 +519,9 @@ export class Fuzzer2<A, B, R> extends FuzzerBase {
 }
 
 export class Fuzzer3<A, B, C, R> extends FuzzerBase {
-  private generator: ((seed: FuzzSeed, run: (a: A, b: B, c: C) => R) => void) | null = null;
+  private generator:
+    | ((seed: FuzzSeed, run: (a: A, b: B, c: C) => R) => void)
+    | null = null;
   private returnsBool: bool;
 
   constructor(
@@ -507,10 +534,10 @@ export class Fuzzer3<A, B, C, R> extends FuzzerBase {
   }
 
   generate<T extends Function>(generator: T): this {
-    this.generator = changetype<(
-      seed: FuzzSeed,
-      run: (a: A, b: B, c: C) => R,
-    ) => void>(generator);
+    this.generator =
+      changetype<(seed: FuzzSeed, run: (a: A, b: B, c: C) => R) => void>(
+        generator,
+      );
     return this;
   }
 
@@ -524,9 +551,9 @@ export class Fuzzer3<A, B, C, R> extends FuzzerBase {
   run(seedBase: u64, runs: i32): FuzzerResult {
     if (this.skipped) return createSkippedResult(this.name);
     const result = createResult(this.name, runs);
-    __fuzz_callback3 = changetype<
-      (a: usize, b: usize, c: usize) => usize
-    >(this.callback);
+    __fuzz_callback3 = changetype<(a: usize, b: usize, c: usize) => usize>(
+      this.callback,
+    );
     __fuzz_returns_bool = this.returnsBool;
     for (let i = 0; i < runs; i++) {
       prepareFuzzIteration();
@@ -612,8 +639,7 @@ function baseAlphabet(charset: string): i32[] {
   if (charset == "alnum")
     return baseAlphabet("alpha").concat(rangeChars(48, 57));
   if (charset == "digit") return rangeChars(48, 57);
-  if (charset == "hex")
-    return rangeChars(48, 57).concat(rangeChars(97, 102));
+  if (charset == "hex") return rangeChars(48, 57).concat(rangeChars(97, 102));
   if (charset == "base64")
     return rangeChars(65, 90)
       .concat(rangeChars(97, 122))

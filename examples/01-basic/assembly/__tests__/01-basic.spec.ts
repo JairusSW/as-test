@@ -1,4 +1,4 @@
-import { describe, expect, run, test } from "as-test";
+import "as-test";
 
 describe("01 basic", () => {
   test("adds numbers", () => {
@@ -10,5 +10,3 @@ describe("01 basic", () => {
     expect(3).toBeLessThan(10);
   });
 });
-
-run();

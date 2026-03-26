@@ -25,7 +25,8 @@
     "prettier": "3.8.1",
     "try-as": "^0.2.5",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.55.0"
+    "typescript-eslint": "^8.55.0",
+    "vitepress": "^1.6.4"
   },
   "bin": {
     "as-test": "./bin/index.js",
@@ -75,7 +76,10 @@
     "build:transform": "tsc -p ./transform",
     "build:cli": "tsc -p cli",
     "build:run": "npm run build:cli",
-    "prettier": "prettier -w .",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs",
+    "format": "prettier -w .",
     "release:check": "npm run build:cli && npm run build:transform && npm run test && npm run test:examples && npm pack --dry-run --cache /tmp/as-test-npm-cache",
     "prepublishOnly": "npm run build:cli && npm run build:transform && npm run test"
   },

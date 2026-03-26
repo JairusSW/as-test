@@ -17,6 +17,7 @@
 - chore: switch CLI TypeScript module resolution to `Bundler` so package export maps resolve correctly.
 - chore: run linting in the main test workflow in addition to the existing release workflow.
 - chore: update `prettier` to `3.8.1` and `assemblyscript-prettier` to `3.0.4`.
+- perf: trim WIPC traffic so passing expectations are not reported in realtime, while warnings and `log()` output now use structured events.
 
 ### Config & Environment
 
@@ -54,6 +55,7 @@
 - feat: update the generated `.gitignore` block to keep the `.as-test/` root while excluding runners and snapshots.
 - feat: add more standalone fuzzing examples and a dedicated `07-web` example project.
 - fix: rename `05-mocking-and-import-snapshots` to `05-mocking-and-imports` and align its file/test labels with the new name.
+- docs: update examples to use side-effect `import "as-test"` style where possible.
 
 ### Fuzzing
 

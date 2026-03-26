@@ -1818,6 +1818,20 @@ async function runProcess(
         });
         return;
       }
+      if (kind === "event:warn") {
+        reporter.onWarning?.({
+          message: String(event.message ?? ""),
+        });
+        return;
+      }
+      if (kind === "event:log") {
+        reporter.onLog?.({
+          file: String(event.file ?? "unknown"),
+          depth: Number(event.depth ?? 0),
+          text: String(event.text ?? ""),
+        });
+        return;
+      }
       if (kind === "snapshot:assert") {
         const key = String(event.key ?? "");
         const actual = String(event.actual ?? "");

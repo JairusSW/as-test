@@ -284,6 +284,32 @@ class DefaultReporter implements TestReporter {
     }
   }
 
+  onWarning(event: { message: string }): void {
+    this.fileHasWarning = true;
+    const warnLine = `${chalk.bgYellow.black(" WARN ")} ${event.message}\n`;
+    if (!this.canRewriteLine() || !this.currentFile) {
+      this.context.stdout.write(warnLine);
+      return;
+    }
+    this.clearRenderedBlock();
+    this.context.stdout.write(warnLine);
+    if (this.verboseMode) {
+      this.renderVerboseState();
+    } else {
+      this.renderLiveState();
+    }
+  }
+
+  onLog(event: { depth: number; text: string }): void {
+    if (this.cleanMode) return;
+    if (this.verboseMode || !this.canRewriteLine()) {
+      const depth = Math.max(event.depth, 0);
+      this.context.stdout.write(
+        `${"  ".repeat(depth + 1)}${chalk.dim("LOG")} ${event.text}\n`,
+      );
+    }
+  }
+
   onRunComplete(event: RunCompleteEvent): void {
     this.clearRenderedBlock();
     if (!event.clean) {

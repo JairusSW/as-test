@@ -1,4 +1,4 @@
-import { describe, expect, run, test } from "as-test";
+import "as-test";
 
 describe("04 snapshots", () => {
   test("unnamed snapshot", () => {
@@ -10,5 +10,3 @@ describe("04 snapshots", () => {
     expect("named-snapshot-demo").toMatchSnapshot("named");
   });
 });
-
-run();

@@ -1,13 +1,4 @@
-import {
-  describe,
-  expect,
-  run,
-  test,
-  xdescribe,
-  xexpect,
-  xit,
-  xtest,
-} from "as-test";
+import "as-test";
 
 let skippedCallbacksRan = 0;
 
@@ -38,5 +29,3 @@ describe("06 skips", () => {
     expect(skippedCallbacksRan).toBe(0);
   });
 });
-
-run();

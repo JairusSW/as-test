@@ -1,13 +1,4 @@
-import {
-  describe,
-  expect,
-  mockFn,
-  mockImport,
-  run,
-  test,
-  unmockFn,
-  unmockImport,
-} from "as-test";
+import "as-test";
 import { clockLabel, now } from "./clock";
 
 function localValue(): i32 {
@@ -46,5 +37,3 @@ describe("05 mocking and imports", () => {
     expect(now()).toBe(10);
   });
 });
-
-run();

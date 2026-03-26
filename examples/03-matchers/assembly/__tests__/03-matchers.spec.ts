@@ -1,4 +1,4 @@
-import { describe, expect, run, test } from "as-test";
+import "as-test";
 
 describe("03 matchers", () => {
   test("numeric matchers", () => {
@@ -19,5 +19,3 @@ describe("03 matchers", () => {
     expect(values).toContain(2);
   });
 });
-
-run();

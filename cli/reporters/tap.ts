@@ -131,7 +131,9 @@ class TapReporter implements TestReporter {
   }
 }
 
-function normalizeTapConfig(config: TapReporterConfig): TapReporterResolvedConfig {
+function normalizeTapConfig(
+  config: TapReporterConfig,
+): TapReporterResolvedConfig {
   const mode = config.mode == "per-file" ? "per-file" : "single-file";
   const outDir =
     typeof config.outDir == "string" && config.outDir.trim().length
@@ -201,7 +203,10 @@ function buildTapDocument(points: TapPoint[]): string {
 }
 
 function buildFailDetails(point: TapPoint): string[] {
-  const lines = ["  ---", `  message: ${JSON.stringify(point.message ?? "assertion failed")}`];
+  const lines = [
+    "  ---",
+    `  message: ${JSON.stringify(point.message ?? "assertion failed")}`,
+  ];
   if (point.file) {
     lines.push(`  file: ${JSON.stringify(point.file)}`);
   }

@@ -613,7 +613,10 @@ function createCoverExpression(
   );
 }
 
-function createCoverCallExpression(hashValue: string, ref: Node): CallExpression {
+function createCoverCallExpression(
+  hashValue: string,
+  ref: Node,
+): CallExpression {
   return Node.createCallExpression(
     Node.createIdentifierExpression("__COVER", ref.range),
     null,

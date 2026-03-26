@@ -26,6 +26,16 @@ export type SnapshotMissingEvent = {
   key: string;
 };
 
+export type WarningEvent = {
+  message: string;
+};
+
+export type LogEvent = {
+  file: string;
+  depth: number;
+  text: string;
+};
+
 export type RunStats = {
   passedFiles: number;
   failedFiles: number;
@@ -145,6 +155,8 @@ export interface TestReporter {
   onSuiteEnd?(event: ProgressEvent): void;
   onAssertionFail?(event: RealtimeFailureEvent): void;
   onSnapshotMissing?(event: SnapshotMissingEvent): void;
+  onWarning?(event: WarningEvent): void;
+  onLog?(event: LogEvent): void;
   onRunComplete?(event: RunCompleteEvent): void;
   onFuzzComplete?(event: FuzzCompleteEvent): void;
   flush?(): void;

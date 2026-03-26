@@ -32,7 +32,7 @@ function patchNodeIo() {
   patched = true;
 
   const originalWrite = process.stdout.write.bind(process.stdout);
-   
+
   process.stdout.write = (chunk, ...args) => {
     if (chunk instanceof ArrayBuffer) {
       writeRaw(chunk);
@@ -41,7 +41,6 @@ function patchNodeIo() {
     return originalWrite(chunk, ...args);
   };
 
-   
   process.stdin.read = (size) => readExact(Number(size ?? 0));
 }
 

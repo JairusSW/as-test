@@ -169,6 +169,7 @@ const AUTO_IMPORT_SYMBOLS = [
   "beforeEach",
   "describe",
   "expect",
+  "FuzzSeed",
   "fuzz",
   "it",
   "log",
@@ -198,11 +199,11 @@ function analyzeSourceText(sourceText: string): SourceInfo {
     ? new RegExp(`\\b${escapeRegex(runAlias)}\\s*\\(`).test(text)
     : false;
   return {
-    hasSuiteCalls: /\b(?:describe|test|it|only|xonly|todo|fuzz|xfuzz)\s*\(/.test(text),
+    hasSuiteCalls:
+      /\b(?:describe|test|it|only|xonly|todo|fuzz|xfuzz)\s*\(/.test(text),
     hasRunCall,
     runImportPath: runImportPath ?? sideEffectImportPath,
-    autoImportPath:
-      sideEffectImportPath ? sideEffectImportPath : null,
+    autoImportPath: sideEffectImportPath ? sideEffectImportPath : null,
     autoImportSymbols: sideEffectImportPath
       ? AUTO_IMPORT_SYMBOLS.filter(
           (symbol) => !importedAsTestSymbols.has(symbol),
