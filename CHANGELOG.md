@@ -2,6 +2,14 @@
 
 ## 2026-03-17 - Unreleased
 
+### Explicit Imports, Typings & Reporting
+
+- feat: export the public fuzz option and fuzzer types directly from `assembly/index.ts` so runtime exports and package typings stay aligned.
+- fix: remove the experimental side-effect `import "as-test"` path and return the package to explicit imports only in the transform, typings, examples, tests, and README.
+- fix: remove the temporary declaration-file build path and return the package to a simpler no-`.d.ts` setup.
+- fix: keep fuzzing green while leaving the in-repo AssemblyScript `IntegerOptions` ergonomics issue for a later API change.
+- fix: align summary output columns for `failed`, `skipped`, and `total` across test/run/fuzz totals.
+
 ### Assertions & Serialization
 
 - feat: split equality matchers into `toBe`, `toEqual`, and `toStrictEqual` with explicit semantics:

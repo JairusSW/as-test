@@ -35,6 +35,7 @@ export type FuzzerRunResult = {
 export type FuzzResult = {
   file: string;
   target: string;
+  modeName: string;
   runs: number;
   crashes: number;
   crashFiles: string[];
@@ -75,7 +76,7 @@ export async function fuzz(
       [file],
       modeName,
       { coverage: false },
-      { target: "bindings", args: ["--use", "AS_TEST_FUZZ=1"] },
+      { target: "bindings", args: ["--use", "AS_TEST_FUZZ=1"], kind: "fuzz" },
     );
     results.push(
       await runFuzzTarget(
@@ -155,6 +156,7 @@ async function runFuzzTarget(
     return {
       file,
       target: path.basename(file),
+      modeName: modeName ?? "default",
       runs: config.runs,
       crashes: 1,
       crashFiles: [crash.jsonPath],
@@ -178,6 +180,7 @@ async function runFuzzTarget(
     return {
       file,
       target: path.basename(file),
+      modeName: modeName ?? "default",
       runs: config.runs,
       crashes: 1,
       crashFiles: [crash.jsonPath],
@@ -190,6 +193,7 @@ async function runFuzzTarget(
   return {
     file,
     target: path.basename(file),
+    modeName: modeName ?? "default",
     runs: report.fuzzers.reduce((sum, item) => sum + item.runs, 0),
     crashes: report.fuzzers.reduce((sum, item) => sum + item.crashed, 0),
     crashFiles: [],

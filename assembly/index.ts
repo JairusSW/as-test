@@ -22,7 +22,20 @@ import {
   FuzzerResult,
   prepareFuzzIteration,
 } from "./src/fuzz";
-export { FuzzSeed } from "./src/fuzz";
+export {
+  ArrayOptions,
+  BytesOptions,
+  FloatOptions,
+  Fuzzer0,
+  Fuzzer1,
+  Fuzzer2,
+  Fuzzer3,
+  FuzzerBase,
+  FuzzerResult,
+  FuzzSeed,
+  IntegerOptions,
+  StringOptions,
+} from "./src/fuzz";
 export { __as_test_deep_equal } from "./src/expectation";
 export { __as_test_json_value } from "./util/json";
 

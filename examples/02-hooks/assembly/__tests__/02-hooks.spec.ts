@@ -1,4 +1,4 @@
-import "as-test";
+import { afterEach, beforeEach, describe, expect, test } from "as-test";
 
 let beforeCount = 0;
 let afterCount = 0;

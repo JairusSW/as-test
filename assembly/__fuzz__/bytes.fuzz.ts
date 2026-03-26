@@ -1,4 +1,4 @@
-import { expect, fuzz, FuzzSeed } from "as-test";
+import { expect, fuzz, FuzzSeed } from "..";
 
 fuzz("byte-sized integers stay within range", (value: i32): bool => {
   expect(value >= 0).toBe(true);

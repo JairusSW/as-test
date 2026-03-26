@@ -1,4 +1,12 @@
-import "as-test";
+import {
+  describe,
+  expect,
+  test,
+  xdescribe,
+  xexpect,
+  xit,
+  xtest,
+} from "as-test";
 
 let skippedCallbacksRan = 0;
 

@@ -34,12 +34,6 @@ export default class Transformer extends Transform {
         }
         for (const source of sources) {
             const sourceInfo = analyzeSourceText(source.text);
-            if (sourceInfo.autoImportPath && sourceInfo.autoImportSymbols.length) {
-                const autoImport = new Tokenizer(new Source(0, source.normalizedPath, `import { ${sourceInfo.autoImportSymbols.join(", ")} } from "${sourceInfo.autoImportPath}";`));
-                parser.currentSource = autoImport.source;
-                source.statements.unshift(parser.parseTopLevelStatement(autoImport));
-                parser.currentSource = source;
-            }
             const shouldInjectRunCall = source.sourceKind == 1 &&
                 sourceInfo.hasSuiteCalls &&
                 !sourceInfo.hasRunCall;
@@ -99,36 +93,8 @@ function collectMockImportTargets(sources) {
     }
     return out;
 }
-const AUTO_IMPORT_SYMBOLS = [
-    "afterAll",
-    "afterEach",
-    "beforeAll",
-    "beforeEach",
-    "describe",
-    "expect",
-    "FuzzSeed",
-    "fuzz",
-    "it",
-    "log",
-    "mockFn",
-    "mockImport",
-    "only",
-    "snapshotFn",
-    "test",
-    "todo",
-    "unmockFn",
-    "unmockImport",
-    "xdescribe",
-    "xexpect",
-    "xfuzz",
-    "xit",
-    "xonly",
-    "xtest",
-];
 function analyzeSourceText(sourceText) {
     const text = stripComments(sourceText);
-    const sideEffectImportPath = detectAsTestSideEffectImportPath(text);
-    const importedAsTestSymbols = collectImportedAsTestSymbols(text);
     const runImportPath = detectRunImportPath(text);
     const runAlias = detectRunAlias(text);
     const hasRunCall = runAlias
@@ -137,11 +103,7 @@ function analyzeSourceText(sourceText) {
     return {
         hasSuiteCalls: /\b(?:describe|test|it|only|xonly|todo|fuzz|xfuzz)\s*\(/.test(text),
         hasRunCall,
-        runImportPath: runImportPath ?? sideEffectImportPath,
-        autoImportPath: sideEffectImportPath ? sideEffectImportPath : null,
-        autoImportSymbols: sideEffectImportPath
-            ? AUTO_IMPORT_SYMBOLS.filter((symbol) => !importedAsTestSymbols.has(symbol))
-            : [],
+        runImportPath,
         hasMockCalls: /\b(?:mockFn|unmockFn|mockImport|unmockImport)\s*\(/.test(text),
         hasLogCall: /\blog\s*\(/.test(text),
         hasExpectCall: /\bexpect\s*\(/.test(text),
@@ -159,35 +121,6 @@ function detectRunImportPath(text) {
     }
     return null;
 }
-function detectAsTestSideEffectImportPath(text) {
-    const imports = text.matchAll(/import\s*["']([^"']+)["']/g);
-    for (const match of imports) {
-        const modulePath = (match[1] ?? "").trim();
-        if (isAsTestImportPath(modulePath))
-            return modulePath;
-    }
-    return null;
-}
-function collectImportedAsTestSymbols(text) {
-    const imported = new Set();
-    const imports = text.matchAll(/import\s*\{([^}]+)\}\s*from\s*["']([^"']+)["']/g);
-    for (const match of imports) {
-        const modulePath = (match[2] ?? "").trim();
-        if (!isAsTestImportPath(modulePath))
-            continue;
-        const specifiers = (match[1] ?? "").split(",");
-        for (const specifier of specifiers) {
-            const token = specifier.trim();
-            if (!token.length)
-                continue;
-            const alias = token.match(/^([A-Za-z_$][\w$]*)(?:\s+as\s+([A-Za-z_$][\w$]*))?$/);
-            if (!alias)
-                continue;
-            imported.add(alias[2] ?? alias[1]);
-        }
-    }
-    return imported;
-}
 function detectRunAlias(text) {
     const imports = text.matchAll(/import\s*\{([^}]+)\}\s*from\s*["']([^"']+)["']/g);
     for (const match of imports) {
@@ -203,11 +136,6 @@ function detectRunAlias(text) {
 }
 function looksLikeAsTestImport(specifiers) {
     return /\b(?:describe|test|it|only|xonly|todo|fuzz|xfuzz|expect|beforeAll|afterAll|beforeEach|afterEach|mockFn|unmockFn|mockImport|unmockImport|snapshotFn|log|run)\b/.test(specifiers);
-}
-function isAsTestImportPath(modulePath) {
-    return (modulePath == "as-test" ||
-        modulePath == ".." ||
-        modulePath.endsWith("/as-test"));
 }
 function stripComments(sourceText) {
     return sourceText.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");

@@ -1,4 +1,4 @@
-import "as-test";
+import { describe, expect, test } from "as-test";
 
 describe("07 web", () => {
   test("runs in the browser runner", () => {

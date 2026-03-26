@@ -11,6 +11,7 @@ import {
   tokenizeCommand,
   resolveProjectModule,
 } from "../util.js";
+import { persistCrashRecord } from "../crash-store.js";
 
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 
@@ -22,6 +23,7 @@ export type BuildFeatureToggles = {
 export type BuildConfigOverrides = {
   target?: string;
   args?: string[];
+  kind?: "test" | "fuzz";
 };
 
 type BuildInvocation = {
@@ -30,6 +32,34 @@ type BuildInvocation = {
 };
 
 export type { BuildInvocation };
+
+class BuildFailureError extends Error {
+  file: string;
+  mode: string;
+  invocation: BuildInvocation;
+  stdout: string;
+  stderr: string;
+  kind: "test" | "fuzz";
+
+  constructor(args: {
+    file: string;
+    mode: string;
+    invocation: BuildInvocation;
+    stdout: string;
+    stderr: string;
+    kind: "test" | "fuzz";
+    message: string;
+  }) {
+    super(args.message);
+    this.name = "BuildFailureError";
+    this.file = args.file;
+    this.mode = args.mode;
+    this.invocation = args.invocation;
+    this.stdout = args.stdout;
+    this.stderr = args.stderr;
+    this.kind = args.kind;
+  }
+}
 
 export async function build(
   configPath: string = DEFAULT_CONFIG_PATH,
@@ -95,9 +125,34 @@ export async function build(
       buildFile(invocation, buildEnv);
     } catch (error) {
       const modeLabel = modeName ?? "default";
-      throw new Error(
-        `Failed to build ${path.basename(file)} in mode ${modeLabel} with ${getBuildStderr(error)}\nBuild command: ${formatInvocation(invocation)}`,
-      );
+      const stdout = getBuildStdout(error);
+      const stderr = getBuildStderr(error);
+      const buildCommand = formatInvocation(invocation);
+      const kind = overrides.kind ?? "test";
+      const crash = persistCrashRecord(config.fuzz.crashDir, {
+        kind,
+        stage: "build",
+        file,
+        mode: modeLabel,
+        cwd: process.cwd(),
+        buildCommand,
+        reproCommand: buildCommand,
+        error: stderr || stdout || "unknown build error",
+        stdout,
+        stderr,
+      });
+      throw new BuildFailureError({
+        file,
+        mode: modeLabel,
+        invocation,
+        stdout,
+        stderr,
+        kind,
+        message:
+          `Failed to build ${path.basename(file)} in mode ${modeLabel} with ${stderr || stdout || "unknown build error"}\n` +
+          `Build command: ${buildCommand}\n` +
+          `Crash log: ${crash.logPath}`,
+      });
     }
   }
 }
@@ -176,13 +231,34 @@ function getBuildCommand(
   }
 
   const defaultArgs = getDefaultBuildArgs(config, featureToggles);
-  const args = ["asc", file, ...userArgs, ...defaultArgs];
+  const ascInvocation = resolveAscInvocation(pkgRunner);
+  const args = [...ascInvocation.args, file, ...userArgs, ...defaultArgs];
   if (config.outDir.length) {
     args.push("-o", outFile);
   }
   return {
-    command: pkgRunner,
+    command: ascInvocation.command,
     args,
+  };
+}
+
+function resolveAscInvocation(pkgRunner: string): {
+  command: string;
+  args: string[];
+} {
+  const assemblyscriptPkg = resolveProjectModule("assemblyscript/package.json");
+  if (assemblyscriptPkg) {
+    const ascPath = path.join(path.dirname(assemblyscriptPkg), "bin", "asc.js");
+    if (existsSync(ascPath)) {
+      return {
+        command: process.execPath,
+        args: [ascPath],
+      };
+    }
+  }
+  return {
+    command: pkgRunner,
+    args: ["asc"],
   };
 }
 
@@ -351,8 +427,9 @@ function buildFile(invocation: BuildInvocation, env: NodeJS.ProcessEnv): void {
       result.stderr?.trim() ||
         result.stdout?.trim() ||
         `command exited with code ${result.status}`,
-    ) as Error & { stderr?: string };
+    ) as Error & { stderr?: string; stdout?: string };
     error.stderr = result.stderr ?? "";
+    error.stdout = result.stdout ?? "";
     throw error;
   }
 }
@@ -377,6 +454,14 @@ function getBuildStderr(error: unknown): string {
   }
   const message = typeof err?.message == "string" ? err.message.trim() : "";
   return message || "unknown error";
+}
+
+function getBuildStdout(error: unknown): string {
+  const err = error as { stdout?: unknown };
+  const stdout = err?.stdout;
+  if (typeof stdout == "string") return stdout.trim();
+  if (stdout instanceof Buffer) return stdout.toString("utf8").trim();
+  return "";
 }
 
 function getDefaultBuildArgs(

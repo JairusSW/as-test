@@ -5,6 +5,8 @@ import * as path from "path";
 import { formatTime } from "../util.js";
 import {
   FuzzCompleteEvent,
+  FuzzFileCompleteEvent,
+  FuzzResult,
   ProgressEvent,
   ReporterContext,
   ReporterFactory,
@@ -331,105 +333,164 @@ class DefaultReporter implements TestReporter {
     if (this.hasRenderedTestFiles) {
       this.context.stdout.write("\n");
     }
-    renderFuzzSummary(this.context, event);
+    renderFuzzSummary(this.context, event, this.hasRenderedTestFiles);
   }
+
+  onFuzzFileComplete(event: FuzzFileCompleteEvent): void {
+    renderFuzzFileSummary(this.context, event.results);
+  }
+}
+
+function renderFuzzFileSummary(
+  context: ReporterContext,
+  results: FuzzResult[],
+): void {
+  if (!results.length) return;
+  const file = results[0]!.file;
+  const itemFailed = results.some(
+    (mode) =>
+      mode.crashes > 0 || mode.fuzzers.some((fuzzer) => fuzzer.failed > 0),
+  );
+  const itemSkipped =
+    !itemFailed &&
+    results.length > 0 &&
+    results.every(
+      (mode) =>
+        mode.fuzzers.length > 0 &&
+        mode.fuzzers.every((fuzzer) => fuzzer.skipped > 0),
+    );
+  const itemBadge = itemFailed
+    ? chalk.bgRed.white(" FAIL ")
+    : itemSkipped
+      ? chalk.bgBlackBright.white(" SKIP ")
+      : chalk.bgGreenBright.black(" PASS ");
+  const detail = formatTime(averageFuzzModeTime(results));
+  const crashFile = firstFuzzCrashFile(results);
+  const crashSuffix =
+    crashFile != null ? ` ${chalk.dim(`-> ${crashFile}`)}` : "";
+  context.stdout.write(
+    `${itemBadge} ${path.basename(file)} ${chalk.dim(detail)}${crashSuffix}\n`,
+  );
+  renderFailedFuzzers(groupFuzzResultsByFile(results));
 }
 
 function renderFuzzSummary(
   context: ReporterContext,
   event: FuzzCompleteEvent,
+  hasRenderedTestFiles: boolean,
 ): void {
-  for (const result of event.results) {
-    const itemFailed =
-      result.crashes > 0 || result.fuzzers.some((fuzzer) => fuzzer.failed > 0);
-    const itemSkipped =
-      !itemFailed &&
-      result.fuzzers.length > 0 &&
-      result.fuzzers.every((fuzzer) => fuzzer.skipped > 0);
-    const itemBadge = itemFailed
-      ? chalk.bgRed.white(" FAIL ")
-      : itemSkipped
-        ? chalk.bgBlackBright.white(" SKIP ")
-        : chalk.bgGreenBright.black(" PASS ");
-    const detail = itemFailed
-      ? `${formatTime(result.time)} seed: ${result.seed}`
-      : formatTime(result.time);
-    const crashSuffix =
-      result.crashFiles.length > 0
-        ? ` ${chalk.dim(`-> ${result.crashFiles[0]}`)}`
-        : "";
-    context.stdout.write(
-      `${itemBadge} ${path.basename(result.file)} ${chalk.dim(detail)}${crashSuffix}\n`,
-    );
-  }
-  const renderedFailures = renderFailedFuzzers(event.results);
-  if (!renderedFailures) {
-    context.stdout.write("\n");
+  context.stdout.write("\n");
+  if (!hasRenderedTestFiles) {
+    renderStandaloneFuzzTotals(event);
   }
 }
 
-function renderFailedFuzzers(results: FuzzCompleteEvent["results"]): boolean {
+function renderFailedFuzzers(
+  results: ReturnType<typeof groupFuzzResultsByFile>,
+): boolean {
   let rendered = false;
   for (const result of results) {
-    const relativeFile = toRelativeResultPath(result.file);
-    const repro = buildFuzzReproCommand(relativeFile, result.seed);
+    for (const modeResult of result.modes) {
+      const relativeFile = toRelativeResultPath(modeResult.file);
+      const repro = buildFuzzReproCommand(
+        relativeFile,
+        modeResult.seed,
+        modeResult.modeName,
+      );
 
-    if (result.crashes > 0 && !result.fuzzers.length) {
-      if (!rendered) {
-        console.log("");
-        rendered = true;
-      }
-      console.log(
-        `${chalk.bgRed(" FAIL ")} ${chalk.dim(path.basename(result.file))} ${chalk.dim("(crash)")}`,
-      );
-      console.log(
-        `${chalk.dim("Runs:")} ${chalk.bold(String(result.runs))} configured`,
-      );
-      console.log(`${chalk.dim("Seed:")} ${chalk.bold(String(result.seed))}`);
-      console.log(`${chalk.dim("Repro:")} ${chalk.bold(repro)}`);
-      if (result.crashFiles.length) {
+      if (modeResult.crashes > 0 && !modeResult.fuzzers.length) {
+        if (!rendered) {
+          console.log("");
+          rendered = true;
+        }
         console.log(
-          `${chalk.dim("Crash:")} ${chalk.bold(result.crashFiles[0] as string)}`,
+          `${chalk.bgRed(" FAIL ")} ${chalk.dim(path.basename(modeResult.file))} ${chalk.dim("(crash)")}`,
         );
-      }
-      console.log("");
-      continue;
-    }
-
-    for (const fuzzer of result.fuzzers) {
-      if (fuzzer.failed <= 0 && fuzzer.crashed <= 0) continue;
-      if (!rendered) {
+        console.log(chalk.dim(`Mode: ${modeResult.modeName}`));
+        console.log(chalk.dim(`Runs: ${modeResult.runs} configured`));
+        console.log(chalk.dim(`Repro: ${repro}`));
+        console.log(chalk.dim(`Seed: ${modeResult.seed}`));
+        if (modeResult.crashFiles.length) {
+          console.log(
+            chalk.dim(`Crash: ${modeResult.crashFiles[0] as string}`),
+          );
+        }
         console.log("");
-        rendered = true;
+        continue;
       }
 
-      console.log(
-        `${chalk.bgRed(" FAIL ")} ${formatFuzzFailureTitle(
-          result.file,
-          fuzzer.name,
-        )}`,
-      );
-      if (fuzzer.failure?.message?.length) {
-        console.log(chalk.dim(`Message: ${fuzzer.failure.message}`));
+      for (const fuzzer of modeResult.fuzzers) {
+        if (fuzzer.failed <= 0 && fuzzer.crashed <= 0) continue;
+        if (!rendered) {
+          console.log("");
+          rendered = true;
+        }
+
+        console.log(
+          `${chalk.bgRed(" FAIL ")} ${formatFuzzFailureTitle(
+            modeResult.file,
+            fuzzer.name,
+          )}`,
+        );
+        if (fuzzer.failure?.message?.length) {
+          console.log(chalk.dim(`Message: ${fuzzer.failure.message}`));
+        }
+        console.log(chalk.dim(`Mode: ${modeResult.modeName}`));
+        console.log(
+          chalk.dim(
+            `Runs: ${fuzzer.passed + fuzzer.failed + fuzzer.crashed} completed (${fuzzer.passed} passed, ${fuzzer.failed} failed, ${fuzzer.crashed} crashed)`,
+          ),
+        );
+        console.log(chalk.dim(`Repro: ${repro}`));
+        console.log(chalk.dim(`Seed: ${modeResult.seed}`));
+        if (modeResult.crashFiles.length) {
+          console.log(
+            chalk.dim(`Crash: ${modeResult.crashFiles[0] as string}`),
+          );
+        }
+        console.log("");
       }
-      console.log(
-        chalk.dim(
-          `Runs: ${fuzzer.passed + fuzzer.failed + fuzzer.crashed} completed (${fuzzer.passed} passed, ${fuzzer.failed} failed, ${fuzzer.crashed} crashed)`,
-        ),
-      );
-      console.log(chalk.dim(`Repro: ${repro}`));
-      console.log(chalk.dim(`Seed: ${result.seed}`));
-      if (result.crashFiles.length) {
-        console.log(chalk.dim(`Crash: ${result.crashFiles[0] as string}`));
-      }
-      console.log("");
     }
   }
   return rendered;
 }
 
-function buildFuzzReproCommand(file: string, seed: number): string {
-  return `ast fuzz ${file} --seed ${seed}`;
+function groupFuzzResultsByFile(results: FuzzCompleteEvent["results"]): {
+  file: string;
+  modes: FuzzCompleteEvent["results"];
+}[] {
+  const grouped = new Map<string, FuzzCompleteEvent["results"]>();
+  for (const result of results) {
+    const current = grouped.get(result.file) ?? [];
+    current.push(result);
+    grouped.set(result.file, current);
+  }
+  return [...grouped.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([file, modes]) => ({ file, modes }));
+}
+
+function firstFuzzCrashFile(
+  results: FuzzCompleteEvent["results"],
+): string | null {
+  for (const result of results) {
+    if (result.crashFiles.length) return result.crashFiles[0] as string;
+  }
+  return null;
+}
+
+function averageFuzzModeTime(results: FuzzCompleteEvent["results"]): number {
+  if (!results.length) return 0;
+  return results.reduce((sum, result) => sum + result.time, 0) / results.length;
+}
+
+function buildFuzzReproCommand(
+  file: string,
+  seed: number,
+  modeName: string,
+): string {
+  const modeArg = modeName != "default" ? ` --mode ${modeName}` : "";
+  return `ast fuzz ${file}${modeArg} --seed ${seed}`;
 }
 
 function toRelativeResultPath(file: string): string {
@@ -507,7 +568,8 @@ function collectSuiteFailures(
     const title = `${nextPath.join(" > ")}#${assertionIndex}`;
     const loc = String(test.location ?? "");
     const where = loc.length ? `${file}:${loc}` : file;
-    const dedupeKey = `${file}::${title}::${String(test.left)}::${String(test.right)}`;
+    const modeName = String(suiteAny.modeName ?? "");
+    const dedupeKey = `${file}::${modeName}::${title}::${String(test.left)}::${String(test.right)}`;
     if (printed.has(dedupeKey)) continue;
     printed.add(dedupeKey);
 
@@ -538,6 +600,9 @@ function collectSuiteFailures(
     console.log(
       `${chalk.bgRed(" FAIL ")} ${chalk.dim(title)} ${chalk.dim("(" + where + ")")}`,
     );
+    if (modeName.length) {
+      console.log(chalk.dim(`Mode: ${modeName}`));
+    }
     console.log(`${chalk.dim("(expected) ->")} ${expected}`);
     console.log(`${chalk.dim("(received) ->")} ${chalk.dim(left)}\n`);
   }
@@ -573,110 +638,138 @@ function renderTotals(
   event: RunCompleteEvent,
 ): void {
   console.log("");
-  process.stdout.write(chalk.bold("Files:  "));
-  process.stdout.write(
-    stats.failedFiles
-      ? chalk.bold.red(stats.failedFiles + " failed")
-      : chalk.bold.greenBright("0 failed"),
-  );
-  process.stdout.write(
-    ", " +
-      (stats.skippedFiles
-        ? chalk.gray(stats.skippedFiles + " skipped")
-        : chalk.gray("0 skipped")),
-  );
-  process.stdout.write(
-    ", " +
-      (stats.failedFiles + stats.passedFiles + stats.skippedFiles) +
-      " total\n",
-  );
-
-  process.stdout.write(chalk.bold("Suites: "));
-  process.stdout.write(
-    stats.failedSuites
-      ? chalk.bold.red(stats.failedSuites + " failed")
-      : chalk.bold.greenBright("0 failed"),
-  );
-  process.stdout.write(
-    ", " +
-      (stats.skippedSuites
-        ? chalk.gray(stats.skippedSuites + " skipped")
-        : chalk.gray("0 skipped")),
-  );
-  process.stdout.write(
-    ", " +
-      (stats.failedSuites + stats.passedSuites + stats.skippedSuites) +
-      " total\n",
-  );
-
-  process.stdout.write(chalk.bold("Tests:  "));
-  process.stdout.write(
-    stats.failedTests
-      ? chalk.bold.red(stats.failedTests + " failed")
-      : chalk.bold.greenBright("0 failed"),
-  );
-  process.stdout.write(
-    ", " +
-      (stats.skippedTests
-        ? chalk.gray(stats.skippedTests + " skipped")
-        : chalk.gray("0 skipped")),
-  );
-  process.stdout.write(
-    ", " +
-      (stats.failedTests + stats.passedTests + stats.skippedTests) +
-      " total\n",
-  );
+  const filesSummary = {
+    failed: stats.failedFiles,
+    skipped: stats.skippedFiles,
+    total: stats.failedFiles + stats.passedFiles + stats.skippedFiles,
+  };
+  const suitesSummary = {
+    failed: stats.failedSuites,
+    skipped: stats.skippedSuites,
+    total: stats.failedSuites + stats.passedSuites + stats.skippedSuites,
+  };
+  const testsSummary = {
+    failed: stats.failedTests,
+    skipped: stats.skippedTests,
+    total: stats.failedTests + stats.passedTests + stats.skippedTests,
+  };
+  const layout = createSummaryLayout([
+    filesSummary,
+    suitesSummary,
+    testsSummary,
+    event.modeSummary,
+    event.fuzzSummary,
+  ]);
+  renderSummaryLine("Files:", filesSummary, layout);
+  renderSummaryLine("Suites:", suitesSummary, layout);
+  renderSummaryLine("Tests:", testsSummary, layout);
 
   if (event.modeSummary) {
-    renderModeSummary(event.modeSummary);
+    renderModeSummary(event.modeSummary, layout);
   }
 
   if (event.fuzzSummary) {
-    renderFuzzTotals(event.fuzzSummary);
+    renderFuzzTotals(event.fuzzSummary, layout);
   }
 
-  process.stdout.write(chalk.bold("Time:   ") + formatTime(stats.time) + "\n");
+  process.stdout.write(
+    chalk.bold("Time:".padEnd(9)) + formatTime(stats.time) + "\n",
+  );
 }
 
-function renderModeSummary(summary: {
-  failed: number;
-  skipped: number;
-  total: number;
-}): void {
-  process.stdout.write(chalk.bold("Modes:  "));
-  process.stdout.write(
-    summary.failed
-      ? chalk.bold.red(summary.failed + " failed")
-      : chalk.bold.greenBright("0 failed"),
-  );
-  process.stdout.write(
-    ", " +
-      (summary.skipped
-        ? chalk.gray(summary.skipped + " skipped")
-        : chalk.gray("0 skipped")),
-  );
-  process.stdout.write(", " + summary.total + " total\n");
+function renderModeSummary(
+  summary: {
+    failed: number;
+    skipped: number;
+    total: number;
+  },
+  layout?: SummaryLayout,
+): void {
+  renderSummaryLine("Modes:", summary, layout);
 }
 
-function renderFuzzTotals(summary: {
-  failed: number;
-  skipped: number;
-  total: number;
-  runs: number;
-}): void {
-  process.stdout.write(chalk.bold("Fuzz:   "));
+function renderFuzzTotals(
+  summary: {
+    failed: number;
+    skipped: number;
+    total: number;
+  },
+  layout?: SummaryLayout,
+): void {
+  renderSummaryLine("Fuzz:", summary, layout);
+}
+
+function renderStandaloneFuzzTotals(event: FuzzCompleteEvent): void {
+  console.log("");
+  const layout = createSummaryLayout([
+    event.fuzzingSummary,
+    event.suiteSummary,
+    event.modeSummary,
+  ]);
+  renderSummaryLine("Fuzz:", event.fuzzingSummary, layout);
+  renderSummaryLine("Suites:", event.suiteSummary, layout);
+  renderSummaryLine("Modes:", event.modeSummary, layout);
+  process.stdout.write(
+    chalk.bold("Time:".padEnd(9)) + formatTime(event.time) + "\n",
+  );
+}
+
+type SummaryLayout = {
+  failedWidth: number;
+  skippedWidth: number;
+};
+
+function createSummaryLayout(
+  summaries: Array<
+    | {
+        failed: number;
+        skipped: number;
+        total: number;
+      }
+    | undefined
+  >,
+): SummaryLayout {
+  return {
+    failedWidth: Math.max(
+      ...summaries.map((summary) =>
+        summary ? `${summary.failed} failed`.length : 0,
+      ),
+    ),
+    skippedWidth: Math.max(
+      ...summaries.map((summary) =>
+        summary ? `${summary.skipped} skipped`.length : 0,
+      ),
+    ),
+  };
+}
+
+function renderSummaryLine(
+  label: string,
+  summary: {
+    failed: number;
+    skipped: number;
+    total: number;
+  },
+  layout: SummaryLayout = {
+    failedWidth: `${summary.failed} failed`.length,
+    skippedWidth: `${summary.skipped} skipped`.length,
+  },
+): void {
+  const failedText = `${summary.failed} failed`;
+  const skippedText = `${summary.skipped} skipped`;
+  const totalText = `${" ".repeat(
+    Math.max(0, layout.skippedWidth - skippedText.length),
+  )}${summary.total} total`;
+  process.stdout.write(chalk.bold(label.padEnd(9)));
   process.stdout.write(
     summary.failed
-      ? chalk.bold.red(summary.failed + " failed")
-      : chalk.bold.greenBright("0 failed"),
+      ? chalk.bold.red(failedText.padStart(layout.failedWidth))
+      : chalk.bold.greenBright(failedText.padStart(layout.failedWidth)),
   );
-  process.stdout.write(
-    ", " +
-      (summary.skipped
-        ? chalk.gray(summary.skipped + " skipped")
-        : chalk.gray("0 skipped")),
-  );
-  process.stdout.write(", " + summary.total + " total\n");
+  process.stdout.write(", ");
+  process.stdout.write(chalk.gray(skippedText.padStart(layout.skippedWidth)));
+  process.stdout.write(", ");
+  process.stdout.write(totalText + "\n");
 }
 
 function renderCoverageSummary(summary: {

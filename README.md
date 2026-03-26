@@ -68,26 +68,12 @@ Generated files go into `.as-test/`.
 
 ## Writing Tests
 
-### Importing
-
-You may import `as-test` in two ways:
-
-```ts
-import "as-test";
-```
-
-or
-
-```ts
-import { describe, test, expect } from "as-test";
-```
-
 Tests usually live in `assembly/__tests__/*.spec.ts`.
 
 Example:
 
 ```ts
-import "as-test";
+import { describe, expect, test } from "as-test";
 
 describe("math", () => {
   test("adds numbers", () => {
@@ -129,7 +115,7 @@ This keeps tests focused. You can still verify the logic in your AssemblyScript 
 Example:
 
 ```ts
-import "as-test";
+import { describe, expect, mockFn, test, unmockFn } from "as-test";
 
 function getConfig(): string {
   return "name=prod\nmode=live";
@@ -164,7 +150,7 @@ That lets you keep tests readable while still locking down behavior that should 
 Example:
 
 ```ts
-import "as-test";
+import { describe, expect, test } from "as-test";
 
 function renderReport(): string {
   return "name=demo\nmode=test";
@@ -192,7 +178,7 @@ Fuzzers usually live in `assembly/__fuzz__/*.fuzz.ts`.
 Example:
 
 ```ts
-import "as-test";
+import { expect, FuzzSeed, fuzz } from "as-test";
 
 fuzz("bounded integer addition", (left: i32, right: i32): bool => {
   const sum = left + right;

@@ -1263,7 +1263,7 @@ async function runTestModes(
         fuzzOverrides,
       );
       reporterSession.reporter.onFuzzComplete?.(
-        buildFuzzCompleteEvent(fuzzResults, modeName),
+        buildFuzzCompleteEvent(fuzzResults, [modeName]),
       );
       if (fuzzResults.some(hasFuzzFailures)) failed = true;
       reporterSession.reporter.onRunComplete?.({
@@ -1274,7 +1274,7 @@ async function runTestModes(
         coverageSummary: modeResult.summary.coverageSummary,
         stats: modeResult.summary.stats,
         reports: modeResult.summary.reports,
-        fuzzSummary: summarizeFuzzResults(fuzzResults),
+        fuzzSummary: summarizeFuzzExecutions(fuzzResults),
         modeSummary: buildSingleModeSummary(
           modeResult.summary.stats,
           modeResult.summary.snapshotSummary,
@@ -1431,13 +1431,14 @@ async function runTestMatrix(
   });
   let failed = allResults.some((result) => result.failed);
   if (fuzzEnabled) {
-    const fuzzResults: FuzzResult[] = [];
-    for (const modeName of modes) {
-      fuzzResults.push(
-        ...(await fuzz(configPath, selectors, modeName, fuzzOverrides)),
-      );
-    }
-    reporter.onFuzzComplete?.(buildFuzzCompleteEvent(fuzzResults));
+    const fuzzResults = await runFuzzMatrixResults(
+      configPath,
+      selectors,
+      modes,
+      fuzzOverrides,
+      reporter,
+    );
+    reporter.onFuzzComplete?.(buildFuzzCompleteEvent(fuzzResults, modes));
     if (fuzzResults.some(hasFuzzFailures)) failed = true;
   }
   reporter.flush?.();
@@ -1451,21 +1452,45 @@ async function runFuzzModes(
   rawArgs: string[],
 ): Promise<void> {
   const overrides = resolveFuzzOverrides(rawArgs, "fuzz");
-  let failed = false;
-  for (const modeName of modes) {
-    const reporterSession = await createRunReporter(
-      configPath,
-      undefined,
-      modeName,
+  const reporterSession = await createRunReporter(configPath);
+  const results = await runFuzzMatrixResults(
+    configPath,
+    selectors,
+    modes,
+    overrides,
+    reporterSession.reporter,
+  );
+  reporterSession.reporter.onFuzzComplete?.(
+    buildFuzzCompleteEvent(results, modes),
+  );
+  reporterSession.reporter.flush?.();
+  process.exit(results.some(hasFuzzFailures) ? 1 : 0);
+}
+
+async function runFuzzMatrixResults(
+  configPath: string | undefined,
+  selectors: string[],
+  modes: (string | undefined)[],
+  overrides: FuzzOverrides,
+  reporter?: TestReporter,
+): Promise<FuzzResult[]> {
+  const files = await resolveSelectedFuzzFiles(configPath, selectors);
+  if (!files.length) {
+    throw new Error(
+      `No fuzz files matched: ${selectors.length ? selectors.join(", ") : "configured input patterns"}`,
     );
-    const results = await fuzz(configPath, selectors, modeName, overrides);
-    reporterSession.reporter.onFuzzComplete?.(
-      buildFuzzCompleteEvent(results, modeName),
-    );
-    reporterSession.reporter.flush?.();
-    if (results.some(hasFuzzFailures)) failed = true;
   }
-  process.exit(failed ? 1 : 0);
+  const results: FuzzResult[] = [];
+  for (const file of files) {
+    const fileResults: FuzzResult[] = [];
+    for (const modeName of modes) {
+      const modeResults = await fuzz(configPath, [file], modeName, overrides);
+      fileResults.push(...modeResults);
+      results.push(...modeResults);
+    }
+    reporter?.onFuzzFileComplete?.({ file, results: fileResults });
+  }
+  return results;
 }
 
 function hasFuzzFailures(result: FuzzResult): boolean {
@@ -1475,39 +1500,96 @@ function hasFuzzFailures(result: FuzzResult): boolean {
 
 function buildFuzzCompleteEvent(
   results: FuzzResult[],
-  modeName?: string,
+  modes: (string | undefined)[],
 ): FuzzCompleteEvent {
   return {
-    modeName: modeName ?? "default",
     results,
-    executions: results.reduce((sum, item) => sum + item.runs, 0),
-    crashes: results.reduce((sum, item) => sum + item.crashes, 0),
-    failedTargets: results.reduce(
-      (sum, item) => sum + (hasFuzzFailures(item) ? 1 : 0),
-      0,
-    ),
     time: results.reduce((sum, item) => sum + item.time, 0),
+    fuzzingSummary: summarizeFuzzExecutions(results),
+    suiteSummary: summarizeFuzzSuites(results),
+    modeSummary: summarizeFuzzModes(results, modes),
   };
 }
 
-function summarizeFuzzResults(results: FuzzResult[]): {
+function summarizeFuzzExecutions(results: FuzzResult[]): {
   failed: number;
   skipped: number;
   total: number;
-  runs: number;
 } {
   return {
     failed: results.reduce(
-      (sum, item) => sum + (hasFuzzFailures(item) ? 1 : 0),
+      (sum, item) =>
+        sum +
+        item.fuzzers.reduce(
+          (inner, fuzzer) => inner + fuzzer.failed + fuzzer.crashed,
+          0,
+        ),
       0,
     ),
     skipped: results.reduce(
-      (sum, item) => sum + (isSkippedFuzzResult(item) ? 1 : 0),
+      (sum, item) =>
+        sum + item.fuzzers.reduce((inner, fuzzer) => inner + fuzzer.skipped, 0),
       0,
     ),
-    total: results.length,
-    runs: results.reduce((sum, item) => sum + item.runs, 0),
+    total: results.reduce(
+      (sum, item) =>
+        sum + item.fuzzers.reduce((inner, fuzzer) => inner + fuzzer.runs, 0),
+      0,
+    ),
   };
+}
+
+function summarizeFuzzSuites(results: FuzzResult[]): {
+  failed: number;
+  skipped: number;
+  total: number;
+} {
+  return {
+    failed: results.reduce(
+      (sum, item) =>
+        sum +
+        item.fuzzers.filter((fuzzer) => fuzzer.failed > 0 || fuzzer.crashed > 0)
+          .length,
+      0,
+    ),
+    skipped: results.reduce(
+      (sum, item) =>
+        sum + item.fuzzers.filter((fuzzer) => fuzzer.skipped > 0).length,
+      0,
+    ),
+    total: results.reduce((sum, item) => sum + item.fuzzers.length, 0),
+  };
+}
+
+function summarizeFuzzModes(
+  results: FuzzResult[],
+  modes: (string | undefined)[],
+): {
+  failed: number;
+  skipped: number;
+  total: number;
+} {
+  const total = Math.max(modes.length, 1);
+  const state = new Map<string, { failed: boolean; passed: boolean }>();
+  for (const modeName of modes) {
+    state.set(modeName ?? "default", { failed: false, passed: false });
+  }
+  for (const result of results) {
+    const current = state.get(result.modeName) ?? {
+      failed: false,
+      passed: false,
+    };
+    if (hasFuzzFailures(result)) current.failed = true;
+    else if (!isSkippedFuzzResult(result)) current.passed = true;
+    state.set(result.modeName, current);
+  }
+  let failed = 0;
+  let skipped = 0;
+  for (const mode of state.values()) {
+    if (mode.failed) failed++;
+    else if (!mode.passed) skipped++;
+  }
+  return { failed, skipped, total };
 }
 
 function isSkippedFuzzResult(result: FuzzResult): boolean {
@@ -1535,9 +1617,14 @@ function renderMatrixFileResult(
         : chalk.bgBlackBright.white(" SKIP ");
   const avg = formatMatrixAverageTime(results);
   const timingText = showPerModeTimes ? modeTimes.join(",") : avg;
+  const failedModes = results
+    .map((result, index) => (result.failed ? modes[index] : null))
+    .filter((mode): mode is string => Boolean(mode));
   const suffix = showPerModeTimes
     ? ` ${chalk.dim(`(${modes.join(",")})`)}`
-    : "";
+    : failedModes.length
+      ? ` ${chalk.dim(`(failed: ${failedModes.join(", ")})`)}`
+      : "";
   const line = `${badge} ${file} ${chalk.dim(timingText)}${suffix}`;
   if (liveMatrix) clearLiveLine();
   process.stdout.write(line + "\n");

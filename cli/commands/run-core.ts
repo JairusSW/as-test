@@ -79,6 +79,7 @@ export type RunResult = {
   coverageSummary: CoverageSummary;
   reports: {
     file: string;
+    modeName: string;
     suites: any[];
     coverage: FileCoverage;
     runCommand: string;
@@ -781,6 +782,7 @@ export async function run(
     snapshotSummary.failed += snapshotStore.failed;
     reports.push({
       file,
+      modeName: options.modeName ?? "default",
       suites: normalized.suites,
       coverage: normalized.coverage,
       runCommand: runCommandForLog,
@@ -812,7 +814,7 @@ export async function run(
       );
     }
   }
-  const stats = collectRunStats(reports.map((report) => report.suites));
+  const stats = collectRunStats(reports);
   if (options.fileSummaryTotal != undefined) {
     applyConfiguredFileTotalToStats(stats, options.fileSummaryTotal);
   }
@@ -1951,10 +1953,20 @@ function collectRunStats(reports: unknown[]): RunStats {
 }
 
 function readFileReport(stats: RunStats, fileReport: unknown): void {
-  const suites = Array.isArray(fileReport) ? (fileReport as unknown[]) : [];
+  const fileReportAny = fileReport as Record<string, unknown>;
+  const suites = Array.isArray(fileReportAny.suites)
+    ? (fileReportAny.suites as unknown[])
+    : Array.isArray(fileReport)
+      ? (fileReport as unknown[])
+      : [];
+  const file = String(fileReportAny.file ?? "");
+  const modeName = String(fileReportAny.modeName ?? "");
   let fileVerdict: Verdict = "none";
   for (const suite of suites) {
-    fileVerdict = mergeVerdict(fileVerdict, readSuite(stats, suite));
+    fileVerdict = mergeVerdict(
+      fileVerdict,
+      readSuite(stats, suite, file, modeName),
+    );
   }
   if (fileVerdict == "fail") {
     stats.failedFiles++;
@@ -1965,7 +1977,12 @@ function readFileReport(stats: RunStats, fileReport: unknown): void {
   }
 }
 
-function readSuite(stats: RunStats, suite: unknown): Verdict {
+function readSuite(
+  stats: RunStats,
+  suite: unknown,
+  file: string,
+  modeName: string,
+): Verdict {
   const suiteAny = suite as Record<string, unknown>;
   let verdict = normalizeVerdict(suiteAny.verdict);
 
@@ -1978,7 +1995,7 @@ function readSuite(stats: RunStats, suite: unknown): Verdict {
     ? (suiteAny.suites as unknown[])
     : [];
   for (const subSuite of subSuites) {
-    verdict = mergeVerdict(verdict, readSuite(stats, subSuite));
+    verdict = mergeVerdict(verdict, readSuite(stats, subSuite, file, modeName));
   }
 
   const tests = Array.isArray(suiteAny.tests)
@@ -1998,7 +2015,11 @@ function readSuite(stats: RunStats, suite: unknown): Verdict {
 
   if (verdict == "fail") {
     stats.failedSuites++;
-    stats.failedEntries.push(suite);
+    stats.failedEntries.push({
+      ...suiteAny,
+      file,
+      modeName,
+    });
   } else if (verdict == "ok") {
     stats.passedSuites++;
   } else {

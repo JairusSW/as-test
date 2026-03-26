@@ -1,5 +1,5 @@
 export function buildWebRunnerSource() {
-  const html = String.raw`<!doctype html>
+    const html = String.raw `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -68,7 +68,7 @@ export function buildWebRunnerSource() {
     <script type="module" src="/client.js"></script>
   </body>
 </html>`;
-  const client = String.raw`const status = document.getElementById("status");
+    const client = String.raw `const status = document.getElementById("status");
 const details = document.getElementById("details");
 const replyBuffer = new SharedArrayBuffer(8 + 4 * 1024 * 1024);
 const replyState = new Int32Array(replyBuffer, 0, 2);
@@ -162,7 +162,7 @@ ws.addEventListener("error", () => {
   setStatus("WebSocket connection failed.", true);
 });
 `;
-  const worker = String.raw`let replyState = null;
+    const worker = String.raw `let replyState = null;
 let replyBytes = null;
 
 self.onmessage = async (event) => {
@@ -235,7 +235,7 @@ function readReply(max) {
   return out.buffer;
 }
 `;
-  return `import { createHash } from "crypto";
+    return `import { createHash } from "crypto";
 import { existsSync, readFileSync } from "fs";
 import http from "http";
 import path from "path";

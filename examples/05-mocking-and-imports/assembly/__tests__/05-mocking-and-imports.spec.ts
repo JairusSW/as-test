@@ -1,4 +1,12 @@
-import "as-test";
+import {
+  describe,
+  expect,
+  mockFn,
+  mockImport,
+  test,
+  unmockFn,
+  unmockImport,
+} from "as-test";
 import { clockLabel, now } from "./clock";
 
 function localValue(): i32 {

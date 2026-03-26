@@ -1,5 +1,6 @@
 import {
   FuzzCompleteEvent,
+  FuzzFileCompleteEvent,
   ReporterContext,
   ReporterFactory,
   RunCompleteEvent,
@@ -58,6 +59,7 @@ export const createReporter: ReporterFactory = (
 class TapReporter implements TestReporter {
   private pendingRunEvent: RunCompleteEvent | null = null;
   private pendingFuzzEvent: FuzzCompleteEvent | null = null;
+  private pendingFuzzPoints: TapPoint[] = [];
 
   constructor(
     private readonly context: ReporterContext,
@@ -72,6 +74,18 @@ class TapReporter implements TestReporter {
     this.pendingFuzzEvent = event;
   }
 
+  onFuzzFileComplete(event: FuzzFileCompleteEvent): void {
+    this.pendingFuzzPoints.push(
+      ...collectFuzzTapPoints({
+        results: event.results,
+        time: event.results.reduce((sum, item) => sum + item.time, 0),
+        fuzzingSummary: { failed: 0, skipped: 0, total: 0 },
+        suiteSummary: { failed: 0, skipped: 0, total: 0 },
+        modeSummary: { failed: 0, skipped: 0, total: 0 },
+      }),
+    );
+  }
+
   flush(): void {
     if (!this.pendingRunEvent && !this.pendingFuzzEvent) return;
 
@@ -79,7 +93,9 @@ class TapReporter implements TestReporter {
     if (this.pendingRunEvent) {
       points.push(...collectTapPoints(this.pendingRunEvent.reports));
     }
-    if (this.pendingFuzzEvent) {
+    if (this.pendingFuzzPoints.length) {
+      points.push(...this.pendingFuzzPoints);
+    } else if (this.pendingFuzzEvent) {
       points.push(...collectFuzzTapPoints(this.pendingFuzzEvent));
     }
 
@@ -94,6 +110,7 @@ class TapReporter implements TestReporter {
     this.writeArtifacts(points, output);
     this.pendingRunEvent = null;
     this.pendingFuzzEvent = null;
+    this.pendingFuzzPoints = [];
   }
 
   private writeArtifacts(points: TapPoint[], output: string): void {

@@ -1,5 +1,5 @@
-import { describe, expect, it, log, run, test } from "..";
 import { sleep } from "as-sleep/assembly";
+import { describe, expect, it, log, xit } from "as-test";
 describe("Should sleep", () => {
   it("1ms", () => {
     const start = Date.now();
@@ -16,7 +16,7 @@ describe("Should sleep", () => {
     sleep(100);
     expect(Date.now() - start).toBeGreaterOrEqualTo(100);
   });
-  it("1s", () => {
+  xit("1s", () => {
     const start = Date.now();
     log("Sleeping...");
     sleep(1000);

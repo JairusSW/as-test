@@ -94,7 +94,6 @@ export type RunCompleteEvent = {
     failed: number;
     skipped: number;
     total: number;
-    runs: number;
   };
   modeSummary?: {
     failed: number;
@@ -125,6 +124,7 @@ export type FuzzerRunResult = {
 export type FuzzResult = {
   file: string;
   target: string;
+  modeName: string;
   runs: number;
   crashes: number;
   crashFiles: string[];
@@ -134,12 +134,28 @@ export type FuzzResult = {
 };
 
 export type FuzzCompleteEvent = {
-  modeName: string;
   results: FuzzResult[];
-  executions: number;
-  crashes: number;
-  failedTargets: number;
   time: number;
+  fuzzingSummary: {
+    failed: number;
+    skipped: number;
+    total: number;
+  };
+  suiteSummary: {
+    failed: number;
+    skipped: number;
+    total: number;
+  };
+  modeSummary: {
+    failed: number;
+    skipped: number;
+    total: number;
+  };
+};
+
+export type FuzzFileCompleteEvent = {
+  file: string;
+  results: FuzzResult[];
 };
 
 export type ReporterContext = {
@@ -158,6 +174,7 @@ export interface TestReporter {
   onWarning?(event: WarningEvent): void;
   onLog?(event: LogEvent): void;
   onRunComplete?(event: RunCompleteEvent): void;
+  onFuzzFileComplete?(event: FuzzFileCompleteEvent): void;
   onFuzzComplete?(event: FuzzCompleteEvent): void;
   flush?(): void;
 }

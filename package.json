@@ -65,6 +65,7 @@
   },
   "scripts": {
     "test": "node ./bin/index.js test",
+    "fuzz": "node ./bin/index.js fuzz",
     "test:ci": "node ./bin/index.js test --tap --config ./as-test.ci.config.json",
     "test:examples": "npm --prefix ./examples run test",
     "ci:act": "bash ./tools/act.sh push",
@@ -83,6 +84,5 @@
     "release:check": "npm run build:cli && npm run build:transform && npm run test && npm run test:examples && npm pack --dry-run --cache /tmp/as-test-npm-cache",
     "prepublishOnly": "npm run build:cli && npm run build:transform && npm run test"
   },
-  "type": "module",
-  "types": "assembly/index.ts"
+  "type": "module"
 }

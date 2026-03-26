@@ -519,9 +519,7 @@ export class Fuzzer2<A, B, R> extends FuzzerBase {
 }
 
 export class Fuzzer3<A, B, C, R> extends FuzzerBase {
-  private generator:
-    | ((seed: FuzzSeed, run: (a: A, b: B, c: C) => R) => void)
-    | null = null;
+  private generator: usize = 0;
   private returnsBool: bool;
 
   constructor(
@@ -534,17 +532,14 @@ export class Fuzzer3<A, B, C, R> extends FuzzerBase {
   }
 
   generate<T extends Function>(generator: T): this {
-    this.generator =
-      changetype<(seed: FuzzSeed, run: (a: A, b: B, c: C) => R) => void>(
-        generator,
-      );
+    this.generator = changetype<usize>(generator);
     return this;
   }
 
   generateTyped(
     generator: (seed: FuzzSeed, run: (a: A, b: B, c: C) => R) => void,
   ): this {
-    this.generator = generator;
+    this.generator = changetype<usize>(generator);
     return this;
   }
 
@@ -567,7 +562,9 @@ export class Fuzzer3<A, B, C, R> extends FuzzerBase {
           "fuzzers with arguments must call .generate(...)",
         );
       } else {
-        this.generator(seed, changetype<(a: A, b: B, c: C) => R>(__fuzz_run3));
+        changetype<(seed: FuzzSeed, run: (a: A, b: B, c: C) => R) => void>(
+          this.generator,
+        )(seed, changetype<(a: A, b: B, c: C) => R>(__fuzz_run3));
       }
       if (__fuzz_calls != 1) {
         failFuzzIteration(

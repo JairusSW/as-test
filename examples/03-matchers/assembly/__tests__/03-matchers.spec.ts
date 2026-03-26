@@ -1,4 +1,4 @@
-import "as-test";
+import { describe, expect, test } from "as-test";
 
 describe("03 matchers", () => {
   test("numeric matchers", () => {

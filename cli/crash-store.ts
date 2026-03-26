@@ -3,9 +3,14 @@ import * as path from "path";
 
 export type CrashRecord = {
   kind: "test" | "fuzz";
+  stage?: "build" | "run";
   file: string;
   mode?: string;
   seed?: number;
+  cwd?: string;
+  buildCommand?: string;
+  runCommand?: string;
+  reproCommand?: string;
   error: string;
   stdout?: string;
   stderr?: string;
@@ -51,10 +56,15 @@ function buildCrashLog(payload: CrashRecord & { timestamp: string }): string {
   const lines = [
     `timestamp: ${payload.timestamp}`,
     `kind: ${payload.kind}`,
+    `stage: ${payload.stage ?? "run"}`,
     `file: ${payload.file}`,
   ];
   if (payload.mode) lines.push(`mode: ${payload.mode}`);
   if (typeof payload.seed == "number") lines.push(`seed: ${payload.seed}`);
+  if (payload.cwd) lines.push(`cwd: ${payload.cwd}`);
+  if (payload.buildCommand) lines.push(`build: ${payload.buildCommand}`);
+  if (payload.runCommand) lines.push(`run: ${payload.runCommand}`);
+  if (payload.reproCommand) lines.push(`repro: ${payload.reproCommand}`);
   lines.push("");
   lines.push("[error]");
   lines.push(payload.error);
