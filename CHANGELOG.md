@@ -1,6 +1,8 @@
 # Change Log
 
-## 2026-03-17 - Unreleased
+## 2026-03-25 - Unreleased
+
+## 2026-03-25 - v1.0.2
 
 ### Explicit Imports, Typings & Reporting
 
