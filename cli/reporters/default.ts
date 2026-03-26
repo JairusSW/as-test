@@ -36,6 +36,7 @@ class DefaultReporter implements TestReporter {
   private verboseMode = false;
   private cleanMode = false;
   private hasRenderedTestFiles = false;
+  private hasRenderedFuzzFiles = false;
 
   constructor(private readonly context: ReporterContext) {}
 
@@ -172,6 +173,7 @@ class DefaultReporter implements TestReporter {
     this.verboseMode = Boolean(event.verbose);
     this.cleanMode = Boolean(event.clean);
     this.hasRenderedTestFiles = false;
+    this.hasRenderedFuzzFiles = false;
   }
 
   onFileStart(event: ProgressEvent): void {
@@ -318,7 +320,7 @@ class DefaultReporter implements TestReporter {
       renderFailedSuites(event.stats.failedEntries);
     }
     if (event.snapshotEnabled) {
-      renderSnapshotSummary(event.snapshotSummary);
+      renderSnapshotSummary(event.snapshotSummary, !this.hasRenderedFuzzFiles);
     }
     if (event.coverageSummary.enabled) {
       renderCoverageSummary(event.coverageSummary);
@@ -330,13 +332,11 @@ class DefaultReporter implements TestReporter {
   }
 
   onFuzzComplete(event: FuzzCompleteEvent): void {
-    if (this.hasRenderedTestFiles) {
-      this.context.stdout.write("\n");
-    }
     renderFuzzSummary(this.context, event, this.hasRenderedTestFiles);
   }
 
   onFuzzFileComplete(event: FuzzFileCompleteEvent): void {
+    this.hasRenderedFuzzFiles = true;
     renderFuzzFileSummary(this.context, event.results);
   }
 }
@@ -615,8 +615,13 @@ function collectSuiteFailures(
   }
 }
 
-function renderSnapshotSummary(snapshotSummary: SnapshotSummary): void {
-  console.log("");
+function renderSnapshotSummary(
+  snapshotSummary: SnapshotSummary,
+  leadingGap: boolean = true,
+): void {
+  if (leadingGap) {
+    console.log("");
+  }
   console.log(
     `${chalk.bold("Snapshots:")} ${chalk.greenBright(snapshotSummary.matched)} matched, ${chalk.blueBright(snapshotSummary.created)} created, ${chalk.blueBright(snapshotSummary.updated)} updated, ${snapshotSummary.failed ? chalk.red(snapshotSummary.failed) : chalk.greenBright("0")} failed`,
   );
@@ -654,22 +659,21 @@ function renderTotals(
     total: stats.failedTests + stats.passedTests + stats.skippedTests,
   };
   const layout = createSummaryLayout([
+    event.fuzzSummary,
     filesSummary,
     suitesSummary,
     testsSummary,
     event.modeSummary,
-    event.fuzzSummary,
   ]);
+  if (event.fuzzSummary) {
+    renderFuzzTotals(event.fuzzSummary, layout);
+  }
   renderSummaryLine("Files:", filesSummary, layout);
   renderSummaryLine("Suites:", suitesSummary, layout);
   renderSummaryLine("Tests:", testsSummary, layout);
 
   if (event.modeSummary) {
     renderModeSummary(event.modeSummary, layout);
-  }
-
-  if (event.fuzzSummary) {
-    renderFuzzTotals(event.fuzzSummary, layout);
   }
 
   process.stdout.write(

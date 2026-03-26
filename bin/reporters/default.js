@@ -17,6 +17,7 @@ class DefaultReporter {
         this.verboseMode = false;
         this.cleanMode = false;
         this.hasRenderedTestFiles = false;
+        this.hasRenderedFuzzFiles = false;
     }
     canRewriteLine() {
         return (!this.cleanMode &&
@@ -122,6 +123,7 @@ class DefaultReporter {
         this.verboseMode = Boolean(event.verbose);
         this.cleanMode = Boolean(event.clean);
         this.hasRenderedTestFiles = false;
+        this.hasRenderedFuzzFiles = false;
     }
     onFileStart(event) {
         this.currentFile = event.file;
@@ -263,7 +265,7 @@ class DefaultReporter {
             renderFailedSuites(event.stats.failedEntries);
         }
         if (event.snapshotEnabled) {
-            renderSnapshotSummary(event.snapshotSummary);
+            renderSnapshotSummary(event.snapshotSummary, !this.hasRenderedFuzzFiles);
         }
         if (event.coverageSummary.enabled) {
             renderCoverageSummary(event.coverageSummary);
@@ -274,12 +276,10 @@ class DefaultReporter {
         renderTotals(event.stats, event);
     }
     onFuzzComplete(event) {
-        if (this.hasRenderedTestFiles) {
-            this.context.stdout.write("\n");
-        }
         renderFuzzSummary(this.context, event, this.hasRenderedTestFiles);
     }
     onFuzzFileComplete(event) {
+        this.hasRenderedFuzzFiles = true;
         renderFuzzFileSummary(this.context, event.results);
     }
 }
@@ -492,8 +492,10 @@ function collectSuiteFailures(suite, file, path, printed) {
         collectSuiteFailures(sub, file, nextPath, printed);
     }
 }
-function renderSnapshotSummary(snapshotSummary) {
-    console.log("");
+function renderSnapshotSummary(snapshotSummary, leadingGap = true) {
+    if (leadingGap) {
+        console.log("");
+    }
     console.log(`${chalk.bold("Snapshots:")} ${chalk.greenBright(snapshotSummary.matched)} matched, ${chalk.blueBright(snapshotSummary.created)} created, ${chalk.blueBright(snapshotSummary.updated)} updated, ${snapshotSummary.failed ? chalk.red(snapshotSummary.failed) : chalk.greenBright("0")} failed`);
 }
 function renderTotals(stats, event) {
@@ -514,20 +516,20 @@ function renderTotals(stats, event) {
         total: stats.failedTests + stats.passedTests + stats.skippedTests,
     };
     const layout = createSummaryLayout([
+        event.fuzzSummary,
         filesSummary,
         suitesSummary,
         testsSummary,
         event.modeSummary,
-        event.fuzzSummary,
     ]);
+    if (event.fuzzSummary) {
+        renderFuzzTotals(event.fuzzSummary, layout);
+    }
     renderSummaryLine("Files:", filesSummary, layout);
     renderSummaryLine("Suites:", suitesSummary, layout);
     renderSummaryLine("Tests:", testsSummary, layout);
     if (event.modeSummary) {
         renderModeSummary(event.modeSummary, layout);
-    }
-    if (event.fuzzSummary) {
-        renderFuzzTotals(event.fuzzSummary, layout);
     }
     process.stdout.write(chalk.bold("Time:".padEnd(9)) + formatTime(stats.time) + "\n");
 }

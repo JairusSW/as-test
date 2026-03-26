@@ -2,6 +2,10 @@
 
 ## 2026-03-25 - Unreleased
 
+### Reporting
+
+- fix: make `ast test --fuzz` print fuzz file results before the final combined summary, with one merged totals block that includes `Fuzz` alongside the normal test totals.
+
 ## 2026-03-25 - v1.0.2
 
 ### Explicit Imports, Typings & Reporting

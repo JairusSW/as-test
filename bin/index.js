@@ -835,8 +835,10 @@ async function runTestModes(runFlags, configPath, selectors, modes, buildFeature
         if (modeResult.failed)
             failed = true;
         if (fuzzEnabled) {
-            const fuzzResults = await fuzz(configPath, selectors, modeName, fuzzOverrides);
-            reporterSession.reporter.onFuzzComplete?.(buildFuzzCompleteEvent(fuzzResults, [modeName]));
+            if (reporterSession.reporterKind == "default") {
+                process.stdout.write("\n");
+            }
+            const fuzzResults = await runFuzzMatrixResults(configPath, selectors, [modeName], fuzzOverrides, reporterSession.reporter);
             if (fuzzResults.some(hasFuzzFailures))
                 failed = true;
             reporterSession.reporter.onRunComplete?.({
@@ -943,6 +945,17 @@ async function runTestMatrix(runFlags, configPath, selectors, modes, buildFeatur
     }
     const summary = aggregateRunResults(allResults);
     summary.stats = applyMatrixFileSummaryToStats(summary.stats, fileState, fileSummaryTotal);
+    let failed = allResults.some((result) => result.failed);
+    let fuzzSummary;
+    if (fuzzEnabled) {
+        if (reporterSession.reporterKind == "default") {
+            process.stdout.write("\n");
+        }
+        const fuzzResults = await runFuzzMatrixResults(configPath, selectors, modes, fuzzOverrides, reporter);
+        if (fuzzResults.some(hasFuzzFailures))
+            failed = true;
+        fuzzSummary = summarizeFuzzExecutions(fuzzResults);
+    }
     reporter.onRunComplete?.({
         clean: runFlags.clean,
         snapshotEnabled,
@@ -951,15 +964,9 @@ async function runTestMatrix(runFlags, configPath, selectors, modes, buildFeatur
         coverageSummary: summary.coverageSummary,
         stats: summary.stats,
         reports: summary.reports,
+        fuzzSummary,
         modeSummary: buildModeSummary(modeState, modeSummaryTotal),
     });
-    let failed = allResults.some((result) => result.failed);
-    if (fuzzEnabled) {
-        const fuzzResults = await runFuzzMatrixResults(configPath, selectors, modes, fuzzOverrides, reporter);
-        reporter.onFuzzComplete?.(buildFuzzCompleteEvent(fuzzResults, modes));
-        if (fuzzResults.some(hasFuzzFailures))
-            failed = true;
-    }
     reporter.flush?.();
     return failed;
 }

@@ -1256,14 +1256,15 @@ async function runTestModes(
     );
     if (modeResult.failed) failed = true;
     if (fuzzEnabled) {
-      const fuzzResults = await fuzz(
+      if (reporterSession.reporterKind == "default") {
+        process.stdout.write("\n");
+      }
+      const fuzzResults = await runFuzzMatrixResults(
         configPath,
         selectors,
-        modeName,
+        [modeName],
         fuzzOverrides,
-      );
-      reporterSession.reporter.onFuzzComplete?.(
-        buildFuzzCompleteEvent(fuzzResults, [modeName]),
+        reporterSession.reporter,
       );
       if (fuzzResults.some(hasFuzzFailures)) failed = true;
       reporterSession.reporter.onRunComplete?.({
@@ -1419,6 +1420,28 @@ async function runTestMatrix(
     fileState,
     fileSummaryTotal,
   );
+  let failed = allResults.some((result) => result.failed);
+  let fuzzSummary:
+    | {
+        failed: number;
+        skipped: number;
+        total: number;
+      }
+    | undefined;
+  if (fuzzEnabled) {
+    if (reporterSession.reporterKind == "default") {
+      process.stdout.write("\n");
+    }
+    const fuzzResults = await runFuzzMatrixResults(
+      configPath,
+      selectors,
+      modes,
+      fuzzOverrides,
+      reporter,
+    );
+    if (fuzzResults.some(hasFuzzFailures)) failed = true;
+    fuzzSummary = summarizeFuzzExecutions(fuzzResults);
+  }
   reporter.onRunComplete?.({
     clean: runFlags.clean,
     snapshotEnabled,
@@ -1427,20 +1450,9 @@ async function runTestMatrix(
     coverageSummary: summary.coverageSummary,
     stats: summary.stats,
     reports: summary.reports,
+    fuzzSummary,
     modeSummary: buildModeSummary(modeState, modeSummaryTotal),
   });
-  let failed = allResults.some((result) => result.failed);
-  if (fuzzEnabled) {
-    const fuzzResults = await runFuzzMatrixResults(
-      configPath,
-      selectors,
-      modes,
-      fuzzOverrides,
-      reporter,
-    );
-    reporter.onFuzzComplete?.(buildFuzzCompleteEvent(fuzzResults, modes));
-    if (fuzzResults.some(hasFuzzFailures)) failed = true;
-  }
   reporter.flush?.();
   return failed;
 }
