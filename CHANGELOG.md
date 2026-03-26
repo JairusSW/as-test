@@ -1,11 +1,5 @@
 # Change Log
 
-## 2026-03-25 - v1.0.3
-
-### Reporting
-
-- fix: make `ast test --fuzz` print fuzz file results before the final combined summary, with one merged totals block that includes `Fuzz` alongside the normal test totals.
-
 ## 2026-03-25 - v1.0.2
 
 ### Explicit Imports, Typings & Reporting
@@ -15,6 +9,7 @@
 - fix: remove the temporary declaration-file build path and return the package to a simpler no-`.d.ts` setup.
 - fix: keep fuzzing green while leaving the in-repo AssemblyScript `IntegerOptions` ergonomics issue for a later API change.
 - fix: align summary output columns for `failed`, `skipped`, and `total` across test/run/fuzz totals.
+- fix: make `ast test --fuzz` print fuzz file results before the final combined summary, with one merged totals block that includes `Fuzz` alongside the normal test totals.
 
 ### Assertions & Serialization
 
