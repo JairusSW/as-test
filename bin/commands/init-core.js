@@ -529,6 +529,9 @@ function applyInit(root, target, example, fuzzExample, force) {
     if (!scripts.test) {
         scripts.test = "ast test";
     }
+    if (fuzzExample && !scripts.fuzz) {
+        scripts.fuzz = "ast fuzz";
+    }
     if (!pkg.type) {
         pkg.type = "module";
     }
@@ -910,19 +913,17 @@ function resolveInstallCommand(root) {
     return { command: "npm", args: ["install"] };
 }
 function buildMinimalExampleSpec() {
-    return `import { describe, expect, test, run } from "as-test";
+    return `import { describe, expect, test } from "as-test";
 
 describe("example", () => {
   test("adds numbers", () => {
     expect(1 + 2).toBe(3);
   });
 });
-
-run();
 `;
 }
 function buildFullExampleSpec() {
-    return `import { afterAll, beforeAll, describe, expect, it, log, run, test } from "as-test";
+    return `import { afterAll, beforeAll, describe, expect, it, log, test } from "as-test";
 
 beforeAll(() => {
   log("setup");
@@ -952,8 +953,6 @@ describe("strings", () => {
     expect("as-test").toStartWith("as");
   });
 });
-
-run();
 `;
 }
 function buildBasicFuzzerExample() {
