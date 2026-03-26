@@ -320,7 +320,10 @@ class DefaultReporter implements TestReporter {
       renderFailedSuites(event.stats.failedEntries);
     }
     if (event.snapshotEnabled) {
-      renderSnapshotSummary(event.snapshotSummary, !this.hasRenderedFuzzFiles);
+      renderSnapshotSummary(
+        event.snapshotSummary,
+        this.hasRenderedTestFiles || this.hasRenderedFuzzFiles,
+      );
     }
     if (event.coverageSummary.enabled) {
       renderCoverageSummary(event.coverageSummary);
@@ -721,6 +724,7 @@ function renderStandaloneFuzzTotals(event: FuzzCompleteEvent): void {
 type SummaryLayout = {
   failedWidth: number;
   skippedWidth: number;
+  totalWidth: number;
 };
 
 function createSummaryLayout(
@@ -744,6 +748,11 @@ function createSummaryLayout(
         summary ? `${summary.skipped} skipped`.length : 0,
       ),
     ),
+    totalWidth: Math.max(
+      ...summaries.map((summary) =>
+        summary ? `${summary.total} total`.length : 0,
+      ),
+    ),
   };
 }
 
@@ -757,13 +766,12 @@ function renderSummaryLine(
   layout: SummaryLayout = {
     failedWidth: `${summary.failed} failed`.length,
     skippedWidth: `${summary.skipped} skipped`.length,
+    totalWidth: `${summary.total} total`.length,
   },
 ): void {
   const failedText = `${summary.failed} failed`;
   const skippedText = `${summary.skipped} skipped`;
-  const totalText = `${" ".repeat(
-    Math.max(0, layout.skippedWidth - skippedText.length),
-  )}${summary.total} total`;
+  const totalText = `${summary.total} total`;
   process.stdout.write(chalk.bold(label.padEnd(9)));
   process.stdout.write(
     summary.failed
@@ -773,7 +781,7 @@ function renderSummaryLine(
   process.stdout.write(", ");
   process.stdout.write(chalk.gray(skippedText.padStart(layout.skippedWidth)));
   process.stdout.write(", ");
-  process.stdout.write(totalText + "\n");
+  process.stdout.write(totalText.padStart(layout.totalWidth) + "\n");
 }
 
 function renderCoverageSummary(summary: {

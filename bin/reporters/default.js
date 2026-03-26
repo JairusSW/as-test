@@ -265,7 +265,7 @@ class DefaultReporter {
             renderFailedSuites(event.stats.failedEntries);
         }
         if (event.snapshotEnabled) {
-            renderSnapshotSummary(event.snapshotSummary, !this.hasRenderedFuzzFiles);
+            renderSnapshotSummary(event.snapshotSummary, this.hasRenderedTestFiles || this.hasRenderedFuzzFiles);
         }
         if (event.coverageSummary.enabled) {
             renderCoverageSummary(event.coverageSummary);
@@ -555,15 +555,17 @@ function createSummaryLayout(summaries) {
     return {
         failedWidth: Math.max(...summaries.map((summary) => summary ? `${summary.failed} failed`.length : 0)),
         skippedWidth: Math.max(...summaries.map((summary) => summary ? `${summary.skipped} skipped`.length : 0)),
+        totalWidth: Math.max(...summaries.map((summary) => summary ? `${summary.total} total`.length : 0)),
     };
 }
 function renderSummaryLine(label, summary, layout = {
     failedWidth: `${summary.failed} failed`.length,
     skippedWidth: `${summary.skipped} skipped`.length,
+    totalWidth: `${summary.total} total`.length,
 }) {
     const failedText = `${summary.failed} failed`;
     const skippedText = `${summary.skipped} skipped`;
-    const totalText = `${" ".repeat(Math.max(0, layout.skippedWidth - skippedText.length))}${summary.total} total`;
+    const totalText = `${summary.total} total`;
     process.stdout.write(chalk.bold(label.padEnd(9)));
     process.stdout.write(summary.failed
         ? chalk.bold.red(failedText.padStart(layout.failedWidth))
@@ -571,7 +573,7 @@ function renderSummaryLine(label, summary, layout = {
     process.stdout.write(", ");
     process.stdout.write(chalk.gray(skippedText.padStart(layout.skippedWidth)));
     process.stdout.write(", ");
-    process.stdout.write(totalText + "\n");
+    process.stdout.write(totalText.padStart(layout.totalWidth) + "\n");
 }
 function renderCoverageSummary(summary) {
     const pct = summary.total
