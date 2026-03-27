@@ -1,4 +1,7 @@
-import { BuildFeatureToggles } from "./build-core.js";
+import {
+  BuildFeatureToggles,
+  closeSerialBuildWorkerPool,
+} from "./build-core.js";
 import { CliFeatureToggles, CliListFlags } from "./types.js";
 
 export { build } from "./build-core.js";
@@ -9,6 +12,10 @@ type BuildCommandDeps = {
   resolveCommandArgs(rawArgs: string[], command: string): string[];
   resolveListFlags(rawArgs: string[], command: string): CliListFlags;
   resolveFeatureToggles(rawArgs: string[], command: string): CliFeatureToggles;
+  resolveBuildParallelJobs(rawArgs: string[]): {
+    jobs: number;
+    buildJobs: number;
+  };
   resolveExecutionModes(
     configPath: string | undefined,
     selectedModes: string[],
@@ -25,6 +32,10 @@ type BuildCommandDeps = {
     selectors: string[],
     modes: (string | undefined)[],
     buildFeatureToggles: BuildFeatureToggles,
+    parallel: {
+      jobs: number;
+      buildJobs: number;
+    },
   ): Promise<void>;
 };
 
@@ -37,6 +48,7 @@ export async function executeBuildCommand(
   const commandArgs = deps.resolveCommandArgs(rawArgs, "build");
   const listFlags = deps.resolveListFlags(rawArgs, "build");
   const featureToggles = deps.resolveFeatureToggles(rawArgs, "build");
+  const parallel = deps.resolveBuildParallelJobs(rawArgs);
   const buildFeatureToggles: BuildFeatureToggles = {
     tryAs: featureToggles.tryAs,
     coverage: featureToggles.coverage,
@@ -52,10 +64,22 @@ export async function executeBuildCommand(
     );
     return;
   }
-  await deps.runBuildModes(
-    configPath,
-    commandArgs,
-    modeTargets,
-    buildFeatureToggles,
-  );
+  const previousBuildApi = process.env.AS_TEST_BUILD_API;
+  process.env.AS_TEST_BUILD_API = "1";
+  try {
+    await deps.runBuildModes(
+      configPath,
+      commandArgs,
+      modeTargets,
+      buildFeatureToggles,
+      parallel,
+    );
+  } finally {
+    if (previousBuildApi == undefined) {
+      delete process.env.AS_TEST_BUILD_API;
+    } else {
+      process.env.AS_TEST_BUILD_API = previousBuildApi;
+    }
+    await closeSerialBuildWorkerPool();
+  }
 }

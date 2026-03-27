@@ -186,6 +186,13 @@ function getSerialBuildWorkerPool(): BuildWorkerPool {
   return serialBuildWorkerPool;
 }
 
+export async function closeSerialBuildWorkerPool(): Promise<void> {
+  if (!serialBuildWorkerPool) return;
+  const pool = serialBuildWorkerPool;
+  serialBuildWorkerPool = null;
+  await pool.close();
+}
+
 export async function getBuildInvocationPreview(
   configPath: string = DEFAULT_CONFIG_PATH,
   file: string,

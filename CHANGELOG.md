@@ -2,6 +2,12 @@
 
 ## 2026-03-27 - 1.0.3
 
+### Build Command
+
+- fix: make `ast build` exit cleanly instead of hanging after work completes.
+- feat: make `ast build` print per-mode build results and a final summary.
+- feat: make `ast build` support `--parallel`, `--jobs`, and `--build-jobs`.
+
 ### Parallel Execution
 
 - perf: add persistent build workers for parallel `ast run` and `ast test` so AssemblyScript modules stay warm across file builds instead of spawning a fresh compiler process per build.

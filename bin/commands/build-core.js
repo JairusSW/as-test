@@ -102,6 +102,13 @@ function getSerialBuildWorkerPool() {
     }
     return serialBuildWorkerPool;
 }
+export async function closeSerialBuildWorkerPool() {
+    if (!serialBuildWorkerPool)
+        return;
+    const pool = serialBuildWorkerPool;
+    serialBuildWorkerPool = null;
+    await pool.close();
+}
 export async function getBuildInvocationPreview(configPath = DEFAULT_CONFIG_PATH, file, modeName, featureToggles = {}, overrides = {}) {
     const loadedConfig = loadConfig(configPath, false);
     const mode = applyMode(loadedConfig, modeName);

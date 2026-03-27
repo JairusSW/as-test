@@ -78,6 +78,7 @@ if (!args.length) {
         resolveCommandArgs,
         resolveListFlags,
         resolveFeatureToggles,
+        resolveBuildParallelJobs,
         resolveExecutionModes,
         listExecutionPlan,
         runBuildModes,
@@ -293,6 +294,15 @@ function printCommandHelp(command: string): void {
     );
     process.stdout.write(
       "  --disable <feature>      Disable build feature (coverage|try-as)\n",
+    );
+    process.stdout.write(
+      "  --parallel              Run files through an ordered worker pool using an automatic worker count\n",
+    );
+    process.stdout.write(
+      "  --jobs <n>               Run files through an ordered worker pool\n",
+    );
+    process.stdout.write(
+      "  --build-jobs <n>         Limit concurrent build tasks (defaults to --jobs)\n",
     );
     process.stdout.write(
       "  --list                   Preview resolved files/artifacts without building\n",
@@ -821,7 +831,7 @@ function resolveBrowserOverride(
 
 function resolveJobs(
   rawArgs: string[],
-  command: "run" | "test" | "fuzz",
+  command: "build" | "run" | "test" | "fuzz",
 ): number {
   let seenCommand = false;
   let parallel = false;
@@ -843,6 +853,33 @@ function resolveJobs(
     return parsed.number;
   }
   return parallel ? 0 : 1;
+}
+
+function resolveBuildParallelJobs(rawArgs: string[]): {
+  jobs: number;
+  buildJobs: number;
+} {
+  const baseJobs = resolveJobs(rawArgs, "build");
+  let buildJobs = baseJobs;
+
+  let seenCommand = false;
+  for (let i = 0; i < rawArgs.length; i++) {
+    const arg = rawArgs[i]!;
+    if (!seenCommand) {
+      if (arg == "build") seenCommand = true;
+      continue;
+    }
+    const buildParsed = parseNumberFlag(rawArgs, i, "--build-jobs");
+    if (buildParsed) {
+      if (buildParsed.number < 1) {
+        throw new Error("--build-jobs requires a positive integer");
+      }
+      buildJobs = buildParsed.number;
+      continue;
+    }
+  }
+  const jobs = Math.max(baseJobs, buildJobs);
+  return { jobs, buildJobs };
 }
 
 function resolveParallelJobs(
@@ -1280,10 +1317,56 @@ async function runBuildModes(
   selectors: string[],
   modes: (string | undefined)[],
   buildFeatureToggles: BuildFeatureToggles,
+  parallel: {
+    jobs: number;
+    buildJobs: number;
+  },
 ): Promise<void> {
-  for (const modeName of modes) {
-    await build(configPath, selectors, modeName, buildFeatureToggles);
+  const files = await resolveSelectedFiles(configPath, selectors);
+  if (!files.length) {
+    throw await buildNoTestFilesMatchedError(configPath, selectors);
   }
+  const effective = resolveEffectiveParallelJobs(
+    {
+      jobs: parallel.jobs,
+      buildJobs: parallel.buildJobs,
+      runJobs: parallel.buildJobs,
+    },
+    files.length,
+  );
+  const resolvedConfigPath =
+    configPath ?? path.join(process.cwd(), "./as-test.config.json");
+  const loadedConfig = loadConfig(resolvedConfigPath, true);
+  const allStartedAt = Date.now();
+  let builtCount = 0;
+  for (const modeName of modes) {
+    const startedAt = Date.now();
+    if (effective.buildJobs > 1) {
+      const pool = new BuildWorkerPool(effective.buildJobs);
+      try {
+        await runOrderedPool(files, effective.buildJobs, async (file) => {
+          await pool.buildFileMode({
+            configPath,
+            file,
+            modeName,
+            featureToggles: buildFeatureToggles,
+          });
+        });
+      } finally {
+        await pool.close();
+      }
+    } else {
+      await build(configPath, selectors, modeName, buildFeatureToggles);
+    }
+    builtCount += files.length;
+    const active = applyMode(loadedConfig, modeName).config;
+    process.stdout.write(
+      `${chalk.bgGreenBright.black(" BUILT ")} ${modeName ?? "default"} ${chalk.dim(`(${active.buildOptions.target})`)} ${files.length} file(s) -> ${active.outDir} ${chalk.dim(formatTime(Date.now() - startedAt))}\n`,
+    );
+  }
+  process.stdout.write(
+    `${chalk.bold("Summary:")} built ${builtCount} file(s) across ${modes.length || 1} mode(s) in ${formatTime(Date.now() - allStartedAt)}\n`,
+  );
 }
 
 async function runRuntimeModes(
