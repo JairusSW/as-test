@@ -6,6 +6,14 @@ type TestCommandDeps = {
   resolveCommandArgs(rawArgs: string[], command: string): string[];
   resolveListFlags(rawArgs: string[], command: string): CliListFlags;
   resolveFeatureToggles(rawArgs: string[], command: string): CliFeatureToggles;
+  resolveParallelJobs(
+    rawArgs: string[],
+    command: "test",
+  ): {
+    jobs: number;
+    buildJobs: number;
+    runJobs: number;
+  };
   resolveBrowserOverride(
     rawArgs: string[],
     command: "test",
@@ -58,6 +66,7 @@ export async function executeTestCommand(
     clean: flags.includes("--clean"),
     showCoverage: flags.includes("--show-coverage"),
     verbose: flags.includes("--verbose"),
+    ...deps.resolveParallelJobs(rawArgs, "test"),
     coverage: featureToggles.coverage,
     browser: deps.resolveBrowserOverride(rawArgs, "test"),
   };

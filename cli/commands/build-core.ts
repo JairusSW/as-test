@@ -2,8 +2,12 @@ import { existsSync } from "fs";
 import { Config } from "../types.js";
 import { glob } from "glob";
 import chalk from "chalk";
-import { spawnSync } from "child_process";
+import { spawn } from "child_process";
 import * as path from "path";
+import {
+  createMemoryStream,
+  main as ascMain,
+} from "assemblyscript/dist/asc.js";
 import {
   applyMode,
   getPkgRunner,
@@ -29,6 +33,7 @@ export type BuildConfigOverrides = {
 type BuildInvocation = {
   command: string;
   args: string[];
+  apiArgs?: string[];
 };
 
 export type { BuildInvocation };
@@ -122,7 +127,7 @@ export async function build(
       featureToggles,
     );
     try {
-      buildFile(invocation, buildEnv);
+      await buildFile(invocation, buildEnv);
     } catch (error) {
       const modeLabel = modeName ?? "default";
       const stdout = getBuildStdout(error);
@@ -239,6 +244,7 @@ function getBuildCommand(
   return {
     command: ascInvocation.command,
     args,
+    apiArgs: args.slice(1),
   };
 }
 
@@ -414,23 +420,116 @@ function ensureDeps(config: Config): void {
   }
 }
 
-function buildFile(invocation: BuildInvocation, env: NodeJS.ProcessEnv): void {
-  const result = spawnSync(invocation.command, invocation.args, {
-    stdio: ["ignore", "pipe", "pipe"],
-    encoding: "utf8",
-    env,
-    shell: false,
+async function buildFile(
+  invocation: BuildInvocation,
+  env: NodeJS.ProcessEnv,
+): Promise<void> {
+  if (process.env.AS_TEST_BUILD_API == "1" && invocation.apiArgs?.length) {
+    await buildFileViaApi(invocation.apiArgs, env);
+    return;
+  }
+  await buildFileViaSpawn(invocation, env);
+}
+
+async function buildFileViaApi(
+  args: string[],
+  env: NodeJS.ProcessEnv,
+): Promise<void> {
+  const stdoutChunks: string[] = [];
+  const stderrChunks: string[] = [];
+  const stdout = createMemoryStream((chunk) => {
+    stdoutChunks.push(
+      typeof chunk == "string" ? chunk : Buffer.from(chunk).toString("utf8"),
+    );
   });
-  if (result.error) throw result.error;
-  if (result.status !== 0) {
-    const error = new Error(
-      result.stderr?.trim() ||
-        result.stdout?.trim() ||
-        `command exited with code ${result.status}`,
-    ) as Error & { stderr?: string; stdout?: string };
-    error.stderr = result.stderr ?? "";
-    error.stdout = result.stdout ?? "";
-    throw error;
+  const stderr = createMemoryStream((chunk) => {
+    stderrChunks.push(
+      typeof chunk == "string" ? chunk : Buffer.from(chunk).toString("utf8"),
+    );
+  });
+  const previousEnv = snapshotEnv();
+  applyEnv(env);
+  try {
+    const result = await ascMain(args, { stdout, stderr });
+    if (result.error) {
+      const error = result.error as Error & {
+        stderr?: string;
+        stdout?: string;
+      };
+      error.stderr = stderrChunks.join("").trim();
+      error.stdout = stdoutChunks.join("").trim();
+      throw error;
+    }
+  } finally {
+    restoreEnv(previousEnv);
+  }
+}
+
+async function buildFileViaSpawn(
+  invocation: BuildInvocation,
+  env: NodeJS.ProcessEnv,
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(invocation.command, invocation.args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      env,
+      shell: false,
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.on("data", (chunk: Buffer | string) => {
+      stdout += chunk.toString();
+    });
+    child.stderr?.on("data", (chunk: Buffer | string) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      const error = new Error(
+        stderr.trim() || stdout.trim() || `command exited with code ${code}`,
+      ) as Error & { stderr?: string; stdout?: string };
+      error.stderr = stderr.trim();
+      error.stdout = stdout.trim();
+      reject(error);
+    });
+  });
+}
+
+function snapshotEnv(): Record<string, string | undefined> {
+  return { ...process.env };
+}
+
+function applyEnv(nextEnv: NodeJS.ProcessEnv): void {
+  const keys = new Set([
+    ...Object.keys(process.env),
+    ...Object.keys(nextEnv as Record<string, string | undefined>),
+  ]);
+  for (const key of keys) {
+    const value = nextEnv[key];
+    if (value == undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+}
+
+function restoreEnv(previousEnv: Record<string, string | undefined>): void {
+  const keys = new Set([
+    ...Object.keys(process.env),
+    ...Object.keys(previousEnv),
+  ]);
+  for (const key of keys) {
+    const value = previousEnv[key];
+    if (value == undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
   }
 }
 

@@ -7,6 +7,7 @@ export type FuzzFlags = {
 type FuzzCommandDeps = {
   resolveCommandArgs(rawArgs: string[], command: string): string[];
   resolveListFlags(rawArgs: string[], command: string): CliListFlags;
+  resolveJobs(rawArgs: string[], command: "fuzz"): number;
   resolveExecutionModes(
     configPath: string | undefined,
     selectedModes: string[],

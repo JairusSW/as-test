@@ -51,7 +51,7 @@
     "as-test.config.schema.json",
     "index.ts"
   ],
-  "homepage": "https://github.com/JairusSW/as-test#readme",
+  "homepage": "https://docs.jairus.dev/as-test",
   "keywords": [
     "assemblyscript",
     "testing",

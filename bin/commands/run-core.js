@@ -1566,15 +1566,18 @@ function mergeVerdict(current, next) {
         return "skip";
     return "none";
 }
-export async function createRunReporter(configPath = DEFAULT_CONFIG_PATH, reporterPath, modeName) {
+export async function createRunReporter(configPath = DEFAULT_CONFIG_PATH, reporterPath, modeName, context = {
+    stdout: process.stdout,
+    stderr: process.stderr,
+}) {
     const resolvedConfigPath = configPath ?? DEFAULT_CONFIG_PATH;
     const loadedConfig = loadConfig(resolvedConfigPath);
     const mode = applyMode(loadedConfig, modeName);
     const config = mode.config;
     const selection = resolveReporterSelection(reporterPath, config.runOptions.reporter);
     const reporter = await loadReporter(selection, resolvedConfigPath, {
-        stdout: process.stdout,
-        stderr: process.stderr,
+        stdout: context.stdout,
+        stderr: context.stderr,
     });
     const runtimeCommand = resolveRuntimeCommand(getConfiguredRuntimeCmd(config), config.buildOptions.target, false);
     return {

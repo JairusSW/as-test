@@ -15,6 +15,9 @@ export type RunFlags = {
   clean: boolean;
   showCoverage: boolean;
   verbose: boolean;
+  jobs: number;
+  buildJobs: number;
+  runJobs: number;
   coverage?: boolean;
   browser?: string;
 };

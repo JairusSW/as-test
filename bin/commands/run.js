@@ -10,6 +10,7 @@ export async function executeRunCommand(rawArgs, flags, configPath, selectedMode
         clean: flags.includes("--clean"),
         showCoverage: flags.includes("--show-coverage"),
         verbose: flags.includes("--verbose"),
+        ...deps.resolveParallelJobs(rawArgs, "run"),
         coverage: featureToggles.coverage,
         browser: deps.resolveBrowserOverride(rawArgs, "run"),
     };

@@ -13,6 +13,7 @@ export async function executeTestCommand(rawArgs, flags, configPath, selectedMod
         clean: flags.includes("--clean"),
         showCoverage: flags.includes("--show-coverage"),
         verbose: flags.includes("--verbose"),
+        ...deps.resolveParallelJobs(rawArgs, "test"),
         coverage: featureToggles.coverage,
         browser: deps.resolveBrowserOverride(rawArgs, "test"),
     };

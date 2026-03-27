@@ -7,6 +7,14 @@ type RunCommandDeps = {
   resolveCommandArgs(rawArgs: string[], command: string): string[];
   resolveListFlags(rawArgs: string[], command: string): CliListFlags;
   resolveFeatureToggles(rawArgs: string[], command: string): CliFeatureToggles;
+  resolveParallelJobs(
+    rawArgs: string[],
+    command: "run",
+  ): {
+    jobs: number;
+    buildJobs: number;
+    runJobs: number;
+  };
   resolveBrowserOverride(rawArgs: string[], command: "run"): string | undefined;
   resolveExecutionModes(
     configPath: string | undefined,
@@ -44,6 +52,7 @@ export async function executeRunCommand(
     clean: flags.includes("--clean"),
     showCoverage: flags.includes("--show-coverage"),
     verbose: flags.includes("--verbose"),
+    ...deps.resolveParallelJobs(rawArgs, "run"),
     coverage: featureToggles.coverage,
     browser: deps.resolveBrowserOverride(rawArgs, "run"),
   };
