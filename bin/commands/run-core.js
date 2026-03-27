@@ -545,6 +545,7 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
             clean: cleanOutput,
             snapshotEnabled,
             showCoverage,
+            buildTime: 0,
             snapshotSummary,
             coverageSummary,
             stats,
@@ -563,6 +564,7 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
     }
     return {
         failed,
+        buildTime: 0,
         stats,
         snapshotSummary,
         coverageSummary,

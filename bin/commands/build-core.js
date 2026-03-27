@@ -6,6 +6,7 @@ import * as path from "path";
 import { createMemoryStream, main as ascMain, } from "assemblyscript/dist/asc.js";
 import { applyMode, getPkgRunner, loadConfig, tokenizeCommand, resolveProjectModule, } from "../util.js";
 import { persistCrashRecord } from "../crash-store.js";
+import { BuildWorkerPool } from "../build-worker-pool.js";
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 class BuildFailureError extends Error {
     constructor(args) {
@@ -43,6 +44,19 @@ export async function build(configPath = DEFAULT_CONFIG_PATH, selectors = [], mo
         ...config.buildOptions.env,
         AS_TEST_COVERAGE_ENABLED: coverageEnabled ? "1" : "0",
     };
+    if (!process.env.AS_TEST_BUILD_API && !hasCustomBuildCommand(config)) {
+        const pool = getSerialBuildWorkerPool();
+        for (const file of inputFiles) {
+            await pool.buildFileMode({
+                configPath,
+                file,
+                modeName,
+                featureToggles,
+                overrides,
+            });
+        }
+        return;
+    }
     for (const file of inputFiles) {
         const outFile = `${config.outDir}/${resolveArtifactFileName(file, config.buildOptions.target, modeName, duplicateSpecBasenames)}`;
         const invocation = getBuildCommand(config, pkgRunner, file, outFile, modeName, featureToggles);
@@ -80,6 +94,13 @@ export async function build(configPath = DEFAULT_CONFIG_PATH, selectors = [], mo
             });
         }
     }
+}
+let serialBuildWorkerPool = null;
+function getSerialBuildWorkerPool() {
+    if (!serialBuildWorkerPool) {
+        serialBuildWorkerPool = new BuildWorkerPool(1);
+    }
+    return serialBuildWorkerPool;
 }
 export async function getBuildInvocationPreview(configPath = DEFAULT_CONFIG_PATH, file, modeName, featureToggles = {}, overrides = {}) {
     const loadedConfig = loadConfig(configPath, false);

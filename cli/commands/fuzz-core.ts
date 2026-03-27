@@ -41,6 +41,9 @@ export type FuzzResult = {
   crashFiles: string[];
   seed: number;
   time: number;
+  buildTime: number;
+  buildStartedAt: number;
+  buildFinishedAt: number;
   fuzzers: FuzzerRunResult[];
 };
 
@@ -71,6 +74,7 @@ export async function fuzz(
   const duplicateBasenames = resolveDuplicateBasenames(inputFiles);
   const results: FuzzResult[] = [];
   for (const file of inputFiles) {
+    const buildStartedAt = Date.now();
     await build(
       configPath,
       [file],
@@ -78,12 +82,17 @@ export async function fuzz(
       { coverage: false },
       { target: "bindings", args: ["--use", "AS_TEST_FUZZ=1"], kind: "fuzz" },
     );
+    const buildFinishedAt = Date.now();
+    const buildTime = buildFinishedAt - buildStartedAt;
     results.push(
       await runFuzzTarget(
         file,
         mode.config.outDir,
         duplicateBasenames,
         config,
+        buildStartedAt,
+        buildFinishedAt,
+        buildTime,
         modeName,
       ),
     );
@@ -109,6 +118,9 @@ async function runFuzzTarget(
   outDir: string,
   duplicateBasenames: Set<string>,
   config: FuzzConfig,
+  buildStartedAt: number,
+  buildFinishedAt: number,
+  buildTime: number,
   modeName?: string,
 ): Promise<FuzzResult> {
   const startedAt = Date.now();
@@ -162,6 +174,9 @@ async function runFuzzTarget(
       crashFiles: [crash.jsonPath],
       seed: config.seed,
       time: Date.now() - startedAt,
+      buildTime,
+      buildStartedAt,
+      buildFinishedAt,
       fuzzers: [],
     };
   }
@@ -186,6 +201,9 @@ async function runFuzzTarget(
       crashFiles: [crash.jsonPath],
       seed: config.seed,
       time: Date.now() - startedAt,
+      buildTime,
+      buildStartedAt,
+      buildFinishedAt,
       fuzzers: [],
     };
   }
@@ -199,6 +217,9 @@ async function runFuzzTarget(
     crashFiles: [],
     seed: config.seed,
     time: Date.now() - startedAt,
+    buildTime,
+    buildStartedAt,
+    buildFinishedAt,
     fuzzers: report.fuzzers,
   };
 }

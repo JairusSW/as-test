@@ -689,7 +689,10 @@ function renderTotals(
   }
 
   process.stdout.write(
-    chalk.bold("Time:".padEnd(9)) + formatTime(stats.time) + "\n",
+    chalk.bold("Time:".padEnd(9)) +
+      formatTime(stats.time) +
+      chalk.dim(` (${formatTime(event.buildTime)} build)`) +
+      "\n",
   );
 }
 
@@ -726,7 +729,10 @@ function renderStandaloneFuzzTotals(event: FuzzCompleteEvent): void {
   renderSummaryLine("Suites:", event.suiteSummary, layout);
   renderSummaryLine("Modes:", event.modeSummary, layout);
   process.stdout.write(
-    chalk.bold("Time:".padEnd(9)) + formatTime(event.time) + "\n",
+    chalk.bold("Time:".padEnd(9)) +
+      formatTime(event.time) +
+      chalk.dim(` (${formatTime(event.buildTime)} build)`) +
+      "\n",
   );
 }
 

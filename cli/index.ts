@@ -28,6 +28,7 @@ import { spawnSync } from "child_process";
 import { glob } from "glob";
 import { createInterface } from "readline";
 import { existsSync } from "fs";
+import { availableParallelism, cpus } from "os";
 import {
   CoverageSummary,
   FuzzCompleteEvent,
@@ -243,9 +244,15 @@ function info(): void {
   );
   console.log(
     "   " +
+      chalk.bold.blue("--parallel") +
+      "                     " +
+      "Run files through an ordered worker pool using an automatic worker count",
+  );
+  console.log(
+    "   " +
       chalk.bold.blue("--jobs <n>") +
       "                     " +
-      "Run files through an ordered worker pool",
+      "Run files through an ordered worker pool with an explicit worker count",
   );
   console.log(
     "   " +
@@ -419,6 +426,9 @@ function printCommandHelp(command: string): void {
       "  --browser <name|path>    Use chrome, chromium, firefox, webkit, or an executable path for web modes\n",
     );
     process.stdout.write(
+      "  --parallel              Run files through an ordered worker pool using an automatic worker count\n",
+    );
+    process.stdout.write(
       "  --jobs <n>               Run files through an ordered worker pool\n",
     );
     process.stdout.write(
@@ -485,6 +495,9 @@ function printCommandHelp(command: string): void {
       "  --browser <name|path>    Use chrome, chromium, firefox, webkit, or an executable path for web modes\n",
     );
     process.stdout.write(
+      "  --parallel              Run files through an ordered worker pool using an automatic worker count\n",
+    );
+    process.stdout.write(
       "  --jobs <n>               Run files through an ordered worker pool\n",
     );
     process.stdout.write(
@@ -519,6 +532,9 @@ function printCommandHelp(command: string): void {
     );
     process.stdout.write(
       "  --fuzz-seed <n>          Override fuzz seed for this run\n",
+    );
+    process.stdout.write(
+      "  --parallel              Run files through an ordered worker pool using an automatic worker count\n",
     );
     process.stdout.write(
       "  --jobs <n>               Run files through an ordered worker pool\n",
@@ -705,6 +721,7 @@ function resolveCommandArgs(rawArgs: string[], command: string): string[] {
     if (
       arg == "--runs" ||
       arg == "--seed" ||
+      arg == "--parallel" ||
       arg == "--jobs" ||
       arg == "--build-jobs" ||
       arg == "--run-jobs" ||
@@ -913,10 +930,15 @@ function resolveJobs(
   command: "run" | "test" | "fuzz",
 ): number {
   let seenCommand = false;
+  let parallel = false;
   for (let i = 0; i < rawArgs.length; i++) {
     const arg = rawArgs[i]!;
     if (!seenCommand) {
       if (arg == command) seenCommand = true;
+      continue;
+    }
+    if (arg == "--parallel") {
+      parallel = true;
       continue;
     }
     const parsed = parseNumberFlag(rawArgs, i, "--jobs");
@@ -926,7 +948,7 @@ function resolveJobs(
     }
     return parsed.number;
   }
-  return 1;
+  return parallel ? 0 : 1;
 }
 
 function resolveParallelJobs(
@@ -1004,6 +1026,42 @@ function resolveFuzzParallelJobs(rawArgs: string[]): {
   }
   const jobs = Math.max(baseJobs, buildJobs, runJobs);
   return { jobs, buildJobs, runJobs };
+}
+
+function resolveEffectiveParallelJobs(
+  settings: { jobs: number; buildJobs: number; runJobs: number },
+  totalFiles: number,
+): {
+  jobs: number;
+  buildJobs: number;
+  runJobs: number;
+} {
+  if (settings.jobs > 0) {
+    return {
+      jobs: Math.max(settings.jobs, settings.buildJobs, settings.runJobs),
+      buildJobs: settings.buildJobs > 0 ? settings.buildJobs : settings.jobs,
+      runJobs: settings.runJobs > 0 ? settings.runJobs : settings.jobs,
+    };
+  }
+  const autoJobs = resolveAutoJobs(totalFiles);
+  return {
+    jobs: Math.max(autoJobs, settings.buildJobs, settings.runJobs),
+    buildJobs: settings.buildJobs > 0 ? settings.buildJobs : autoJobs,
+    runJobs: settings.runJobs > 0 ? settings.runJobs : autoJobs,
+  };
+}
+
+function resolveAutoJobs(totalFiles: number): number {
+  const cpuCount =
+    typeof availableParallelism == "function"
+      ? availableParallelism()
+      : cpus().length;
+  const cpuBudget = Math.max(1, cpuCount - 1);
+  if (totalFiles <= 1) return 1;
+  if (totalFiles <= 4) return Math.min(2, cpuBudget, totalFiles);
+  if (totalFiles <= 12) return Math.min(3, cpuBudget);
+  if (totalFiles <= 32) return Math.min(4, cpuBudget);
+  return Math.min(Math.max(4, Math.ceil(totalFiles / 12)), cpuBudget);
 }
 
 type BufferedStream = NodeJS.WritableStream & {
@@ -1226,6 +1284,7 @@ async function runTestSequential(
 ): Promise<{
   failed: boolean;
   summary: {
+    buildTime: number;
     snapshotSummary: {
       matched: number;
       created: number;
@@ -1261,9 +1320,12 @@ async function runTestSequential(
 
   const results: RunResult[] = [];
   let failed = false;
+  const buildIntervals: Array<{ start: number; end: number }> = [];
   const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
   for (const file of files) {
+    const buildStartedAt = Date.now();
     await build(configPath, [file], modeName, buildFeatureToggles);
+    buildIntervals.push({ start: buildStartedAt, end: Date.now() });
     const buildInvocation = await getBuildInvocationPreview(
       configPath,
       file,
@@ -1294,6 +1356,7 @@ async function runTestSequential(
       clean: runFlags.clean,
       snapshotEnabled,
       showCoverage: runFlags.showCoverage,
+      buildTime: getMergedIntervalDuration(buildIntervals),
       snapshotSummary: summary.snapshotSummary,
       coverageSummary: summary.coverageSummary,
       stats: summary.stats,
@@ -1309,6 +1372,7 @@ async function runTestSequential(
   return {
     failed,
     summary: {
+      buildTime: getMergedIntervalDuration(buildIntervals),
       snapshotSummary: summary.snapshotSummary,
       coverageSummary: summary.coverageSummary,
       stats: summary.stats,
@@ -1349,10 +1413,14 @@ async function runRuntimeModes(
   await ensureWebBrowsersReady(configPath, modes, runFlags.browser);
   const modeSummaryTotal = Math.max(modes.length, 1);
   const fileSummaryTotal = await resolveConfiguredFileTotal(configPath);
-  if (runFlags.jobs > 1) {
+  const effectiveRunFlags = {
+    ...runFlags,
+    ...resolveEffectiveParallelJobs(runFlags, fileSummaryTotal),
+  };
+  if (effectiveRunFlags.jobs > 1) {
     if (modes.length > 1) {
       const failed = await runRuntimeMatrixParallel(
-        runFlags,
+        effectiveRunFlags,
         configPath,
         selectors,
         modes,
@@ -1365,7 +1433,7 @@ async function runRuntimeModes(
     let failed = false;
     for (const modeName of modes) {
       const result = await runRuntimeSingleParallel(
-        runFlags,
+        effectiveRunFlags,
         configPath,
         selectors,
         modeName,
@@ -1379,7 +1447,7 @@ async function runRuntimeModes(
   }
   if (modes.length > 1) {
     const failed = await runRuntimeMatrix(
-      runFlags,
+      effectiveRunFlags,
       configPath,
       selectors,
       modes,
@@ -1398,7 +1466,7 @@ async function runRuntimeModes(
     {},
   );
   for (const modeName of modes) {
-    const result = await run(runFlags, configPath, selectors, false, {
+    const result = await run(effectiveRunFlags, configPath, selectors, false, {
       modeName,
       modeSummaryTotal,
       modeSummaryExecuted: 1,
@@ -1460,6 +1528,7 @@ async function runRuntimeMatrix(
     passed: false,
   }));
   const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
+  const buildIntervals: Array<{ start: number; end: number }> = [];
 
   for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
     const file = files[fileIndex]!;
@@ -1539,6 +1608,7 @@ async function runRuntimeMatrix(
     clean: runFlags.clean,
     snapshotEnabled,
     showCoverage: runFlags.showCoverage,
+    buildTime: 0,
     snapshotSummary: summary.snapshotSummary,
     coverageSummary: summary.coverageSummary,
     stats: summary.stats,
@@ -1575,10 +1645,14 @@ async function runTestModes(
     configPath,
     selectors,
   );
-  if (runFlags.jobs > 1) {
+  const effectiveRunFlags = {
+    ...runFlags,
+    ...resolveEffectiveParallelJobs(runFlags, fileSummaryTotal),
+  };
+  if (effectiveRunFlags.jobs > 1) {
     if (modes.length > 1) {
       const failed = await runTestMatrixParallel(
-        runFlags,
+        effectiveRunFlags,
         configPath,
         selectors,
         modes,
@@ -1594,7 +1668,7 @@ async function runTestModes(
     let failed = false;
     for (const modeName of modes) {
       const modeFailed = await runTestSingleParallel(
-        runFlags,
+        effectiveRunFlags,
         configPath,
         selectors,
         buildFeatureToggles,
@@ -1611,7 +1685,7 @@ async function runTestModes(
   }
   if (modes.length > 1) {
     const failed = await runTestMatrix(
-      runFlags,
+      effectiveRunFlags,
       configPath,
       selectors,
       modes,
@@ -1633,7 +1707,7 @@ async function runTestModes(
       modeName,
     );
     const modeResult = await runTestSequential(
-      runFlags,
+      effectiveRunFlags,
       configPath,
       selectors,
       buildFeatureToggles,
@@ -1659,8 +1733,11 @@ async function runTestModes(
       if (fuzzResults.some(hasFuzzFailures)) failed = true;
       reporterSession.reporter.onRunComplete?.({
         clean: runFlags.clean,
-        snapshotEnabled: runFlags.snapshot !== false,
-        showCoverage: runFlags.showCoverage,
+        snapshotEnabled: effectiveRunFlags.snapshot !== false,
+        showCoverage: effectiveRunFlags.showCoverage,
+        buildTime:
+          modeResult.summary.buildTime +
+          getMergedIntervalDuration(collectFuzzBuildIntervals(fuzzResults)),
         snapshotSummary: modeResult.summary.snapshotSummary,
         coverageSummary: modeResult.summary.coverageSummary,
         stats: modeResult.summary.stats,
@@ -1737,6 +1814,7 @@ async function runTestMatrix(
     passed: false,
   }));
   const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
+  const buildIntervals: Array<{ start: number; end: number }> = [];
 
   for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
     const file = files[fileIndex]!;
@@ -1749,7 +1827,9 @@ async function runTestMatrix(
     for (let i = 0; i < modes.length; i++) {
       const modeName = modes[i];
       try {
+        const buildStartedAt = Date.now();
         await build(configPath, [file], modeName, buildFeatureToggles);
+        buildIntervals.push({ start: buildStartedAt, end: Date.now() });
         const buildInvocation = await getBuildInvocationPreview(
           configPath,
           file,
@@ -1834,11 +1914,13 @@ async function runTestMatrix(
     );
     if (fuzzResults.some(hasFuzzFailures)) failed = true;
     fuzzSummary = summarizeFuzzExecutions(fuzzResults);
+    buildIntervals.push(...collectFuzzBuildIntervals(fuzzResults));
   }
   reporter.onRunComplete?.({
     clean: runFlags.clean,
     snapshotEnabled,
     showCoverage: runFlags.showCoverage,
+    buildTime: getMergedIntervalDuration(buildIntervals),
     snapshotSummary: summary.snapshotSummary,
     coverageSummary: summary.coverageSummary,
     stats: summary.stats,
@@ -1857,8 +1939,13 @@ async function runFuzzModes(
   rawArgs: string[],
 ): Promise<void> {
   const overrides = resolveFuzzOverrides(rawArgs, "fuzz");
-  const { jobs, buildJobs, runJobs } = resolveFuzzParallelJobs(rawArgs);
+  const parallelSettings = resolveFuzzParallelJobs(rawArgs);
   const clean = rawArgs.includes("--clean");
+  const fuzzFiles = await resolveSelectedFuzzFiles(configPath, selectors);
+  const { jobs, buildJobs, runJobs } = resolveEffectiveParallelJobs(
+    parallelSettings,
+    fuzzFiles.length,
+  );
   if (jobs > 1) {
     const results = await runFuzzMatrixResultsParallel(
       configPath,
@@ -1970,6 +2057,7 @@ async function runRuntimeSingleParallel(
     clean: runFlags.clean,
     snapshotEnabled,
     showCoverage: runFlags.showCoverage,
+    buildTime: 0,
     snapshotSummary: summary.snapshotSummary,
     coverageSummary: summary.coverageSummary,
     stats: summary.stats,
@@ -2033,6 +2121,7 @@ async function runRuntimeMatrixParallel(
     runFlags.runJobs,
   );
   const buildPool = new BuildWorkerPool(runFlags.buildJobs);
+  const buildIntervals: Array<{ start: number; end: number }> = [];
   try {
     await runOrderedPool(files, poolWidth, async (file, fileIndex) => {
       const fileName = path.basename(file);
@@ -2041,11 +2130,13 @@ async function runRuntimeMatrixParallel(
       const modeTimes = modes.map(() => "...");
       for (let i = 0; i < modes.length; i++) {
         const modeName = modes[i];
+        const buildStartedAt = Date.now();
         await buildPool.buildFileMode({
           configPath,
           file,
           modeName,
         });
+        buildIntervals.push({ start: buildStartedAt, end: Date.now() });
         const buildInvocation = await getBuildInvocationPreview(
           configPath,
           file,
@@ -2110,6 +2201,7 @@ async function runRuntimeMatrixParallel(
     clean: runFlags.clean,
     snapshotEnabled,
     showCoverage: runFlags.showCoverage,
+    buildTime: getMergedIntervalDuration(buildIntervals),
     snapshotSummary: summary.snapshotSummary,
     coverageSummary: summary.coverageSummary,
     stats: summary.stats,
@@ -2169,17 +2261,20 @@ async function runTestSingleParallel(
     runFlags.buildJobs,
     runFlags.runJobs,
   );
+  const buildIntervals: Array<{ start: number; end: number }> = [];
   if (files.length) {
     const buildPool = new BuildWorkerPool(runFlags.buildJobs);
     try {
       await runOrderedPool(files, poolWidth, async (file, index) => {
         const token = renderQueuedFileStart(queueDisplay, path.basename(file));
+        const buildStartedAt = Date.now();
         await buildPool.buildFileMode({
           configPath,
           file,
           modeName,
           featureToggles: buildFeatureToggles,
         });
+        buildIntervals.push({ start: buildStartedAt, end: Date.now() });
         const buildInvocation = await getBuildInvocationPreview(
           configPath,
           file,
@@ -2245,11 +2340,13 @@ async function runTestSingleParallel(
     );
     if (fuzzResults.some(hasFuzzFailures)) failed = true;
     fuzzSummary = summarizeFuzzExecutions(fuzzResults);
+    buildIntervals.push(...collectFuzzBuildIntervals(fuzzResults));
   }
   reporter.onRunComplete?.({
     clean: runFlags.clean,
     snapshotEnabled,
     showCoverage: runFlags.showCoverage,
+    buildTime: getMergedIntervalDuration(buildIntervals),
     snapshotSummary: summary.snapshotSummary,
     coverageSummary: summary.coverageSummary,
     stats: summary.stats,
@@ -2323,6 +2420,7 @@ async function runTestMatrixParallel(
     runFlags.runJobs,
   );
   const buildPool = new BuildWorkerPool(runFlags.buildJobs);
+  const buildIntervals: Array<{ start: number; end: number }> = [];
   try {
     await runOrderedPool(files, poolWidth, async (file, fileIndex) => {
       const fileName = path.basename(file);
@@ -2331,12 +2429,14 @@ async function runTestMatrixParallel(
       const modeTimes = modes.map(() => "...");
       for (let i = 0; i < modes.length; i++) {
         const modeName = modes[i];
+        const buildStartedAt = Date.now();
         await buildPool.buildFileMode({
           configPath,
           file,
           modeName,
           featureToggles: buildFeatureToggles,
         });
+        buildIntervals.push({ start: buildStartedAt, end: Date.now() });
         const buildInvocation = await getBuildInvocationPreview(
           configPath,
           file,
@@ -2421,11 +2521,13 @@ async function runTestMatrixParallel(
     );
     if (fuzzResults.some(hasFuzzFailures)) failed = true;
     fuzzSummary = summarizeFuzzExecutions(fuzzResults);
+    buildIntervals.push(...collectFuzzBuildIntervals(fuzzResults));
   }
   reporter.onRunComplete?.({
     clean: runFlags.clean,
     snapshotEnabled,
     showCoverage: runFlags.showCoverage,
+    buildTime: getMergedIntervalDuration(buildIntervals),
     snapshotSummary: summary.snapshotSummary,
     coverageSummary: summary.coverageSummary,
     stats: summary.stats,
@@ -2511,10 +2613,47 @@ function buildFuzzCompleteEvent(
   return {
     results,
     time: results.reduce((sum, item) => sum + item.time, 0),
+    buildTime: getMergedIntervalDuration(collectFuzzBuildIntervals(results)),
     fuzzingSummary: summarizeFuzzExecutions(results),
     suiteSummary: summarizeFuzzSuites(results),
     modeSummary: summarizeFuzzModes(results, modes),
   };
+}
+
+function collectFuzzBuildIntervals(
+  results: FuzzResult[],
+): Array<{ start: number; end: number }> {
+  return results.map((result) => ({
+    start: result.buildStartedAt,
+    end: result.buildFinishedAt,
+  }));
+}
+
+function getMergedIntervalDuration(
+  intervals: Array<{ start: number; end: number }>,
+): number {
+  if (!intervals.length) return 0;
+  const sorted = intervals
+    .map((interval) => ({
+      start: Math.min(interval.start, interval.end),
+      end: Math.max(interval.start, interval.end),
+    }))
+    .sort((a, b) => a.start - b.start);
+  let total = 0;
+  let currentStart = sorted[0]!.start;
+  let currentEnd = sorted[0]!.end;
+  for (let i = 1; i < sorted.length; i++) {
+    const interval = sorted[i]!;
+    if (interval.start <= currentEnd) {
+      currentEnd = Math.max(currentEnd, interval.end);
+      continue;
+    }
+    total += currentEnd - currentStart;
+    currentStart = interval.start;
+    currentEnd = interval.end;
+  }
+  total += currentEnd - currentStart;
+  return total;
 }
 
 function summarizeFuzzExecutions(results: FuzzResult[]): {
