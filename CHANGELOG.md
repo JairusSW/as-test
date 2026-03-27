@@ -1,6 +1,6 @@
 # Change Log
 
-## Unreleased
+## 2026-03-27 - 1.0.3
 
 ### Parallel Execution
 
