@@ -186,7 +186,17 @@ class DefaultReporter implements TestReporter {
       this.renderVerboseState();
       return;
     }
-    if (this.verboseMode || !this.canRewriteLine()) {
+    if (!this.verboseMode) {
+      if (!this.canRewriteLine()) {
+        this.context.stdout.write(`${this.badgeRunning()} ${event.file}\n`);
+        return;
+      }
+      this.clearRenderedBlock();
+      this.context.stdout.write(`${this.badgeRunning()} ${event.file}`);
+      this.renderedLines = 1;
+      return;
+    }
+    if (!this.canRewriteLine()) {
       this.context.stdout.write(`${this.badgeRunning()} ${event.file}\n`);
       return;
     }
@@ -217,6 +227,7 @@ class DefaultReporter implements TestReporter {
 
   onSuiteStart(event: ProgressEvent): void {
     if (this.cleanMode) return;
+    if (!this.verboseMode) return;
     const depth = Math.max(event.depth, 0);
     if (this.verboseMode && this.canRewriteLine()) {
       if (this.currentFile !== event.file) return;
@@ -242,6 +253,7 @@ class DefaultReporter implements TestReporter {
 
   onSuiteEnd(event: ProgressEvent): void {
     if (this.cleanMode) return;
+    if (!this.verboseMode) return;
     const depth = Math.max(event.depth, 0);
     const verdict = String(event.verdict ?? "none");
     if (this.verboseMode && this.canRewriteLine()) {
@@ -320,10 +332,7 @@ class DefaultReporter implements TestReporter {
       renderFailedSuites(event.stats.failedEntries);
     }
     if (event.snapshotEnabled) {
-      renderSnapshotSummary(
-        event.snapshotSummary,
-        this.hasRenderedTestFiles || this.hasRenderedFuzzFiles,
-      );
+      renderSnapshotSummary(event.snapshotSummary, true);
     }
     if (event.coverageSummary.enabled) {
       renderCoverageSummary(event.coverageSummary);

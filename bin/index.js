@@ -15,6 +15,7 @@ import { spawnSync } from "child_process";
 import { glob } from "glob";
 import { createInterface } from "readline";
 import { existsSync } from "fs";
+import { BuildWorkerPool } from "./build-worker-pool.js";
 const _args = process.argv.slice(2);
 const flags = [];
 const args = [];
@@ -61,6 +62,7 @@ else if (COMMANDS.includes(args[0])) {
                 resolveCommandArgs,
                 resolveListFlags,
                 resolveFeatureToggles,
+                resolveParallelJobs,
                 resolveBrowserOverride,
                 resolveExecutionModes,
                 listExecutionPlan,
@@ -75,6 +77,7 @@ else if (COMMANDS.includes(args[0])) {
                 resolveCommandArgs,
                 resolveListFlags,
                 resolveFeatureToggles,
+                resolveParallelJobs,
                 resolveBrowserOverride,
                 resolveFuzzOverrides,
                 resolveExecutionModes,
@@ -89,6 +92,7 @@ else if (COMMANDS.includes(args[0])) {
             executeFuzzCommand(_args, configPath, selectedModes, {
                 resolveCommandArgs,
                 resolveListFlags,
+                resolveJobs,
                 resolveExecutionModes,
                 listExecutionPlan,
                 runFuzzModes,
@@ -188,6 +192,18 @@ function info() {
         chalk.bold.blue("--browser <name|path>") +
         "        " +
         "Use chrome, chromium, firefox, webkit, or an executable path for web modes");
+    console.log("   " +
+        chalk.bold.blue("--jobs <n>") +
+        "                     " +
+        "Run files through an ordered worker pool");
+    console.log("   " +
+        chalk.bold.blue("--build-jobs <n>") +
+        "               " +
+        "Limit concurrent build tasks (defaults to --jobs)");
+    console.log("   " +
+        chalk.bold.blue("--run-jobs <n>") +
+        "                 " +
+        "Limit concurrent run tasks (defaults to --jobs)");
     console.log("   " +
         chalk.bold.blue("--config <path>") +
         "               " +
@@ -289,6 +305,9 @@ function printCommandHelp(command) {
         process.stdout.write("  --config <path>          Use a specific config file\n");
         process.stdout.write("  --mode <name[,name...]>  Run one or multiple named config modes\n");
         process.stdout.write("  --browser <name|path>    Use chrome, chromium, firefox, webkit, or an executable path for web modes\n");
+        process.stdout.write("  --jobs <n>               Run files through an ordered worker pool\n");
+        process.stdout.write("  --build-jobs <n>         Limit concurrent build tasks (defaults to --jobs)\n");
+        process.stdout.write("  --run-jobs <n>           Limit concurrent run tasks (defaults to --jobs)\n");
         process.stdout.write("  --create-snapshots       Create missing snapshot entries\n");
         process.stdout.write("  --overwrite-snapshots    Overwrite existing snapshot entries on mismatch\n");
         process.stdout.write("  --no-snapshot            Disable snapshot assertions for this run\n");
@@ -311,6 +330,9 @@ function printCommandHelp(command) {
         process.stdout.write("  --config <path>          Use a specific config file\n");
         process.stdout.write("  --mode <name[,name...]>  Run one or multiple named config modes\n");
         process.stdout.write("  --browser <name|path>    Use chrome, chromium, firefox, webkit, or an executable path for web modes\n");
+        process.stdout.write("  --jobs <n>               Run files through an ordered worker pool\n");
+        process.stdout.write("  --build-jobs <n>         Limit concurrent build tasks (defaults to --jobs)\n");
+        process.stdout.write("  --run-jobs <n>           Limit concurrent run tasks (defaults to --jobs)\n");
         process.stdout.write("  --create-snapshots       Create missing snapshot entries\n");
         process.stdout.write("  --overwrite-snapshots    Overwrite existing snapshot entries on mismatch\n");
         process.stdout.write("  --no-snapshot            Disable snapshot assertions for this run\n");
@@ -320,6 +342,9 @@ function printCommandHelp(command) {
         process.stdout.write("  --fuzz                   Run fuzz targets after the normal test pass\n");
         process.stdout.write("  --fuzz-runs <n>          Override fuzz iteration count for this run\n");
         process.stdout.write("  --fuzz-seed <n>          Override fuzz seed for this run\n");
+        process.stdout.write("  --jobs <n>               Run files through an ordered worker pool\n");
+        process.stdout.write("  --build-jobs <n>         Limit concurrent build tasks (defaults to --jobs)\n");
+        process.stdout.write("  --run-jobs <n>           Limit concurrent run tasks (defaults to --jobs)\n");
         process.stdout.write("  --reporter <name|path>   Use built-in reporter (default|tap) or custom module path\n");
         process.stdout.write("  --tap                    Shortcut for --reporter tap\n");
         process.stdout.write("  --verbose                Keep expanded suite/test lines and live updates\n");
@@ -337,6 +362,9 @@ function printCommandHelp(command) {
         process.stdout.write("  --mode <name[,name...]>  Run one or multiple named config modes\n");
         process.stdout.write("  --runs <n>               Override fuzz iteration count\n");
         process.stdout.write("  --seed <n>               Override fuzz seed\n");
+        process.stdout.write("  --jobs <n>               Run files through an ordered worker pool\n");
+        process.stdout.write("  --build-jobs <n>         Limit concurrent build tasks (defaults to --jobs)\n");
+        process.stdout.write("  --run-jobs <n>           Limit concurrent run tasks (defaults to --jobs)\n");
         process.stdout.write("  --list                   Preview resolved fuzz files without running\n");
         process.stdout.write("  --list-modes             Preview configured and selected mode names\n");
         process.stdout.write("  --help, -h               Show this help\n");
@@ -432,6 +460,9 @@ function resolveCommandArgs(rawArgs, command) {
         }
         if (arg == "--runs" ||
             arg == "--seed" ||
+            arg == "--jobs" ||
+            arg == "--build-jobs" ||
+            arg == "--run-jobs" ||
             arg == "--browser" ||
             arg == "--fuzz-runs" ||
             arg == "--fuzz-seed") {
@@ -440,6 +471,9 @@ function resolveCommandArgs(rawArgs, command) {
         }
         if (arg.startsWith("--runs=") ||
             arg.startsWith("--seed=") ||
+            arg.startsWith("--jobs=") ||
+            arg.startsWith("--build-jobs=") ||
+            arg.startsWith("--run-jobs=") ||
             arg.startsWith("--browser=") ||
             arg.startsWith("--fuzz-runs=") ||
             arg.startsWith("--fuzz-seed=")) {
@@ -602,6 +636,220 @@ function resolveBrowserOverride(rawArgs, command) {
     }
     return undefined;
 }
+function resolveJobs(rawArgs, command) {
+    let seenCommand = false;
+    for (let i = 0; i < rawArgs.length; i++) {
+        const arg = rawArgs[i];
+        if (!seenCommand) {
+            if (arg == command)
+                seenCommand = true;
+            continue;
+        }
+        const parsed = parseNumberFlag(rawArgs, i, "--jobs");
+        if (!parsed)
+            continue;
+        if (parsed.number < 1) {
+            throw new Error("--jobs requires a positive integer");
+        }
+        return parsed.number;
+    }
+    return 1;
+}
+function resolveParallelJobs(rawArgs, command) {
+    const baseJobs = resolveJobs(rawArgs, command);
+    let buildJobs = baseJobs;
+    let runJobs = baseJobs;
+    let seenCommand = false;
+    for (let i = 0; i < rawArgs.length; i++) {
+        const arg = rawArgs[i];
+        if (!seenCommand) {
+            if (arg == command)
+                seenCommand = true;
+            continue;
+        }
+        const buildParsed = parseNumberFlag(rawArgs, i, "--build-jobs");
+        if (buildParsed) {
+            if (buildParsed.number < 1) {
+                throw new Error("--build-jobs requires a positive integer");
+            }
+            buildJobs = buildParsed.number;
+            continue;
+        }
+        const runParsed = parseNumberFlag(rawArgs, i, "--run-jobs");
+        if (runParsed) {
+            if (runParsed.number < 1) {
+                throw new Error("--run-jobs requires a positive integer");
+            }
+            runJobs = runParsed.number;
+            continue;
+        }
+    }
+    const jobs = Math.max(baseJobs, buildJobs, runJobs);
+    return { jobs, buildJobs, runJobs };
+}
+function resolveFuzzParallelJobs(rawArgs) {
+    const baseJobs = resolveJobs(rawArgs, "fuzz");
+    let buildJobs = baseJobs;
+    let runJobs = baseJobs;
+    let seenCommand = false;
+    for (let i = 0; i < rawArgs.length; i++) {
+        const arg = rawArgs[i];
+        if (!seenCommand) {
+            if (arg == "fuzz")
+                seenCommand = true;
+            continue;
+        }
+        const buildParsed = parseNumberFlag(rawArgs, i, "--build-jobs");
+        if (buildParsed) {
+            if (buildParsed.number < 1) {
+                throw new Error("--build-jobs requires a positive integer");
+            }
+            buildJobs = buildParsed.number;
+            continue;
+        }
+        const runParsed = parseNumberFlag(rawArgs, i, "--run-jobs");
+        if (runParsed) {
+            if (runParsed.number < 1) {
+                throw new Error("--run-jobs requires a positive integer");
+            }
+            runJobs = runParsed.number;
+            continue;
+        }
+    }
+    const jobs = Math.max(baseJobs, buildJobs, runJobs);
+    return { jobs, buildJobs, runJobs };
+}
+function createBufferedStream() {
+    const chunks = [];
+    return {
+        isTTY: false,
+        write(chunk) {
+            chunks.push(typeof chunk == "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+            return true;
+        },
+        read() {
+            return chunks.join("");
+        },
+    };
+}
+async function createBufferedReporter(configPath, modeName) {
+    const stream = createBufferedStream();
+    const session = await createRunReporter(configPath, undefined, modeName, {
+        stdout: stream,
+        stderr: stream,
+    });
+    return {
+        reporter: session.reporter,
+        reporterKind: session.reporterKind,
+        runtimeName: session.runtimeName,
+        output: () => stream.read(),
+    };
+}
+async function runOrderedPool(items, jobs, worker) {
+    const width = Math.max(1, jobs);
+    let nextIndex = 0;
+    let firstError = null;
+    async function runWorker() {
+        while (true) {
+            if (firstError != null)
+                return;
+            const index = nextIndex++;
+            if (index >= items.length)
+                return;
+            try {
+                await worker(items[index], index);
+            }
+            catch (error) {
+                if (firstError == null)
+                    firstError = error;
+                return;
+            }
+        }
+    }
+    await Promise.all(Array.from({ length: Math.min(width, items.length) }, () => runWorker()));
+    if (firstError != null)
+        throw firstError;
+}
+function createAsyncLimiter(limit) {
+    const width = Math.max(1, limit);
+    let active = 0;
+    const queue = [];
+    return async function withLimit(task) {
+        if (active >= width) {
+            await new Promise((resolve) => queue.push(resolve));
+        }
+        active++;
+        try {
+            return await task();
+        }
+        finally {
+            active--;
+            const next = queue.shift();
+            if (next)
+                next();
+        }
+    };
+}
+function canRewriteParallelQueue() {
+    return Boolean(process.stdout.isTTY);
+}
+class ParallelQueueDisplay {
+    constructor(showStartLines) {
+        this.showStartLines = showStartLines;
+        this.active = new Map();
+        this.renderedLines = 0;
+        this.enabled = showStartLines && canRewriteParallelQueue();
+    }
+    start(file) {
+        const token = Symbol(file);
+        if (!this.showStartLines)
+            return token;
+        const line = `${chalk.bgBlackBright.white(" .... ")} ${file}`;
+        if (!this.enabled)
+            return token;
+        this.clear();
+        this.active.set(token, line);
+        this.render();
+        return token;
+    }
+    complete(token, output) {
+        if (!this.showStartLines || !this.enabled) {
+            process.stdout.write(output);
+            return;
+        }
+        this.clear();
+        process.stdout.write(output);
+        this.active.delete(token);
+        this.render();
+    }
+    flush() {
+        if (!this.enabled)
+            return;
+        this.clear();
+    }
+    clear() {
+        if (!this.renderedLines)
+            return;
+        for (let i = 0; i < this.renderedLines; i++) {
+            process.stdout.write("\r\x1b[2K");
+            if (i < this.renderedLines - 1)
+                process.stdout.write("\x1b[1A");
+        }
+        this.renderedLines = 0;
+    }
+    render() {
+        if (!this.enabled)
+            return;
+        const lines = Array.from(this.active.values());
+        if (!lines.length)
+            return;
+        process.stdout.write(lines.join("\n"));
+        this.renderedLines = lines.length;
+    }
+}
+function renderQueuedFileStart(display, file) {
+    return display.start(file);
+}
 function parseIntegerFlag(flag, value) {
     const parsed = Number(value);
     if (!Number.isFinite(parsed) || parsed < 0) {
@@ -704,8 +952,23 @@ async function runBuildModes(configPath, selectors, modes, buildFeatureToggles) 
 }
 async function runRuntimeModes(runFlags, configPath, selectors, modes) {
     await ensureWebBrowsersReady(configPath, modes, runFlags.browser);
-    const modeSummaryTotal = resolveConfiguredModeTotal(configPath);
+    const modeSummaryTotal = Math.max(modes.length, 1);
     const fileSummaryTotal = await resolveConfiguredFileTotal(configPath);
+    if (runFlags.jobs > 1) {
+        if (modes.length > 1) {
+            const failed = await runRuntimeMatrixParallel(runFlags, configPath, selectors, modes, modeSummaryTotal, fileSummaryTotal);
+            process.exit(failed ? 1 : 0);
+            return;
+        }
+        let failed = false;
+        for (const modeName of modes) {
+            const result = await runRuntimeSingleParallel(runFlags, configPath, selectors, modeName, modeSummaryTotal, fileSummaryTotal);
+            if (result)
+                failed = true;
+        }
+        process.exit(failed ? 1 : 0);
+        return;
+    }
     if (modes.length > 1) {
         const failed = await runRuntimeMatrix(runFlags, configPath, selectors, modes, modeSummaryTotal, fileSummaryTotal);
         process.exit(failed ? 1 : 0);
@@ -821,8 +1084,23 @@ async function runRuntimeMatrix(runFlags, configPath, selectors, modes, modeSumm
 }
 async function runTestModes(runFlags, configPath, selectors, modes, buildFeatureToggles, fuzzEnabled, fuzzOverrides) {
     await ensureWebBrowsersReady(configPath, modes, runFlags.browser);
-    const modeSummaryTotal = resolveConfiguredModeTotal(configPath);
+    const modeSummaryTotal = Math.max(modes.length, 1);
     const fileSummaryTotal = await resolveConfiguredFileTotal(configPath, selectors);
+    if (runFlags.jobs > 1) {
+        if (modes.length > 1) {
+            const failed = await runTestMatrixParallel(runFlags, configPath, selectors, modes, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal, fuzzEnabled, fuzzOverrides);
+            process.exit(failed ? 1 : 0);
+            return;
+        }
+        let failed = false;
+        for (const modeName of modes) {
+            const modeFailed = await runTestSingleParallel(runFlags, configPath, selectors, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal, fuzzEnabled, fuzzOverrides, modeName);
+            if (modeFailed)
+                failed = true;
+        }
+        process.exit(failed ? 1 : 0);
+        return;
+    }
     if (modes.length > 1) {
         const failed = await runTestMatrix(runFlags, configPath, selectors, modes, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal, fuzzEnabled, fuzzOverrides);
         process.exit(failed ? 1 : 0);
@@ -972,11 +1250,383 @@ async function runTestMatrix(runFlags, configPath, selectors, modes, buildFeatur
 }
 async function runFuzzModes(configPath, selectors, modes, rawArgs) {
     const overrides = resolveFuzzOverrides(rawArgs, "fuzz");
+    const { jobs, buildJobs, runJobs } = resolveFuzzParallelJobs(rawArgs);
+    const clean = rawArgs.includes("--clean");
+    if (jobs > 1) {
+        const results = await runFuzzMatrixResultsParallel(configPath, selectors, modes, overrides, jobs, buildJobs, runJobs, clean);
+        const reporterSession = await createRunReporter(configPath);
+        reporterSession.reporter.onFuzzComplete?.(buildFuzzCompleteEvent(results, modes));
+        reporterSession.reporter.flush?.();
+        process.exit(results.some(hasFuzzFailures) ? 1 : 0);
+        return;
+    }
     const reporterSession = await createRunReporter(configPath);
     const results = await runFuzzMatrixResults(configPath, selectors, modes, overrides, reporterSession.reporter);
     reporterSession.reporter.onFuzzComplete?.(buildFuzzCompleteEvent(results, modes));
     reporterSession.reporter.flush?.();
     process.exit(results.some(hasFuzzFailures) ? 1 : 0);
+}
+async function runRuntimeSingleParallel(runFlags, configPath, selectors, modeName, modeSummaryTotal, fileSummaryTotal) {
+    const files = await resolveSelectedFiles(configPath, selectors);
+    if (!files.length) {
+        throw await buildNoTestFilesMatchedError(configPath, selectors);
+    }
+    const reporterSession = await createRunReporter(configPath, undefined, modeName);
+    const reporter = reporterSession.reporter;
+    const snapshotEnabled = runFlags.snapshot !== false;
+    reporter.onRunStart?.({
+        runtimeName: reporterSession.runtimeName,
+        clean: runFlags.clean,
+        verbose: runFlags.verbose,
+        snapshotEnabled,
+        createSnapshots: runFlags.createSnapshots,
+    });
+    const buildCommandsByFile = await previewBuildCommands(configPath, selectors, modeName, {});
+    const results = new Array(files.length);
+    const queueDisplay = new ParallelQueueDisplay(!runFlags.clean);
+    const runLimit = createAsyncLimiter(runFlags.runJobs);
+    const poolWidth = Math.max(runFlags.buildJobs, runFlags.runJobs);
+    await runOrderedPool(files, poolWidth, async (file, index) => {
+        const token = renderQueuedFileStart(queueDisplay, path.basename(file));
+        const buffered = await createBufferedReporter(configPath, modeName);
+        const result = await runLimit(() => run({ ...runFlags, clean: true }, configPath, [file], false, {
+            reporter: buffered.reporter,
+            reporterKind: buffered.reporterKind,
+            modeName,
+            emitRunComplete: false,
+            fileSummaryTotal: 1,
+            modeSummaryTotal,
+            modeSummaryExecuted: 1,
+            buildCommandsByFile: { [file]: buildCommandsByFile[file] ?? "" },
+        }));
+        buffered.reporter.flush?.();
+        results[index] = result;
+        queueDisplay.complete(token, buffered.output());
+    });
+    queueDisplay.flush();
+    const summary = aggregateRunResults(results);
+    summary.stats = applyConfiguredFileTotalToStats(summary.stats, fileSummaryTotal);
+    reporter.onRunComplete?.({
+        clean: runFlags.clean,
+        snapshotEnabled,
+        showCoverage: runFlags.showCoverage,
+        snapshotSummary: summary.snapshotSummary,
+        coverageSummary: summary.coverageSummary,
+        stats: summary.stats,
+        reports: summary.reports,
+        modeSummary: buildSingleModeSummary(summary.stats, summary.snapshotSummary, modeSummaryTotal),
+    });
+    reporter.flush?.();
+    return results.some((result) => result.failed);
+}
+async function runRuntimeMatrixParallel(runFlags, configPath, selectors, modes, modeSummaryTotal, fileSummaryTotal) {
+    const files = await resolveSelectedFiles(configPath, selectors);
+    if (!files.length) {
+        throw await buildNoTestFilesMatchedError(configPath, selectors);
+    }
+    const reporterSession = await createRunReporter(configPath);
+    const reporter = reporterSession.reporter;
+    const snapshotEnabled = runFlags.snapshot !== false;
+    reporter.onRunStart?.({
+        runtimeName: reporterSession.runtimeName,
+        clean: runFlags.clean,
+        verbose: runFlags.verbose,
+        snapshotEnabled,
+        createSnapshots: runFlags.createSnapshots,
+    });
+    const silentReporter = {};
+    const modeLabels = modes.map((modeName) => modeName ?? "default");
+    const showPerModeTimes = Boolean(runFlags.verbose);
+    const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
+    const ordered = new Array(files.length);
+    const queueDisplay = new ParallelQueueDisplay(!runFlags.clean);
+    const poolWidth = Math.max(runFlags.jobs, runFlags.buildJobs, runFlags.runJobs);
+    const buildPool = new BuildWorkerPool(runFlags.buildJobs);
+    try {
+        await runOrderedPool(files, poolWidth, async (file, fileIndex) => {
+            const fileName = path.basename(file);
+            const token = renderQueuedFileStart(queueDisplay, fileName);
+            const fileResults = [];
+            const modeTimes = modes.map(() => "...");
+            for (let i = 0; i < modes.length; i++) {
+                const modeName = modes[i];
+                await buildPool.buildFileMode({
+                    configPath,
+                    file,
+                    modeName,
+                });
+                const buildInvocation = await getBuildInvocationPreview(configPath, file, modeName, {});
+                const artifactKey = resolvePerFileArtifactKey(file, duplicateSpecBasenames);
+                const result = await run(runFlags, configPath, [file], false, {
+                    reporter: silentReporter,
+                    reporterKind: "default",
+                    emitRunStart: false,
+                    emitRunComplete: false,
+                    logFileName: `run.${artifactKey}.log.json`,
+                    coverageFileName: `coverage.${artifactKey}.log.json`,
+                    buildCommand: formatBuildInvocation(buildInvocation),
+                    modeName,
+                });
+                modeTimes[i] = formatMatrixModeTime(result.stats.time);
+                fileResults.push(result);
+            }
+            ordered[fileIndex] = { fileName, fileResults, modeTimes };
+            queueDisplay.complete(token, formatMatrixFileResultLine(fileName, modeLabels, fileResults, modeTimes, showPerModeTimes) + "\n");
+        });
+    }
+    finally {
+        await buildPool.close();
+    }
+    queueDisplay.flush();
+    const allResults = [];
+    const modeState = modes.map(() => ({ failed: false, passed: false }));
+    const fileState = files.map(() => ({ failed: false, passed: false }));
+    for (let fileIndex = 0; fileIndex < ordered.length; fileIndex++) {
+        const fileResults = ordered[fileIndex].fileResults;
+        for (let i = 0; i < fileResults.length; i++) {
+            const result = fileResults[i];
+            allResults.push(result);
+            if (result.failed)
+                modeState[i].failed = true;
+            else if (result.stats.passedFiles > 0)
+                modeState[i].passed = true;
+        }
+        const verdict = resolveMatrixVerdict(fileResults);
+        if (verdict == "fail")
+            fileState[fileIndex].failed = true;
+        else if (verdict == "ok")
+            fileState[fileIndex].passed = true;
+    }
+    const summary = aggregateRunResults(allResults);
+    summary.stats = applyMatrixFileSummaryToStats(summary.stats, fileState, fileSummaryTotal);
+    reporter.onRunComplete?.({
+        clean: runFlags.clean,
+        snapshotEnabled,
+        showCoverage: runFlags.showCoverage,
+        snapshotSummary: summary.snapshotSummary,
+        coverageSummary: summary.coverageSummary,
+        stats: summary.stats,
+        reports: summary.reports,
+        modeSummary: buildModeSummary(modeState, modeSummaryTotal),
+    });
+    reporter.flush?.();
+    return allResults.some((result) => result.failed);
+}
+async function runTestSingleParallel(runFlags, configPath, selectors, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal, fuzzEnabled, fuzzOverrides, modeName) {
+    const files = await resolveSelectedFiles(configPath, selectors);
+    if (!files.length && !fuzzEnabled) {
+        throw await buildNoTestFilesMatchedError(configPath, selectors);
+    }
+    const reporterSession = await createRunReporter(configPath, undefined, modeName);
+    const reporter = reporterSession.reporter;
+    const snapshotEnabled = runFlags.snapshot !== false;
+    reporter.onRunStart?.({
+        runtimeName: reporterSession.runtimeName,
+        clean: runFlags.clean,
+        verbose: runFlags.verbose,
+        snapshotEnabled,
+        createSnapshots: runFlags.createSnapshots,
+    });
+    const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
+    const results = new Array(files.length);
+    const queueDisplay = new ParallelQueueDisplay(!runFlags.clean);
+    const poolWidth = Math.max(runFlags.jobs, runFlags.buildJobs, runFlags.runJobs);
+    if (files.length) {
+        const buildPool = new BuildWorkerPool(runFlags.buildJobs);
+        try {
+            await runOrderedPool(files, poolWidth, async (file, index) => {
+                const token = renderQueuedFileStart(queueDisplay, path.basename(file));
+                await buildPool.buildFileMode({
+                    configPath,
+                    file,
+                    modeName,
+                    featureToggles: buildFeatureToggles,
+                });
+                const buildInvocation = await getBuildInvocationPreview(configPath, file, modeName, buildFeatureToggles);
+                const artifactKey = resolvePerFileArtifactKey(file, duplicateSpecBasenames);
+                const buffered = await createBufferedReporter(configPath, modeName);
+                const result = await run({ ...runFlags, clean: true }, configPath, [file], false, {
+                    reporter: buffered.reporter,
+                    reporterKind: buffered.reporterKind,
+                    emitRunComplete: false,
+                    logFileName: `test.${artifactKey}.log.json`,
+                    coverageFileName: `coverage.${artifactKey}.log.json`,
+                    buildCommand: formatBuildInvocation(buildInvocation),
+                    modeName,
+                });
+                buffered.reporter.flush?.();
+                results[index] = result;
+                queueDisplay.complete(token, buffered.output());
+            });
+        }
+        finally {
+            await buildPool.close();
+        }
+    }
+    queueDisplay.flush();
+    const runResults = results.filter(Boolean);
+    const summary = aggregateRunResults(runResults);
+    summary.stats = applyConfiguredFileTotalToStats(summary.stats, fileSummaryTotal);
+    let failed = runResults.some((result) => result.failed);
+    let fuzzSummary;
+    if (fuzzEnabled) {
+        if (reporterSession.reporterKind == "default") {
+            process.stdout.write("\n");
+        }
+        const fuzzResults = await runFuzzMatrixResultsParallel(configPath, selectors, [modeName], fuzzOverrides, runFlags.jobs, runFlags.buildJobs, runFlags.runJobs, runFlags.clean);
+        if (fuzzResults.some(hasFuzzFailures))
+            failed = true;
+        fuzzSummary = summarizeFuzzExecutions(fuzzResults);
+    }
+    reporter.onRunComplete?.({
+        clean: runFlags.clean,
+        snapshotEnabled,
+        showCoverage: runFlags.showCoverage,
+        snapshotSummary: summary.snapshotSummary,
+        coverageSummary: summary.coverageSummary,
+        stats: summary.stats,
+        reports: summary.reports,
+        fuzzSummary,
+        modeSummary: buildSingleModeSummary(summary.stats, summary.snapshotSummary, modeSummaryTotal),
+    });
+    reporter.flush?.();
+    return failed;
+}
+async function runTestMatrixParallel(runFlags, configPath, selectors, modes, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal, fuzzEnabled, fuzzOverrides) {
+    const files = await resolveSelectedFiles(configPath, selectors);
+    if (!files.length) {
+        if (!fuzzEnabled) {
+            throw await buildNoTestFilesMatchedError(configPath, selectors);
+        }
+        const fuzzFiles = await resolveSelectedFuzzFiles(configPath, selectors);
+        if (!fuzzFiles.length) {
+            throw await buildNoTestFilesMatchedError(configPath, selectors, true);
+        }
+    }
+    const reporterSession = await createRunReporter(configPath);
+    const reporter = reporterSession.reporter;
+    const snapshotEnabled = runFlags.snapshot !== false;
+    reporter.onRunStart?.({
+        runtimeName: reporterSession.runtimeName,
+        clean: runFlags.clean,
+        verbose: runFlags.verbose,
+        snapshotEnabled,
+        createSnapshots: runFlags.createSnapshots,
+    });
+    const silentReporter = {};
+    const modeLabels = modes.map((modeName) => modeName ?? "default");
+    const showPerModeTimes = Boolean(runFlags.verbose);
+    const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
+    const ordered = new Array(files.length);
+    const queueDisplay = new ParallelQueueDisplay(!runFlags.clean);
+    const poolWidth = Math.max(runFlags.jobs, runFlags.buildJobs, runFlags.runJobs);
+    const buildPool = new BuildWorkerPool(runFlags.buildJobs);
+    try {
+        await runOrderedPool(files, poolWidth, async (file, fileIndex) => {
+            const fileName = path.basename(file);
+            const token = renderQueuedFileStart(queueDisplay, fileName);
+            const fileResults = [];
+            const modeTimes = modes.map(() => "...");
+            for (let i = 0; i < modes.length; i++) {
+                const modeName = modes[i];
+                await buildPool.buildFileMode({
+                    configPath,
+                    file,
+                    modeName,
+                    featureToggles: buildFeatureToggles,
+                });
+                const buildInvocation = await getBuildInvocationPreview(configPath, file, modeName, buildFeatureToggles);
+                const artifactKey = resolvePerFileArtifactKey(file, duplicateSpecBasenames);
+                const result = await run(runFlags, configPath, [file], false, {
+                    reporter: silentReporter,
+                    reporterKind: "default",
+                    emitRunStart: false,
+                    emitRunComplete: false,
+                    logFileName: `test.${artifactKey}.log.json`,
+                    coverageFileName: `coverage.${artifactKey}.log.json`,
+                    buildCommand: formatBuildInvocation(buildInvocation),
+                    modeName,
+                });
+                modeTimes[i] = formatMatrixModeTime(result.stats.time);
+                fileResults.push(result);
+            }
+            ordered[fileIndex] = { fileName, fileResults, modeTimes };
+            queueDisplay.complete(token, formatMatrixFileResultLine(fileName, modeLabels, fileResults, modeTimes, showPerModeTimes) + "\n");
+        });
+    }
+    finally {
+        await buildPool.close();
+    }
+    queueDisplay.flush();
+    const allResults = [];
+    const modeState = modes.map(() => ({ failed: false, passed: false }));
+    const fileState = files.map(() => ({ failed: false, passed: false }));
+    for (let fileIndex = 0; fileIndex < ordered.length; fileIndex++) {
+        const entry = ordered[fileIndex];
+        for (let i = 0; i < entry.fileResults.length; i++) {
+            const result = entry.fileResults[i];
+            allResults.push(result);
+            if (result.failed)
+                modeState[i].failed = true;
+            else if (result.stats.passedFiles > 0)
+                modeState[i].passed = true;
+        }
+        const verdict = resolveMatrixVerdict(entry.fileResults);
+        if (verdict == "fail")
+            fileState[fileIndex].failed = true;
+        else if (verdict == "ok")
+            fileState[fileIndex].passed = true;
+    }
+    const summary = aggregateRunResults(allResults);
+    summary.stats = applyMatrixFileSummaryToStats(summary.stats, fileState, fileSummaryTotal);
+    let failed = allResults.some((result) => result.failed);
+    let fuzzSummary;
+    if (fuzzEnabled) {
+        if (reporterSession.reporterKind == "default") {
+            process.stdout.write("\n");
+        }
+        const fuzzResults = await runFuzzMatrixResultsParallel(configPath, selectors, modes, fuzzOverrides, runFlags.jobs, runFlags.buildJobs, runFlags.runJobs, runFlags.clean);
+        if (fuzzResults.some(hasFuzzFailures))
+            failed = true;
+        fuzzSummary = summarizeFuzzExecutions(fuzzResults);
+    }
+    reporter.onRunComplete?.({
+        clean: runFlags.clean,
+        snapshotEnabled,
+        showCoverage: runFlags.showCoverage,
+        snapshotSummary: summary.snapshotSummary,
+        coverageSummary: summary.coverageSummary,
+        stats: summary.stats,
+        reports: summary.reports,
+        fuzzSummary,
+        modeSummary: buildModeSummary(modeState, modeSummaryTotal),
+    });
+    reporter.flush?.();
+    return failed;
+}
+async function runFuzzMatrixResultsParallel(configPath, selectors, modes, overrides, jobs, buildJobs, runJobs, clean) {
+    const files = await resolveSelectedFuzzFiles(configPath, selectors);
+    if (!files.length) {
+        throw new Error(`No fuzz files matched: ${selectors.length ? selectors.join(", ") : "configured input patterns"}`);
+    }
+    const ordered = new Array(files.length);
+    const queueDisplay = new ParallelQueueDisplay(!clean);
+    const poolWidth = Math.max(jobs, buildJobs, runJobs);
+    await runOrderedPool(files, poolWidth, async (file, index) => {
+        const token = renderQueuedFileStart(queueDisplay, path.basename(file));
+        const fileResults = [];
+        for (const modeName of modes) {
+            const modeResults = await fuzz(configPath, [file], modeName, overrides);
+            fileResults.push(...modeResults);
+        }
+        ordered[index] = fileResults;
+        const buffered = await createBufferedReporter(configPath);
+        buffered.reporter.onFuzzFileComplete?.({ file, results: fileResults });
+        buffered.reporter.flush?.();
+        queueDisplay.complete(token, buffered.output());
+    });
+    queueDisplay.flush();
+    return ordered.flat();
 }
 async function runFuzzMatrixResults(configPath, selectors, modes, overrides, reporter) {
     const files = await resolveSelectedFuzzFiles(configPath, selectors);
@@ -1059,6 +1709,12 @@ function isSkippedFuzzResult(result) {
         result.fuzzers.every((fuzzer) => fuzzer.skipped > 0));
 }
 function renderMatrixFileResult(file, modes, results, modeTimes, liveMatrix, showPerModeTimes) {
+    const line = formatMatrixFileResultLine(file, modes, results, modeTimes, showPerModeTimes);
+    if (liveMatrix)
+        clearLiveLine();
+    process.stdout.write(line + "\n");
+}
+function formatMatrixFileResultLine(file, modes, results, modeTimes, showPerModeTimes) {
     const verdict = resolveMatrixVerdict(results);
     const badge = verdict == "fail"
         ? chalk.bgRed.white(" FAIL ")
@@ -1075,10 +1731,7 @@ function renderMatrixFileResult(file, modes, results, modeTimes, liveMatrix, sho
         : failedModes.length
             ? ` ${chalk.dim(`(failed: ${failedModes.join(", ")})`)}`
             : "";
-    const line = `${badge} ${file} ${chalk.dim(timingText)}${suffix}`;
-    if (liveMatrix)
-        clearLiveLine();
-    process.stdout.write(line + "\n");
+    return `${badge} ${file} ${chalk.dim(timingText)}${suffix}`;
 }
 function resolveMatrixVerdict(results) {
     if (results.some((result) => result.failed))

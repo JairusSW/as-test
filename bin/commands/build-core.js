@@ -1,8 +1,9 @@
 import { existsSync } from "fs";
 import { glob } from "glob";
 import chalk from "chalk";
-import { spawnSync } from "child_process";
+import { spawn } from "child_process";
 import * as path from "path";
+import { createMemoryStream, main as ascMain, } from "assemblyscript/dist/asc.js";
 import { applyMode, getPkgRunner, loadConfig, tokenizeCommand, resolveProjectModule, } from "../util.js";
 import { persistCrashRecord } from "../crash-store.js";
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
@@ -46,7 +47,7 @@ export async function build(configPath = DEFAULT_CONFIG_PATH, selectors = [], mo
         const outFile = `${config.outDir}/${resolveArtifactFileName(file, config.buildOptions.target, modeName, duplicateSpecBasenames)}`;
         const invocation = getBuildCommand(config, pkgRunner, file, outFile, modeName, featureToggles);
         try {
-            buildFile(invocation, buildEnv);
+            await buildFile(invocation, buildEnv);
         }
         catch (error) {
             const modeLabel = modeName ?? "default";
@@ -119,6 +120,7 @@ function getBuildCommand(config, pkgRunner, file, outFile, modeName, featureTogg
     return {
         command: ascInvocation.command,
         args,
+        apiArgs: args.slice(1),
     };
 }
 function resolveAscInvocation(pkgRunner) {
@@ -260,22 +262,96 @@ function ensureDeps(config) {
         }
     }
 }
-function buildFile(invocation, env) {
-    const result = spawnSync(invocation.command, invocation.args, {
-        stdio: ["ignore", "pipe", "pipe"],
-        encoding: "utf8",
-        env,
-        shell: false,
+async function buildFile(invocation, env) {
+    if (process.env.AS_TEST_BUILD_API == "1" && invocation.apiArgs?.length) {
+        await buildFileViaApi(invocation.apiArgs, env);
+        return;
+    }
+    await buildFileViaSpawn(invocation, env);
+}
+async function buildFileViaApi(args, env) {
+    const stdoutChunks = [];
+    const stderrChunks = [];
+    const stdout = createMemoryStream((chunk) => {
+        stdoutChunks.push(typeof chunk == "string" ? chunk : Buffer.from(chunk).toString("utf8"));
     });
-    if (result.error)
-        throw result.error;
-    if (result.status !== 0) {
-        const error = new Error(result.stderr?.trim() ||
-            result.stdout?.trim() ||
-            `command exited with code ${result.status}`);
-        error.stderr = result.stderr ?? "";
-        error.stdout = result.stdout ?? "";
-        throw error;
+    const stderr = createMemoryStream((chunk) => {
+        stderrChunks.push(typeof chunk == "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+    });
+    const previousEnv = snapshotEnv();
+    applyEnv(env);
+    try {
+        const result = await ascMain(args, { stdout, stderr });
+        if (result.error) {
+            const error = result.error;
+            error.stderr = stderrChunks.join("").trim();
+            error.stdout = stdoutChunks.join("").trim();
+            throw error;
+        }
+    }
+    finally {
+        restoreEnv(previousEnv);
+    }
+}
+async function buildFileViaSpawn(invocation, env) {
+    await new Promise((resolve, reject) => {
+        const child = spawn(invocation.command, invocation.args, {
+            stdio: ["ignore", "pipe", "pipe"],
+            env,
+            shell: false,
+        });
+        let stdout = "";
+        let stderr = "";
+        child.stdout?.on("data", (chunk) => {
+            stdout += chunk.toString();
+        });
+        child.stderr?.on("data", (chunk) => {
+            stderr += chunk.toString();
+        });
+        child.on("error", reject);
+        child.on("close", (code) => {
+            if (code === 0) {
+                resolve();
+                return;
+            }
+            const error = new Error(stderr.trim() || stdout.trim() || `command exited with code ${code}`);
+            error.stderr = stderr.trim();
+            error.stdout = stdout.trim();
+            reject(error);
+        });
+    });
+}
+function snapshotEnv() {
+    return { ...process.env };
+}
+function applyEnv(nextEnv) {
+    const keys = new Set([
+        ...Object.keys(process.env),
+        ...Object.keys(nextEnv),
+    ]);
+    for (const key of keys) {
+        const value = nextEnv[key];
+        if (value == undefined) {
+            delete process.env[key];
+        }
+        else {
+            process.env[key] = value;
+        }
+    }
+}
+function restoreEnv(previousEnv) {
+    const keys = new Set([
+        ...Object.keys(process.env),
+        ...Object.keys(previousEnv),
+    ]);
+    for (const key of keys) {
+        const value = previousEnv[key];
+        if (value == undefined) {
+            delete process.env[key];
+        }
+        else {
+            process.env[key] = value;
+        }
     }
 }
 function formatInvocation(invocation) {

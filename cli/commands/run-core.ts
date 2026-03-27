@@ -2049,6 +2049,10 @@ export async function createRunReporter(
   configPath: string = DEFAULT_CONFIG_PATH,
   reporterPath?: string,
   modeName?: string,
+  context: ReporterContext = {
+    stdout: process.stdout,
+    stderr: process.stderr,
+  },
 ): Promise<{
   reporter: TestReporter;
   reporterKind: ReporterKind;
@@ -2064,8 +2068,8 @@ export async function createRunReporter(
     config.runOptions.reporter,
   );
   const reporter = await loadReporter(selection, resolvedConfigPath, {
-    stdout: process.stdout,
-    stderr: process.stderr,
+    stdout: context.stdout,
+    stderr: context.stderr,
   });
   const runtimeCommand = resolveRuntimeCommand(
     getConfiguredRuntimeCmd(config),

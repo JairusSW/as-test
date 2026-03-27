@@ -136,7 +136,17 @@ class DefaultReporter {
             this.renderVerboseState();
             return;
         }
-        if (this.verboseMode || !this.canRewriteLine()) {
+        if (!this.verboseMode) {
+            if (!this.canRewriteLine()) {
+                this.context.stdout.write(`${this.badgeRunning()} ${event.file}\n`);
+                return;
+            }
+            this.clearRenderedBlock();
+            this.context.stdout.write(`${this.badgeRunning()} ${event.file}`);
+            this.renderedLines = 1;
+            return;
+        }
+        if (!this.canRewriteLine()) {
             this.context.stdout.write(`${this.badgeRunning()} ${event.file}\n`);
             return;
         }
@@ -165,6 +175,8 @@ class DefaultReporter {
     onSuiteStart(event) {
         if (this.cleanMode)
             return;
+        if (!this.verboseMode)
+            return;
         const depth = Math.max(event.depth, 0);
         if (this.verboseMode && this.canRewriteLine()) {
             if (this.currentFile !== event.file)
@@ -189,6 +201,8 @@ class DefaultReporter {
     }
     onSuiteEnd(event) {
         if (this.cleanMode)
+            return;
+        if (!this.verboseMode)
             return;
         const depth = Math.max(event.depth, 0);
         const verdict = String(event.verdict ?? "none");
@@ -265,7 +279,7 @@ class DefaultReporter {
             renderFailedSuites(event.stats.failedEntries);
         }
         if (event.snapshotEnabled) {
-            renderSnapshotSummary(event.snapshotSummary, this.hasRenderedTestFiles || this.hasRenderedFuzzFiles);
+            renderSnapshotSummary(event.snapshotSummary, true);
         }
         if (event.coverageSummary.enabled) {
             renderCoverageSummary(event.coverageSummary);
