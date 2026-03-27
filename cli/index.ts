@@ -63,7 +63,7 @@ for (const arg of _args) {
 
 if (!args.length) {
   if (flags.includes("--version") || flags.includes("-v")) {
-    console.log("as-test v" + version.toString());
+    console.log(version.toString());
   } else {
     info();
   }
@@ -231,138 +231,32 @@ function info(): void {
   console.log(chalk.bold("Flags:"));
 
   console.log(
-    "   " +
-      chalk.bold.blue("--mode <name[,name...]>") +
-      "       " +
-      "Run one or multiple named config modes",
-  );
-  console.log(
-    "   " +
-      chalk.bold.blue("--browser <name|path>") +
-      "        " +
-      "Use chrome, chromium, firefox, webkit, or an executable path for web modes",
-  );
-  console.log(
-    "   " +
-      chalk.bold.blue("--parallel") +
-      "                     " +
-      "Run files through an ordered worker pool using an automatic worker count",
-  );
-  console.log(
-    "   " +
-      chalk.bold.blue("--jobs <n>") +
-      "                     " +
-      "Run files through an ordered worker pool with an explicit worker count",
-  );
-  console.log(
-    "   " +
-      chalk.bold.blue("--build-jobs <n>") +
-      "               " +
-      "Limit concurrent build tasks (defaults to --jobs)",
-  );
-  console.log(
-    "   " +
-      chalk.bold.blue("--run-jobs <n>") +
-      "                 " +
-      "Limit concurrent run tasks (defaults to --jobs)",
-  );
-  console.log(
-    "   " +
-      chalk.bold.blue("--config <path>") +
-      "               " +
-      "Use a specific config file",
-  );
-  console.log(
-    "   " +
-      chalk.bold.blue("--snapshot") +
-      "                    " +
-      "Snapshot assertions (enabled by default)",
-  );
-  console.log(
-    "   " +
-      chalk.bold.blue("--create-snapshots") +
-      "            " +
-      "Create missing snapshot entries",
-  );
-  console.log(
-    "   " +
-      chalk.bold.blue("--overwrite-snapshots") +
-      "         " +
-      "Overwrite existing snapshot entries on mismatch",
-  );
-  console.log(
-    "   " +
-      chalk.bold.blue("--no-snapshot") +
-      "                 " +
-      "Disable snapshot assertions for this run",
-  );
-  console.log(
-    "   " +
-      chalk.bold.blue("--show-coverage") +
-      "               " +
-      "Print all coverage points with line:column refs",
-  );
-  console.log(
-    "   " +
-      chalk.bold.blue("--enable <feature>") +
-      "            " +
-      "Enable as-test feature (coverage|try-as)",
-  );
-  console.log(
-    "   " +
-      chalk.bold.blue("--disable <feature>") +
-      "           " +
-      "Disable as-test feature (coverage|try-as)",
-  );
-  console.log(
-    "   " +
-      chalk.bold.blue("--verbose") +
-      "                     " +
-      "Print each suite start/end line",
-  );
-  console.log(
-    "   " +
-      chalk.bold.blue("--fuzz") +
-      "                        " +
-      "When used with test, also run configured fuzz targets",
-  );
-  console.log(
-    "   " +
-      chalk.bold.blue("--reporter <name|path>") +
-      "        " +
-      "Use built-in reporter (default|tap) or custom module path",
-  );
-  console.log(
-    "   " +
-      chalk.bold.blue("--list") +
-      "                        " +
-      "Preview resolved files/modes/artifacts without running",
-  );
-  console.log(
-    "   " +
-      chalk.bold.blue("--list-modes") +
+    "  " +
+      chalk.bold.blue("--version, -v") +
       "                  " +
-      "Preview configured and selected mode names",
+      "Print current cli version",
   );
   console.log(
-    "   " + chalk.bold.blue("--help, -h") + "                    Show help",
+    "  " +
+      chalk.bold.blue("--help, -h") +
+      "                     Show help menu",
   );
   console.log("");
 
   console.log(
     chalk.dim(
-      "If your using this, consider dropping a star, it would help a lot!",
+      "If this tool provides value, please consider sponsoring my open-source work! https://jairus.dev/sponsor",
     ) + "\n",
   );
 
   console.log(
-    "View the repo:                   " +
-      chalk.magenta("https://github.com/JairusSW/as-test"),
+    "View the docs:                   " +
+      chalk.blue("https://docs.jairus.dev/as-test"),
   );
-  // console.log(
-  //   "View the docs:                   " +
-  //     chalk.blue("https://docs.jairus.dev/as-test"),
-  // );
+  console.log(
+    "View the repo:                   " +
+      chalk.blue("https://github.com/JairusSW/as-test"),
+  );
 }
 
 function isHelpFlag(value: string): boolean {

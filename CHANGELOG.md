@@ -11,6 +11,10 @@
 - fix: keep parallel mixed-mode builds correct by isolating long-lived compiler workers by build signature so WASI and bindings state does not leak between builds.
 - fix: make `--jobs`, `--build-jobs`, and `--run-jobs` cooperate with ordered queue reporting while still emitting final per-file results as each file completes.
 
+### Docs
+
+- docs: refresh the README and external docs set for the current explicit-import workflow, `ast init`, `--parallel`, the split snapshot flags, and the current fuzzing/runtime guidance.
+
 ## 2026-03-25 - v1.0.2
 
 ### Explicit Imports, Typings & Reporting

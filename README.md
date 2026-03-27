@@ -88,6 +88,12 @@ Run everything:
 npx ast test
 ```
 
+Run through the automatic worker pool:
+
+```bash
+npx ast test --parallel
+```
+
 Run one matching file:
 
 ```bash
@@ -171,6 +177,12 @@ npx ast test --create-snapshots
 
 After that, a normal `npx ast test` will verify it.
 
+If an existing snapshot legitimately changed, overwrite it with:
+
+```bash
+npx ast test --overwrite-snapshots
+```
+
 ## Fuzzing
 
 Fuzzers usually live in `assembly/__fuzz__/*.fuzz.ts`.
@@ -189,7 +201,7 @@ fuzz("bounded integer addition", (left: i32, right: i32): bool => {
 });
 ```
 
-If you used `npx as-test init` with a fuzzer example, the config is already there. Otherwise, add a `fuzz` block to `as-test.config.json` so `npx ast fuzz` knows what to build:
+If you used `npx ast init` with a fuzzer example, the config is already there. Otherwise, add a `fuzz` block to `as-test.config.json` so `npx ast fuzz` knows what to build:
 
 ```json
 {
@@ -199,6 +211,8 @@ If you used `npx as-test init` with a fuzzer example, the config is already ther
   }
 }
 ```
+
+`ast fuzz` runs fuzz files across the selected modes, reports one result per file, and keeps the final summary separate from the normal test totals. If you want one combined command, use `ast test --fuzz`.
 
 Run only fuzzers:
 
