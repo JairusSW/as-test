@@ -20,8 +20,11 @@ export async function fuzz(configPath = DEFAULT_CONFIG_PATH, selectors = [], mod
     const duplicateBasenames = resolveDuplicateBasenames(inputFiles);
     const results = [];
     for (const file of inputFiles) {
+        const buildStartedAt = Date.now();
         await build(configPath, [file], modeName, { coverage: false }, { target: "bindings", args: ["--use", "AS_TEST_FUZZ=1"], kind: "fuzz" });
-        results.push(await runFuzzTarget(file, mode.config.outDir, duplicateBasenames, config, modeName));
+        const buildFinishedAt = Date.now();
+        const buildTime = buildFinishedAt - buildStartedAt;
+        results.push(await runFuzzTarget(file, mode.config.outDir, duplicateBasenames, config, buildStartedAt, buildFinishedAt, buildTime, modeName));
     }
     return results;
 }
@@ -32,7 +35,7 @@ function resolveFuzzConfig(raw, overrides) {
     }
     return config;
 }
-async function runFuzzTarget(file, outDir, duplicateBasenames, config, modeName) {
+async function runFuzzTarget(file, outDir, duplicateBasenames, config, buildStartedAt, buildFinishedAt, buildTime, modeName) {
     const startedAt = Date.now();
     const artifact = resolveArtifactFileName(file, duplicateBasenames, modeName);
     const wasmPath = path.resolve(process.cwd(), outDir, artifact);
@@ -80,6 +83,9 @@ async function runFuzzTarget(file, outDir, duplicateBasenames, config, modeName)
             crashFiles: [crash.jsonPath],
             seed: config.seed,
             time: Date.now() - startedAt,
+            buildTime,
+            buildStartedAt,
+            buildFinishedAt,
             fuzzers: [],
         };
     }
@@ -103,6 +109,9 @@ async function runFuzzTarget(file, outDir, duplicateBasenames, config, modeName)
             crashFiles: [crash.jsonPath],
             seed: config.seed,
             time: Date.now() - startedAt,
+            buildTime,
+            buildStartedAt,
+            buildFinishedAt,
             fuzzers: [],
         };
     }
@@ -115,6 +124,9 @@ async function runFuzzTarget(file, outDir, duplicateBasenames, config, modeName)
         crashFiles: [],
         seed: config.seed,
         time: Date.now() - startedAt,
+        buildTime,
+        buildStartedAt,
+        buildFinishedAt,
         fuzzers: report.fuzzers,
     };
 }

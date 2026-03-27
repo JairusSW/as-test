@@ -1,4 +1,4 @@
-import { build, } from "./commands/build-core.js";
+import { build } from "./commands/build-core.js";
 process.env.AS_TEST_BUILD_API = "1";
 process.on("message", async (message) => {
     if (!message || message.type != "build-file")

@@ -16,6 +16,7 @@ import {
   resolveProjectModule,
 } from "../util.js";
 import { persistCrashRecord } from "../crash-store.js";
+import { BuildWorkerPool } from "../build-worker-pool.js";
 
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 
@@ -111,6 +112,20 @@ export async function build(
     AS_TEST_COVERAGE_ENABLED: coverageEnabled ? "1" : "0",
   };
 
+  if (!process.env.AS_TEST_BUILD_API && !hasCustomBuildCommand(config)) {
+    const pool = getSerialBuildWorkerPool();
+    for (const file of inputFiles) {
+      await pool.buildFileMode({
+        configPath,
+        file,
+        modeName,
+        featureToggles,
+        overrides,
+      });
+    }
+    return;
+  }
+
   for (const file of inputFiles) {
     const outFile = `${config.outDir}/${resolveArtifactFileName(
       file,
@@ -160,6 +175,15 @@ export async function build(
       });
     }
   }
+}
+
+let serialBuildWorkerPool: BuildWorkerPool | null = null;
+
+function getSerialBuildWorkerPool(): BuildWorkerPool {
+  if (!serialBuildWorkerPool) {
+    serialBuildWorkerPool = new BuildWorkerPool(1);
+  }
+  return serialBuildWorkerPool;
 }
 
 export async function getBuildInvocationPreview(

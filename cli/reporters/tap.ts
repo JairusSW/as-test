@@ -79,6 +79,7 @@ class TapReporter implements TestReporter {
       ...collectFuzzTapPoints({
         results: event.results,
         time: event.results.reduce((sum, item) => sum + item.time, 0),
+        buildTime: event.results.reduce((sum, item) => sum + item.buildTime, 0),
         fuzzingSummary: { failed: 0, skipped: 0, total: 0 },
         suiteSummary: { failed: 0, skipped: 0, total: 0 },
         modeSummary: { failed: 0, skipped: 0, total: 0 },

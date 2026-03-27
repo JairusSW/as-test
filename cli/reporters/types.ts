@@ -86,6 +86,7 @@ export type RunCompleteEvent = {
   clean: boolean;
   snapshotEnabled: boolean;
   showCoverage: boolean;
+  buildTime: number;
   snapshotSummary: SnapshotSummary;
   coverageSummary: CoverageSummary;
   stats: RunStats;
@@ -130,12 +131,16 @@ export type FuzzResult = {
   crashFiles: string[];
   seed: number;
   time: number;
+  buildTime: number;
+  buildStartedAt: number;
+  buildFinishedAt: number;
   fuzzers: FuzzerRunResult[];
 };
 
 export type FuzzCompleteEvent = {
   results: FuzzResult[];
   time: number;
+  buildTime: number;
   fuzzingSummary: {
     failed: number;
     skipped: number;

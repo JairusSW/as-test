@@ -1,6 +1,6 @@
 import { ChildProcess, spawn } from "child_process";
 import { fileURLToPath } from "url";
-import {
+import type {
   BuildConfigOverrides,
   BuildFeatureToggles,
 } from "./commands/build-core.js";

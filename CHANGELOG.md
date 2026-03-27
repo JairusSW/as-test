@@ -5,7 +5,9 @@
 ### Parallel Execution
 
 - perf: add persistent build workers for parallel `ast run` and `ast test` so AssemblyScript modules stay warm across file builds instead of spawning a fresh compiler process per build.
+- perf: route normal and single-build-worker builds through the same persistent compiler-worker path so serial `ast test`, `ast run`, and `ast fuzz` runs also reuse the AssemblyScript API instead of spawning a fresh `asc` process per file.
 - perf: make each queue worker own one file through all selected modes before releasing its slot, which removes mid-file mode interleaving across workers.
+- feat: add `--parallel` with an automatic worker heuristic that stays in the 2-4 worker range for typical suites and only grows past that when there are substantially more files to process.
 - fix: keep parallel mixed-mode builds correct by isolating long-lived compiler workers by build signature so WASI and bindings state does not leak between builds.
 - fix: make `--jobs`, `--build-jobs`, and `--run-jobs` cooperate with ordered queue reporting while still emitting final per-file results as each file completes.
 

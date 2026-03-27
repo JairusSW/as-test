@@ -1,5 +1,5 @@
-import {
-  build,
+import { build } from "./commands/build-core.js";
+import type {
   BuildConfigOverrides,
   BuildFeatureToggles,
 } from "./commands/build-core.js";

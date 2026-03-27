@@ -545,7 +545,10 @@ function renderTotals(stats, event) {
     if (event.modeSummary) {
         renderModeSummary(event.modeSummary, layout);
     }
-    process.stdout.write(chalk.bold("Time:".padEnd(9)) + formatTime(stats.time) + "\n");
+    process.stdout.write(chalk.bold("Time:".padEnd(9)) +
+        formatTime(stats.time) +
+        chalk.dim(` (${formatTime(event.buildTime)} build)`) +
+        "\n");
 }
 function renderModeSummary(summary, layout) {
     renderSummaryLine("Modes:", summary, layout);
@@ -563,7 +566,10 @@ function renderStandaloneFuzzTotals(event) {
     renderSummaryLine("Fuzz:", event.fuzzingSummary, layout);
     renderSummaryLine("Suites:", event.suiteSummary, layout);
     renderSummaryLine("Modes:", event.modeSummary, layout);
-    process.stdout.write(chalk.bold("Time:".padEnd(9)) + formatTime(event.time) + "\n");
+    process.stdout.write(chalk.bold("Time:".padEnd(9)) +
+        formatTime(event.time) +
+        chalk.dim(` (${formatTime(event.buildTime)} build)`) +
+        "\n");
 }
 function createSummaryLayout(summaries) {
     return {

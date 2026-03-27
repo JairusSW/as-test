@@ -70,6 +70,7 @@ type ReporterConfigObject = {
 export type RunResult = {
   failed: boolean;
   stats: RunStats;
+  buildTime: number;
   snapshotSummary: {
     matched: number;
     created: number;
@@ -854,6 +855,7 @@ export async function run(
       clean: cleanOutput,
       snapshotEnabled,
       showCoverage,
+      buildTime: 0,
       snapshotSummary,
       coverageSummary,
       stats,
@@ -874,6 +876,7 @@ export async function run(
   }
   return {
     failed,
+    buildTime: 0,
     stats,
     snapshotSummary,
     coverageSummary,
