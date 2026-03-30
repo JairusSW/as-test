@@ -66,6 +66,22 @@ By default, `as-test` looks for:
 
 Generated files go into `.as-test/`.
 
+Minimal `as-test.config.json`:
+
+```json
+{
+  "input": ["assembly/__tests__/*.spec.ts"],
+  "buildOptions": {
+    "target": "wasi"
+  },
+  "runOptions": {
+    "runtime": {
+      "cmd": "node .as-test/runners/default.wasi.js <file>"
+    }
+  }
+}
+```
+
 ## Writing Tests
 
 Tests usually live in `assembly/__tests__/*.spec.ts`.

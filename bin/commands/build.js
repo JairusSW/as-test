@@ -1,6 +1,6 @@
 import { closeSerialBuildWorkerPool, } from "./build-core.js";
 export { build } from "./build-core.js";
-export { formatInvocation, getBuildInvocationPreview } from "./build-core.js";
+export { formatInvocation, getBuildInvocationPreview, getBuildReuseInfo, } from "./build-core.js";
 export async function executeBuildCommand(rawArgs, configPath, selectedModes, deps) {
     const commandArgs = deps.resolveCommandArgs(rawArgs, "build");
     const listFlags = deps.resolveListFlags(rawArgs, "build");

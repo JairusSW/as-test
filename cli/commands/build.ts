@@ -5,7 +5,11 @@ import {
 import { CliFeatureToggles, CliListFlags } from "./types.js";
 
 export { build } from "./build-core.js";
-export { formatInvocation, getBuildInvocationPreview } from "./build-core.js";
+export {
+  formatInvocation,
+  getBuildInvocationPreview,
+  getBuildReuseInfo,
+} from "./build-core.js";
 export type { BuildFeatureToggles } from "./build-core.js";
 
 type BuildCommandDeps = {

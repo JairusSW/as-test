@@ -1286,26 +1286,22 @@ async function runProcess(invocation, specFile, crashDir, modeName, snapshots, s
     let report = null;
     let parseError = null;
     let stderrBuffer = "";
+    let stderrPendingLine = "";
     let stdoutBuffer = "";
-    let suppressTraceWarningLine = false;
     let spawnError = null;
     child.on("error", (error) => {
         spawnError = error;
     });
     child.stderr.on("data", (chunk) => {
-        stderrBuffer += chunk.toString("utf8");
-        let newline = stderrBuffer.indexOf("\n");
+        stderrPendingLine += chunk.toString("utf8");
+        let newline = stderrPendingLine.indexOf("\n");
         while (newline >= 0) {
-            const line = stderrBuffer.slice(0, newline + 1);
-            stderrBuffer = stderrBuffer.slice(newline + 1);
-            if (shouldSuppressWasiWarningLine(line, suppressTraceWarningLine)) {
-                suppressTraceWarningLine = true;
+            const line = stderrPendingLine.slice(0, newline + 1);
+            stderrPendingLine = stderrPendingLine.slice(newline + 1);
+            if (!shouldSuppressWasiWarningLine(line)) {
+                stderrBuffer += line;
             }
-            else {
-                suppressTraceWarningLine = false;
-                process.stderr.write(line);
-            }
-            newline = stderrBuffer.indexOf("\n");
+            newline = stderrPendingLine.indexOf("\n");
         }
     });
     class TestChannel extends Channel {
@@ -1409,55 +1405,138 @@ async function runProcess(invocation, specFile, crashDir, modeName, snapshots, s
     const code = await new Promise((resolve) => {
         child.on("close", (exitCode) => resolve(exitCode ?? 1));
     });
-    if (stderrBuffer.length) {
-        if (!shouldSuppressWasiWarningLine(stderrBuffer, suppressTraceWarningLine)) {
-            process.stderr.write(stderrBuffer);
-        }
+    if (stderrPendingLine.length && !shouldSuppressWasiWarningLine(stderrPendingLine)) {
+        stderrBuffer += stderrPendingLine;
     }
     if (spawnError) {
+        const errorText = spawnError.stack ?? spawnError.message;
         persistCrashRecord(crashDir, {
             kind: "test",
             file: specFile,
             mode: modeName ?? "default",
-            error: spawnError.stack ?? spawnError.message,
+            error: errorText,
             stdout: stdoutBuffer,
             stderr: stderrBuffer,
         });
-        throw spawnError;
+        return createRuntimeFailureReport(specFile, modeName, "failed to start test runtime", errorText, stdoutBuffer, stderrBuffer);
     }
     if (parseError) {
+        const errorText = `could not parse report payload: ${parseError}`;
         persistCrashRecord(crashDir, {
             kind: "test",
             file: specFile,
             mode: modeName ?? "default",
-            error: `could not parse report payload: ${parseError}`,
+            error: errorText,
             stdout: stdoutBuffer,
             stderr: stderrBuffer,
         });
-        throw new Error(`could not parse report payload: ${parseError}`);
+        return createRuntimeFailureReport(specFile, modeName, "runtime returned an invalid report payload", errorText, stdoutBuffer, stderrBuffer);
     }
     if (!report) {
+        const errorText = "missing report payload from test runtime";
         persistCrashRecord(crashDir, {
             kind: "test",
             file: specFile,
             mode: modeName ?? "default",
-            error: "missing report payload from test runtime",
+            error: errorText,
             stdout: stdoutBuffer,
             stderr: stderrBuffer,
         });
-        throw new Error("missing report payload from test runtime");
+        return createRuntimeFailureReport(specFile, modeName, "test runtime exited without sending a report", errorText, stdoutBuffer, stderrBuffer);
     }
-    if (code !== 0) {
-        // Let report determine failure counts, but keep non-zero child exits visible.
-        process.stderr.write(chalk.dim(`child process exited with code ${code}\n`));
+    if (code !== 0 || hasMeaningfulRuntimeOutput(stderrBuffer)) {
+        const errorParts = [];
+        if (code !== 0) {
+            errorParts.push(`child process exited with code ${code}`);
+        }
+        const stderrText = normalizeRuntimeOutput(stderrBuffer);
+        if (stderrText.length) {
+            errorParts.push(stderrText);
+        }
+        const errorText = errorParts.join("\n\n");
+        persistCrashRecord(crashDir, {
+            kind: "test",
+            file: specFile,
+            mode: modeName ?? "default",
+            error: errorText || "runtime reported an unknown error",
+            stdout: stdoutBuffer,
+            stderr: stderrBuffer,
+        });
+        return appendRuntimeFailureReport(report, specFile, modeName, code !== 0
+            ? `test runtime failed with exit code ${code}`
+            : "test runtime wrote to stderr", errorText, stdoutBuffer, stderrBuffer);
     }
     return report;
 }
-function shouldSuppressWasiWarningLine(line, suppressTraceWarningLine) {
+function createRuntimeFailureReport(specFile, modeName, title, details, stdout, stderr) {
+    return appendRuntimeFailureReport({
+        suites: [],
+        coverage: {
+            total: 0,
+            covered: 0,
+            uncovered: 0,
+            percent: 100,
+            points: [],
+        },
+    }, specFile, modeName, title, details, stdout, stderr);
+}
+function appendRuntimeFailureReport(report, specFile, modeName, title, details, stdout, stderr) {
+    const suites = Array.isArray(report?.suites) ? report.suites : [];
+    suites.push({
+        file: specFile,
+        description: path.basename(specFile),
+        depth: 0,
+        kind: "runtime-error",
+        verdict: "fail",
+        time: {
+            start: 0,
+            end: 0,
+        },
+        suites: [],
+        logs: [],
+        tests: [
+            {
+                order: 0,
+                type: "runtime-error",
+                verdict: "fail",
+                left: null,
+                right: null,
+                instr: title,
+                message: formatRuntimeFailureMessage(details, stdout, stderr),
+                location: "",
+            },
+        ],
+        modeName: modeName ?? "default",
+    });
+    report.suites = suites;
+    return report;
+}
+function formatRuntimeFailureMessage(details, stdout, stderr) {
+    const parts = [];
+    const normalizedDetails = normalizeRuntimeOutput(details);
+    const normalizedStderr = normalizeRuntimeOutput(stderr);
+    const normalizedStdout = normalizeRuntimeOutput(stdout);
+    if (normalizedDetails.length)
+        parts.push(normalizedDetails);
+    if (normalizedStderr.length && normalizedStderr !== normalizedDetails) {
+        parts.push(`stderr:\n${normalizedStderr}`);
+    }
+    if (normalizedStdout.length) {
+        parts.push(`stdout:\n${normalizedStdout}`);
+    }
+    return parts.join("\n\n");
+}
+function normalizeRuntimeOutput(value) {
+    return value.replace(/\r\n/g, "\n").trim();
+}
+function hasMeaningfulRuntimeOutput(value) {
+    return normalizeRuntimeOutput(value).length > 0;
+}
+function shouldSuppressWasiWarningLine(line) {
     if (line.includes("ExperimentalWarning: WASI is an experimental feature")) {
         return true;
     }
-    if (suppressTraceWarningLine && line.includes("--trace-warnings")) {
+    if (line.includes("--trace-warnings")) {
         return true;
     }
     return false;
@@ -1506,6 +1585,7 @@ function readFileReport(stats, fileReport) {
 }
 function readSuite(stats, suite, file, modeName) {
     const suiteAny = suite;
+    const kind = String(suiteAny.kind ?? "");
     let verdict = normalizeVerdict(suiteAny.verdict);
     const time = suiteAny.time;
     const start = Number(time?.start ?? 0);
@@ -1533,6 +1613,20 @@ function readSuite(stats, suite, file, modeName) {
             stats.skippedTests++;
         }
     }
+    if (isTestCaseSuiteKind(kind)) {
+        if (!subSuites.length && !tests.length) {
+            if (verdict == "fail") {
+                stats.failedTests++;
+            }
+            else if (verdict == "ok") {
+                stats.passedTests++;
+            }
+            else if (verdict == "skip") {
+                stats.skippedTests++;
+            }
+        }
+        return verdict;
+    }
     if (verdict == "fail") {
         stats.failedSuites++;
         stats.failedEntries.push({
@@ -1548,6 +1642,15 @@ function readSuite(stats, suite, file, modeName) {
         stats.skippedSuites++;
     }
     return verdict;
+}
+function isTestCaseSuiteKind(kind) {
+    return (kind == "test" ||
+        kind == "it" ||
+        kind == "only" ||
+        kind == "xtest" ||
+        kind == "xit" ||
+        kind == "xonly" ||
+        kind == "todo");
 }
 function normalizeVerdict(value) {
     const verdict = String(value ?? "none");

@@ -581,12 +581,31 @@ function collectSuiteFailures(
     const loc = String(test.location ?? "");
     const where = loc.length ? `${file}:${loc}` : file;
     const modeName = String(suiteAny.modeName ?? "");
-    const dedupeKey = `${file}::${modeName}::${title}::${String(test.left)}::${String(test.right)}`;
+    const message = String(test.message ?? "");
+    const dedupeKey = `${file}::${modeName}::${title}::${String(test.left)}::${String(test.right)}::${message}`;
     if (printed.has(dedupeKey)) continue;
     printed.add(dedupeKey);
 
     const left = JSON.stringify(test.left);
     const right = JSON.stringify(test.right);
+    if (left == "null" && right == "null") {
+      console.log(
+        `${chalk.bgRed(" FAIL ")} ${chalk.dim(title)} ${chalk.dim("(" + where + ")")}`,
+      );
+      if (modeName.length) {
+        console.log(chalk.dim(`Mode: ${modeName}`));
+      }
+      const normalizedMessage = normalizeFailureMessage(message);
+      if (normalizedMessage.length) {
+        for (const line of normalizedMessage.split("\n")) {
+          console.log(chalk.dim(line));
+        }
+      } else {
+        console.log(chalk.dim("runtime error"));
+      }
+      console.log("");
+      continue;
+    }
     const diffResult = diff(left, right);
     let expected = "";
     for (const res of diffResult.diff) {
@@ -625,6 +644,10 @@ function collectSuiteFailures(
   for (const sub of suites) {
     collectSuiteFailures(sub, file, nextPath, printed);
   }
+}
+
+function normalizeFailureMessage(message: string): string {
+  return message.replace(/\r\n/g, "\n").trim();
 }
 
 function renderSnapshotSummary(

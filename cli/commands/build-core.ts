@@ -37,6 +37,11 @@ type BuildInvocation = {
   apiArgs?: string[];
 };
 
+export type BuildReuseInfo = {
+  signature: string;
+  outFile: string;
+};
+
 export type { BuildInvocation };
 
 class BuildFailureError extends Error {
@@ -234,6 +239,67 @@ export async function getBuildInvocationPreview(
   );
 }
 
+export async function getBuildReuseInfo(
+  configPath: string = DEFAULT_CONFIG_PATH,
+  file: string,
+  modeName?: string,
+  featureToggles: BuildFeatureToggles = {},
+  overrides: BuildConfigOverrides = {},
+): Promise<BuildReuseInfo | null> {
+  const loadedConfig = loadConfig(configPath, false);
+  const mode = applyMode(loadedConfig, modeName);
+  const config = Object.assign(
+    Object.create(Object.getPrototypeOf(mode.config)),
+    mode.config,
+  ) as Config;
+  config.buildOptions = Object.assign(
+    Object.create(Object.getPrototypeOf(mode.config.buildOptions)),
+    mode.config.buildOptions,
+  );
+  if (overrides.target) {
+    config.buildOptions.target = overrides.target;
+  }
+  if (overrides.args?.length) {
+    config.buildOptions.args = [...config.buildOptions.args, ...overrides.args];
+  }
+  if (hasCustomBuildCommand(config)) {
+    return null;
+  }
+  const duplicateSpecBasenames = resolveDuplicateBasenames([file]);
+  const outFile = `${config.outDir}/${resolveArtifactFileName(
+    file,
+    config.buildOptions.target,
+    modeName,
+    duplicateSpecBasenames,
+  )}`;
+  const invocation = getBuildCommand(
+    config,
+    getPkgRunner(),
+    file,
+    outFile,
+    modeName,
+    featureToggles,
+  );
+  const coverageEnabled = resolveCoverageEnabled(
+    config.coverage,
+    featureToggles.coverage,
+  );
+  const buildEnv = {
+    ...mode.env,
+    ...config.buildOptions.env,
+    AS_TEST_COVERAGE_ENABLED: coverageEnabled ? "1" : "0",
+  };
+  return {
+    signature: JSON.stringify({
+      command: invocation.command,
+      args: stripOutputArgs(invocation.args),
+      apiArgs: invocation.apiArgs ? stripOutputArgs(invocation.apiArgs) : [],
+      env: sortRecord(buildEnv),
+    }),
+    outFile,
+  };
+}
+
 function hasCustomBuildCommand(config: Config): boolean {
   return !!config.buildOptions.cmd.trim().length;
 }
@@ -308,6 +374,29 @@ function getUserBuildArgs(config: Config): string[] {
   }
 
   return args;
+}
+
+function stripOutputArgs(args: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    if (arg == "-o" || arg == "--outFile") {
+      i++;
+      continue;
+    }
+    out.push(arg);
+  }
+  return out;
+}
+
+function sortRecord(
+  record: Record<string, string | undefined>,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(record)
+      .filter((entry): entry is [string, string] => typeof entry[1] == "string")
+      .sort((a, b) => a[0].localeCompare(b[0])),
+  );
 }
 
 function expandBuildCommand(

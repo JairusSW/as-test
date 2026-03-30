@@ -5,6 +5,8 @@
 ### CLI
 
 - fix: preserve selectors passed after `--parallel` so commands like `ast test --parallel math` still target the requested suite.
+- fix: treat uncaught runtime stderr / missing report payloads as normal failed test results instead of transport-level crashes, with cleaner default reporter output.
+- perf: reuse build artifacts across modes when the resolved non-custom build invocation and build environment are identical, copying the first artifact instead of recompiling.
 
 ## 2026-03-27 - v1.0.4
 

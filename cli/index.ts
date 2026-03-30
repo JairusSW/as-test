@@ -6,6 +6,7 @@ import {
   BuildFeatureToggles,
   formatInvocation as formatBuildInvocation,
   getBuildInvocationPreview,
+  getBuildReuseInfo,
 } from "./commands/build.js";
 import { createRunReporter, run, RunResult } from "./commands/run.js";
 import { executeBuildCommand } from "./commands/build.js";
@@ -27,7 +28,7 @@ import * as path from "path";
 import { spawnSync } from "child_process";
 import { glob } from "glob";
 import { createInterface } from "readline";
-import { existsSync } from "fs";
+import { copyFileSync, existsSync, mkdirSync } from "fs";
 import { availableParallelism, cpus } from "os";
 import {
   CoverageSummary,
@@ -51,6 +52,7 @@ type CliListFlags = {
   list: boolean;
   listModes: boolean;
 };
+type BuildReuseCache = Map<string, string>;
 
 const version = getCliVersion();
 const configPath = resolveConfigPath(_args);
@@ -1195,6 +1197,53 @@ function resolveCommandTokens(rawArgs: string[], command: string): string[] {
   return values;
 }
 
+async function buildFileForMode(
+  cache: BuildReuseCache,
+  args: {
+    configPath: string | undefined;
+    file: string;
+    modeName: string | undefined;
+    buildFeatureToggles: BuildFeatureToggles;
+    buildPool?: BuildWorkerPool;
+  },
+): Promise<boolean> {
+  const reuse = await getBuildReuseInfo(
+    args.configPath,
+    args.file,
+    args.modeName,
+    args.buildFeatureToggles,
+  );
+  if (reuse) {
+    const source = cache.get(reuse.signature);
+    if (source && source != reuse.outFile && existsSync(source)) {
+      mkdirSync(path.dirname(reuse.outFile), { recursive: true });
+      copyFileSync(source, reuse.outFile);
+      return true;
+    }
+  }
+
+  if (args.buildPool) {
+    await args.buildPool.buildFileMode({
+      configPath: args.configPath,
+      file: args.file,
+      modeName: args.modeName,
+      featureToggles: args.buildFeatureToggles,
+    });
+  } else {
+    await build(
+      args.configPath,
+      [args.file],
+      args.modeName,
+      args.buildFeatureToggles,
+    );
+  }
+
+  if (reuse) {
+    cache.set(reuse.signature, reuse.outFile);
+  }
+  return false;
+}
+
 async function runTestSequential(
   runFlags: {
     snapshot: boolean;
@@ -1341,24 +1390,33 @@ async function runBuildModes(
   const loadedConfig = loadConfig(resolvedConfigPath, true);
   const allStartedAt = Date.now();
   let builtCount = 0;
+  const buildReuseCache: BuildReuseCache = new Map();
   for (const modeName of modes) {
     const startedAt = Date.now();
     if (effective.buildJobs > 1) {
       const pool = new BuildWorkerPool(effective.buildJobs);
       try {
         await runOrderedPool(files, effective.buildJobs, async (file) => {
-          await pool.buildFileMode({
+          await buildFileForMode(buildReuseCache, {
             configPath,
             file,
             modeName,
-            featureToggles: buildFeatureToggles,
+            buildFeatureToggles,
+            buildPool: pool,
           });
         });
       } finally {
         await pool.close();
       }
     } else {
-      await build(configPath, selectors, modeName, buildFeatureToggles);
+      for (const file of files) {
+        await buildFileForMode(buildReuseCache, {
+          configPath,
+          file,
+          modeName,
+          buildFeatureToggles,
+        });
+      }
     }
     builtCount += files.length;
     const active = applyMode(loadedConfig, modeName).config;
@@ -1508,12 +1566,14 @@ async function runRuntimeMatrix(
   }));
   const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
   const buildIntervals: Array<{ start: number; end: number }> = [];
+  const buildReuseCache: BuildReuseCache = new Map();
 
   for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
     const file = files[fileIndex]!;
     const fileName = path.basename(file);
     const fileResults: RunResult[] = [];
     const modeTimes = modes.map(() => "...");
+    const buildReuseCache: BuildReuseCache = new Map();
     if (liveMatrix) {
       renderMatrixLiveLine(fileName, modeLabels, modeTimes, showPerModeTimes);
     }
@@ -1800,6 +1860,7 @@ async function runTestMatrix(
     const fileName = path.basename(file);
     const fileResults: RunResult[] = [];
     const modeTimes = modes.map(() => "...");
+    const buildReuseCache: BuildReuseCache = new Map();
     if (liveMatrix) {
       renderMatrixLiveLine(fileName, modeLabels, modeTimes, showPerModeTimes);
     }
@@ -1807,7 +1868,12 @@ async function runTestMatrix(
       const modeName = modes[i];
       try {
         const buildStartedAt = Date.now();
-        await build(configPath, [file], modeName, buildFeatureToggles);
+        await buildFileForMode(buildReuseCache, {
+          configPath,
+          file,
+          modeName,
+          buildFeatureToggles,
+        });
         buildIntervals.push({ start: buildStartedAt, end: Date.now() });
         const buildInvocation = await getBuildInvocationPreview(
           configPath,
@@ -2107,13 +2173,16 @@ async function runRuntimeMatrixParallel(
       const token = renderQueuedFileStart(queueDisplay, fileName);
       const fileResults: RunResult[] = [];
       const modeTimes = modes.map(() => "...");
+      const buildReuseCache: BuildReuseCache = new Map();
       for (let i = 0; i < modes.length; i++) {
         const modeName = modes[i];
         const buildStartedAt = Date.now();
-        await buildPool.buildFileMode({
+        await buildFileForMode(buildReuseCache, {
           configPath,
           file,
           modeName,
+          buildFeatureToggles: {},
+          buildPool,
         });
         buildIntervals.push({ start: buildStartedAt, end: Date.now() });
         const buildInvocation = await getBuildInvocationPreview(
@@ -2247,11 +2316,12 @@ async function runTestSingleParallel(
       await runOrderedPool(files, poolWidth, async (file, index) => {
         const token = renderQueuedFileStart(queueDisplay, path.basename(file));
         const buildStartedAt = Date.now();
-        await buildPool.buildFileMode({
+        await buildFileForMode(new Map(), {
           configPath,
           file,
           modeName,
-          featureToggles: buildFeatureToggles,
+          buildFeatureToggles,
+          buildPool,
         });
         buildIntervals.push({ start: buildStartedAt, end: Date.now() });
         const buildInvocation = await getBuildInvocationPreview(
@@ -2406,14 +2476,16 @@ async function runTestMatrixParallel(
       const token = renderQueuedFileStart(queueDisplay, fileName);
       const fileResults: RunResult[] = [];
       const modeTimes = modes.map(() => "...");
+      const buildReuseCache: BuildReuseCache = new Map();
       for (let i = 0; i < modes.length; i++) {
         const modeName = modes[i];
         const buildStartedAt = Date.now();
-        await buildPool.buildFileMode({
+        await buildFileForMode(buildReuseCache, {
           configPath,
           file,
           modeName,
-          featureToggles: buildFeatureToggles,
+          buildFeatureToggles,
+          buildPool,
         });
         buildIntervals.push({ start: buildStartedAt, end: Date.now() });
         const buildInvocation = await getBuildInvocationPreview(
