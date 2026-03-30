@@ -1,5 +1,11 @@
 # Change Log
 
+## 2026-03-30 - upcoming
+
+### CLI
+
+- fix: preserve selectors passed after `--parallel` so commands like `ast test --parallel math` still target the requested suite.
+
 ## 2026-03-27 - v1.0.4
 
 ### Build Command

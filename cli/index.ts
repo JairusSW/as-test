@@ -24,10 +24,10 @@ import {
 } from "./util.js";
 import { Config } from "./types.js";
 import * as path from "path";
-import { spawnSync } from "child_process";
+import { spawn, spawnSync } from "child_process";
 import { glob } from "glob";
 import { createInterface } from "readline";
-import { existsSync } from "fs";
+import { existsSync, statSync } from "fs";
 import { availableParallelism, cpus } from "os";
 import {
   CoverageSummary,
@@ -51,6 +51,15 @@ type CliListFlags = {
   list: boolean;
   listModes: boolean;
 };
+type WatchSnapshot = Map<string, string>;
+
+const WATCH_IGNORE_PATTERNS = [
+  "**/node_modules/**",
+  "**/.git/**",
+  "**/.as-test/**",
+  "bin/**",
+  "transform/lib/**",
+];
 
 const version = getCliVersion();
 const configPath = resolveConfigPath(_args);
@@ -101,17 +110,20 @@ if (!args.length) {
         process.exit(1);
       });
     } else if (command === "test") {
-      executeTestCommand(_args, flags, configPath, selectedModes, {
-        resolveCommandArgs,
-        resolveListFlags,
-        resolveFeatureToggles,
-        resolveParallelJobs,
-        resolveBrowserOverride,
-        resolveFuzzOverrides,
-        resolveExecutionModes,
-        listExecutionPlan,
-        runTestModes,
-      }).catch((error) => {
+      const runner = resolveWatchFlag(_args, "test")
+        ? runWatchedTestCommand(_args, configPath)
+        : executeTestCommand(_args, flags, configPath, selectedModes, {
+            resolveCommandArgs,
+            resolveListFlags,
+            resolveFeatureToggles,
+            resolveParallelJobs,
+            resolveBrowserOverride,
+            resolveFuzzOverrides,
+            resolveExecutionModes,
+            listExecutionPlan,
+            runTestModes,
+          });
+      runner.catch((error) => {
         printCliError(error);
         process.exit(1);
       });
@@ -625,7 +637,6 @@ function resolveCommandArgs(rawArgs: string[], command: string): string[] {
     if (
       arg == "--runs" ||
       arg == "--seed" ||
-      arg == "--parallel" ||
       arg == "--jobs" ||
       arg == "--build-jobs" ||
       arg == "--run-jobs" ||
@@ -634,6 +645,9 @@ function resolveCommandArgs(rawArgs: string[], command: string): string[] {
       arg == "--fuzz-seed"
     ) {
       i++;
+      continue;
+    }
+    if (arg == "--parallel") {
       continue;
     }
     if (
