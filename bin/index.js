@@ -66,6 +66,7 @@ else if (COMMANDS.includes(args[0])) {
                 resolveFeatureToggles,
                 resolveParallelJobs,
                 resolveBrowserOverride,
+                resolveReporterOverride,
                 resolveExecutionModes,
                 listExecutionPlan,
                 runRuntimeModes,
@@ -81,6 +82,7 @@ else if (COMMANDS.includes(args[0])) {
                 resolveFeatureToggles,
                 resolveParallelJobs,
                 resolveBrowserOverride,
+                resolveReporterOverride,
                 resolveFuzzOverrides,
                 resolveExecutionModes,
                 listExecutionPlan,
@@ -579,6 +581,32 @@ function resolveBrowserOverride(rawArgs, command) {
     }
     return undefined;
 }
+function resolveReporterOverride(rawArgs, command) {
+    let seenCommand = false;
+    for (let i = 0; i < rawArgs.length; i++) {
+        const arg = rawArgs[i];
+        if (!seenCommand) {
+            if (arg == command)
+                seenCommand = true;
+            continue;
+        }
+        if (arg == "--reporter") {
+            const next = rawArgs[i + 1];
+            if (next && !next.startsWith("-")) {
+                return next;
+            }
+            return undefined;
+        }
+        if (arg.startsWith("--reporter=")) {
+            const value = arg.slice("--reporter=".length);
+            return value.length ? value : undefined;
+        }
+        if (arg == "--tap") {
+            return "tap";
+        }
+    }
+    return undefined;
+}
 function resolveJobs(rawArgs, command) {
     let seenCommand = false;
     let parallel = false;
@@ -733,9 +761,9 @@ function createBufferedStream() {
         },
     };
 }
-async function createBufferedReporter(configPath, modeName) {
+async function createBufferedReporter(configPath, reporterPath, modeName) {
     const stream = createBufferedStream();
-    const session = await createRunReporter(configPath, undefined, modeName, {
+    const session = await createRunReporter(configPath, reporterPath, modeName, {
         stdout: stream,
         stderr: stream,
     });
@@ -917,7 +945,7 @@ async function runTestSequential(runFlags, configPath, selectors, buildFeatureTo
             throw await buildNoTestFilesMatchedError(configPath, selectors);
         }
     }
-    const reporterSession = await createRunReporter(configPath, undefined, modeName);
+    const reporterSession = await createRunReporter(configPath, runFlags.reporterPath, modeName);
     const reporter = reporterOverride ?? reporterSession.reporter;
     const snapshotEnabled = runFlags.snapshot !== false;
     reporter.onRunStart?.({
@@ -1059,6 +1087,7 @@ async function runRuntimeModes(runFlags, configPath, selectors, modes) {
     const buildCommandsByFile = await previewBuildCommands(configPath, selectors, modes[0], {});
     for (const modeName of modes) {
         const result = await run(effectiveRunFlags, configPath, selectors, false, {
+            reporterPath: effectiveRunFlags.reporterPath,
             modeName,
             modeSummaryTotal,
             modeSummaryExecuted: 1,
@@ -1143,7 +1172,9 @@ async function runRuntimeMatrix(runFlags, configPath, selectors, modes, modeSumm
                 throw error;
             }
         }
-        renderMatrixFileResult(fileName, modeLabels, fileResults, modeTimes, liveMatrix, showPerModeTimes);
+        if (reporterSession.reporterKind == "default") {
+            renderMatrixFileResult(fileName, modeLabels, fileResults, modeTimes, liveMatrix, showPerModeTimes);
+        }
         const verdict = resolveMatrixVerdict(fileResults);
         if (verdict == "fail") {
             fileState[fileIndex].failed = true;
@@ -1197,7 +1228,7 @@ async function runTestModes(runFlags, configPath, selectors, modes, buildFeature
     }
     let failed = false;
     for (const modeName of modes) {
-        const reporterSession = await createRunReporter(configPath, undefined, modeName);
+        const reporterSession = await createRunReporter(configPath, effectiveRunFlags.reporterPath, modeName);
         const modeResult = await runTestSequential(effectiveRunFlags, configPath, selectors, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal, fuzzEnabled, modeName, reporterSession.reporter, !fuzzEnabled);
         if (modeResult.failed)
             failed = true;
@@ -1312,7 +1343,9 @@ async function runTestMatrix(runFlags, configPath, selectors, modes, buildFeatur
                 throw error;
             }
         }
-        renderMatrixFileResult(fileName, modeLabels, fileResults, modeTimes, liveMatrix, showPerModeTimes);
+        if (reporterSession.reporterKind == "default") {
+            renderMatrixFileResult(fileName, modeLabels, fileResults, modeTimes, liveMatrix, showPerModeTimes);
+        }
         const verdict = resolveMatrixVerdict(fileResults);
         if (verdict == "fail") {
             fileState[fileIndex].failed = true;
@@ -1375,7 +1408,7 @@ async function runRuntimeSingleParallel(runFlags, configPath, selectors, modeNam
     if (!files.length) {
         throw await buildNoTestFilesMatchedError(configPath, selectors);
     }
-    const reporterSession = await createRunReporter(configPath, undefined, modeName);
+    const reporterSession = await createRunReporter(configPath, runFlags.reporterPath, modeName);
     const reporter = reporterSession.reporter;
     const snapshotEnabled = runFlags.snapshot !== false;
     reporter.onRunStart?.({
@@ -1387,15 +1420,20 @@ async function runRuntimeSingleParallel(runFlags, configPath, selectors, modeNam
     });
     const buildCommandsByFile = await previewBuildCommands(configPath, selectors, modeName, {});
     const results = new Array(files.length);
-    const queueDisplay = new ParallelQueueDisplay(!runFlags.clean);
+    const useQueueDisplay = reporterSession.reporterKind == "default";
+    const queueDisplay = new ParallelQueueDisplay(useQueueDisplay && !runFlags.clean);
     const runLimit = createAsyncLimiter(runFlags.runJobs);
     const poolWidth = Math.max(runFlags.buildJobs, runFlags.runJobs);
     await runOrderedPool(files, poolWidth, async (file, index) => {
-        const token = renderQueuedFileStart(queueDisplay, path.basename(file));
-        const buffered = await createBufferedReporter(configPath, modeName);
+        const token = useQueueDisplay
+            ? renderQueuedFileStart(queueDisplay, path.basename(file))
+            : null;
+        const buffered = useQueueDisplay
+            ? await createBufferedReporter(configPath, runFlags.reporterPath, modeName)
+            : null;
         const result = await runLimit(() => run({ ...runFlags, clean: true }, configPath, [file], false, {
-            reporter: buffered.reporter,
-            reporterKind: buffered.reporterKind,
+            reporter: buffered?.reporter,
+            reporterKind: buffered?.reporterKind,
             modeName,
             emitRunComplete: false,
             fileSummaryTotal: 1,
@@ -1403,9 +1441,11 @@ async function runRuntimeSingleParallel(runFlags, configPath, selectors, modeNam
             modeSummaryExecuted: 1,
             buildCommandsByFile: { [file]: buildCommandsByFile[file] ?? "" },
         }));
-        buffered.reporter.flush?.();
+        buffered?.reporter.flush?.();
         results[index] = result;
-        queueDisplay.complete(token, buffered.output());
+        if (buffered && token != null) {
+            queueDisplay.complete(token, buffered.output());
+        }
     });
     queueDisplay.flush();
     const summary = aggregateRunResults(results);
@@ -1429,7 +1469,7 @@ async function runRuntimeMatrixParallel(runFlags, configPath, selectors, modes, 
     if (!files.length) {
         throw await buildNoTestFilesMatchedError(configPath, selectors);
     }
-    const reporterSession = await createRunReporter(configPath);
+    const reporterSession = await createRunReporter(configPath, runFlags.reporterPath);
     const reporter = reporterSession.reporter;
     const snapshotEnabled = runFlags.snapshot !== false;
     reporter.onRunStart?.({
@@ -1444,14 +1484,17 @@ async function runRuntimeMatrixParallel(runFlags, configPath, selectors, modes, 
     const showPerModeTimes = Boolean(runFlags.verbose);
     const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
     const ordered = new Array(files.length);
-    const queueDisplay = new ParallelQueueDisplay(!runFlags.clean);
+    const useQueueDisplay = reporterSession.reporterKind == "default";
+    const queueDisplay = new ParallelQueueDisplay(useQueueDisplay && !runFlags.clean);
     const poolWidth = Math.max(runFlags.jobs, runFlags.buildJobs, runFlags.runJobs);
     const buildPool = new BuildWorkerPool(runFlags.buildJobs);
     const buildIntervals = [];
     try {
         await runOrderedPool(files, poolWidth, async (file, fileIndex) => {
             const fileName = path.basename(file);
-            const token = renderQueuedFileStart(queueDisplay, fileName);
+            const token = useQueueDisplay
+                ? renderQueuedFileStart(queueDisplay, fileName)
+                : null;
             const fileResults = [];
             const modeTimes = modes.map(() => "...");
             const buildReuseCache = new Map();
@@ -1482,7 +1525,9 @@ async function runRuntimeMatrixParallel(runFlags, configPath, selectors, modes, 
                 fileResults.push(result);
             }
             ordered[fileIndex] = { fileName, fileResults, modeTimes };
-            queueDisplay.complete(token, formatMatrixFileResultLine(fileName, modeLabels, fileResults, modeTimes, showPerModeTimes) + "\n");
+            if (token != null) {
+                queueDisplay.complete(token, formatMatrixFileResultLine(fileName, modeLabels, fileResults, modeTimes, showPerModeTimes) + "\n");
+            }
         });
     }
     finally {
@@ -1529,7 +1574,7 @@ async function runTestSingleParallel(runFlags, configPath, selectors, buildFeatu
     if (!files.length && !fuzzEnabled) {
         throw await buildNoTestFilesMatchedError(configPath, selectors);
     }
-    const reporterSession = await createRunReporter(configPath, undefined, modeName);
+    const reporterSession = await createRunReporter(configPath, runFlags.reporterPath, modeName);
     const reporter = reporterSession.reporter;
     const snapshotEnabled = runFlags.snapshot !== false;
     reporter.onRunStart?.({
@@ -1541,14 +1586,17 @@ async function runTestSingleParallel(runFlags, configPath, selectors, buildFeatu
     });
     const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
     const results = new Array(files.length);
-    const queueDisplay = new ParallelQueueDisplay(!runFlags.clean);
+    const useQueueDisplay = reporterSession.reporterKind == "default";
+    const queueDisplay = new ParallelQueueDisplay(useQueueDisplay && !runFlags.clean);
     const poolWidth = Math.max(runFlags.jobs, runFlags.buildJobs, runFlags.runJobs);
     const buildIntervals = [];
     if (files.length) {
         const buildPool = new BuildWorkerPool(runFlags.buildJobs);
         try {
             await runOrderedPool(files, poolWidth, async (file, index) => {
-                const token = renderQueuedFileStart(queueDisplay, path.basename(file));
+                const token = useQueueDisplay
+                    ? renderQueuedFileStart(queueDisplay, path.basename(file))
+                    : null;
                 const buildStartedAt = Date.now();
                 await buildFileForMode(new Map(), {
                     configPath,
@@ -1560,19 +1608,23 @@ async function runTestSingleParallel(runFlags, configPath, selectors, buildFeatu
                 buildIntervals.push({ start: buildStartedAt, end: Date.now() });
                 const buildInvocation = await getBuildInvocationPreview(configPath, file, modeName, buildFeatureToggles);
                 const artifactKey = resolvePerFileArtifactKey(file, duplicateSpecBasenames);
-                const buffered = await createBufferedReporter(configPath, modeName);
+                const buffered = useQueueDisplay
+                    ? await createBufferedReporter(configPath, runFlags.reporterPath, modeName)
+                    : null;
                 const result = await run({ ...runFlags, clean: true }, configPath, [file], false, {
-                    reporter: buffered.reporter,
-                    reporterKind: buffered.reporterKind,
+                    reporter: buffered?.reporter,
+                    reporterKind: buffered?.reporterKind,
                     emitRunComplete: false,
                     logFileName: `test.${artifactKey}.log.json`,
                     coverageFileName: `coverage.${artifactKey}.log.json`,
                     buildCommand: formatBuildInvocation(buildInvocation),
                     modeName,
                 });
-                buffered.reporter.flush?.();
+                buffered?.reporter.flush?.();
                 results[index] = result;
-                queueDisplay.complete(token, buffered.output());
+                if (buffered && token != null) {
+                    queueDisplay.complete(token, buffered.output());
+                }
             });
         }
         finally {
@@ -1621,7 +1673,7 @@ async function runTestMatrixParallel(runFlags, configPath, selectors, modes, bui
             throw await buildNoTestFilesMatchedError(configPath, selectors, true);
         }
     }
-    const reporterSession = await createRunReporter(configPath);
+    const reporterSession = await createRunReporter(configPath, runFlags.reporterPath);
     const reporter = reporterSession.reporter;
     const snapshotEnabled = runFlags.snapshot !== false;
     reporter.onRunStart?.({
@@ -1636,14 +1688,17 @@ async function runTestMatrixParallel(runFlags, configPath, selectors, modes, bui
     const showPerModeTimes = Boolean(runFlags.verbose);
     const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
     const ordered = new Array(files.length);
-    const queueDisplay = new ParallelQueueDisplay(!runFlags.clean);
+    const useQueueDisplay = reporterSession.reporterKind == "default";
+    const queueDisplay = new ParallelQueueDisplay(useQueueDisplay && !runFlags.clean);
     const poolWidth = Math.max(runFlags.jobs, runFlags.buildJobs, runFlags.runJobs);
     const buildPool = new BuildWorkerPool(runFlags.buildJobs);
     const buildIntervals = [];
     try {
         await runOrderedPool(files, poolWidth, async (file, fileIndex) => {
             const fileName = path.basename(file);
-            const token = renderQueuedFileStart(queueDisplay, fileName);
+            const token = useQueueDisplay
+                ? renderQueuedFileStart(queueDisplay, fileName)
+                : null;
             const fileResults = [];
             const modeTimes = modes.map(() => "...");
             const buildReuseCache = new Map();
@@ -1674,7 +1729,9 @@ async function runTestMatrixParallel(runFlags, configPath, selectors, modes, bui
                 fileResults.push(result);
             }
             ordered[fileIndex] = { fileName, fileResults, modeTimes };
-            queueDisplay.complete(token, formatMatrixFileResultLine(fileName, modeLabels, fileResults, modeTimes, showPerModeTimes) + "\n");
+            if (token != null) {
+                queueDisplay.complete(token, formatMatrixFileResultLine(fileName, modeLabels, fileResults, modeTimes, showPerModeTimes) + "\n");
+            }
         });
     }
     finally {

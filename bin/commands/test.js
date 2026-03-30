@@ -16,6 +16,7 @@ export async function executeTestCommand(rawArgs, flags, configPath, selectedMod
         ...deps.resolveParallelJobs(rawArgs, "test"),
         coverage: featureToggles.coverage,
         browser: deps.resolveBrowserOverride(rawArgs, "test"),
+        reporterPath: deps.resolveReporterOverride(rawArgs, "test"),
     };
     const fuzzEnabled = flags.includes("--fuzz");
     const fuzzOverrides = deps.resolveFuzzOverrides(rawArgs, "test");

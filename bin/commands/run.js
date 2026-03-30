@@ -13,6 +13,7 @@ export async function executeRunCommand(rawArgs, flags, configPath, selectedMode
         ...deps.resolveParallelJobs(rawArgs, "run"),
         coverage: featureToggles.coverage,
         browser: deps.resolveBrowserOverride(rawArgs, "run"),
+        reporterPath: deps.resolveReporterOverride(rawArgs, "run"),
     };
     const modeTargets = deps.resolveExecutionModes(configPath, selectedModes);
     if (listFlags.list || listFlags.listModes) {

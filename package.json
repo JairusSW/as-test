@@ -64,9 +64,9 @@
     "access": "public"
   },
   "scripts": {
-    "test": "node ./bin/index.js test",
+    "test": "node ./bin/index.js test --parallel",
+    "test:ci": "node ./bin/index.js test --parallel --tap --config ./as-test.ci.config.json",
     "fuzz": "node ./bin/index.js fuzz",
-    "test:ci": "node ./bin/index.js test --tap --config ./as-test.ci.config.json",
     "test:examples": "npm --prefix ./examples run test",
     "ci:act": "bash ./tools/act.sh push",
     "ci:act:pr": "bash ./tools/act.sh pull_request",

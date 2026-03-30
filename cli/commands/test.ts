@@ -18,6 +18,10 @@ type TestCommandDeps = {
     rawArgs: string[],
     command: "test",
   ): string | undefined;
+  resolveReporterOverride(
+    rawArgs: string[],
+    command: "test",
+  ): string | undefined;
   resolveFuzzOverrides(
     rawArgs: string[],
     command: "test" | "fuzz",
@@ -69,6 +73,7 @@ export async function executeTestCommand(
     ...deps.resolveParallelJobs(rawArgs, "test"),
     coverage: featureToggles.coverage,
     browser: deps.resolveBrowserOverride(rawArgs, "test"),
+    reporterPath: deps.resolveReporterOverride(rawArgs, "test"),
   };
   const fuzzEnabled = flags.includes("--fuzz");
   const fuzzOverrides = deps.resolveFuzzOverrides(rawArgs, "test");

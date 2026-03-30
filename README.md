@@ -71,6 +71,7 @@ Minimal `as-test.config.json`:
 ```json
 {
   "input": ["assembly/__tests__/*.spec.ts"],
+  "output": ".as-test/",
   "buildOptions": {
     "target": "wasi"
   },
