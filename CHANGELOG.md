@@ -1,6 +1,6 @@
 # Change Log
 
-## Unreleased
+## 2026-03-31 - v1.0.6
 
 ### Fuzzing
 
