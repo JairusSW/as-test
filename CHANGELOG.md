@@ -1,5 +1,11 @@
 # Change Log
 
+## Unreleased
+
+### Coverage
+
+- feat: make CLI coverage output easier to scan with a summarized coverage block, per-file breakdown, grouped uncovered points, clickable `file:line:column` locations, trimmed source snippets, and aligned gap columns.
+
 ## 2026-03-31 - v1.0.6
 
 ### Fuzzing

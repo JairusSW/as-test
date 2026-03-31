@@ -23,6 +23,8 @@ export const createReporter: ReporterFactory = (
   return new DefaultReporter(context);
 };
 
+const sourceLineCache = new Map<string, string[] | null>();
+
 class DefaultReporter implements TestReporter {
   private currentFile: string | null = null;
   private openSuites: { depth: number; description: string }[] = [];
@@ -848,24 +850,71 @@ function renderSummaryLine(
 }
 
 function renderCoverageSummary(summary: {
+  files: {
+    file: string;
+    total: number;
+    covered: number;
+    uncovered: number;
+    percent: number;
+  }[];
   total: number;
   covered: number;
   uncovered: number;
   percent: number;
 }): void {
+  console.log("");
+  console.log(chalk.bold("Coverage"));
+
+  if (!summary.files.length || summary.total <= 0) {
+    console.log(
+      `  ${chalk.dim("No eligible source files were tracked for coverage.")}`,
+    );
+    return;
+  }
+
   const pct = summary.total
     ? ((summary.covered * 100) / summary.total).toFixed(2)
     : "100.00";
+  const missingLabel = summary.uncovered == 1 ? "1 point missing" : `${summary.uncovered} points missing`;
+  const fileLabel =
+    summary.files.length == 1 ? "1 file" : `${summary.files.length} files`;
   const color =
     Number(pct) >= 90
       ? chalk.greenBright
       : Number(pct) >= 75
         ? chalk.yellowBright
         : chalk.redBright;
-  console.log("");
   console.log(
-    `${chalk.bold("Coverage:")} ${color(pct + "%")} ${chalk.dim(`(${summary.covered}/${summary.total} points, ${summary.uncovered} uncovered)`)}`,
+    `  ${color(pct + "%")} ${renderCoverageBar(summary.percent)} ${chalk.dim(`(${summary.covered}/${summary.total} covered, ${missingLabel}, ${fileLabel})`)}`,
   );
+
+  const ranked = [...summary.files].sort((a, b) => {
+    if (a.percent != b.percent) return a.percent - b.percent;
+    if (a.uncovered != b.uncovered) return b.uncovered - a.uncovered;
+    return a.file.localeCompare(b.file);
+  });
+  console.log(chalk.bold("  File Breakdown"));
+  for (const file of ranked.slice(0, 8)) {
+    const filePct = file.total
+      ? ((file.covered * 100) / file.total).toFixed(2)
+      : "100.00";
+    const fileColor =
+      Number(filePct) >= 90
+        ? chalk.greenBright
+        : Number(filePct) >= 75
+          ? chalk.yellowBright
+          : chalk.redBright;
+    const suffix =
+      file.uncovered > 0
+        ? `${file.uncovered} missing`
+        : "fully covered";
+    console.log(
+      `    ${fileColor(filePct.padStart(6) + "%")}  ${toRelativeResultPath(file.file).padEnd(36)} ${chalk.dim(`${file.covered}/${file.total} covered, ${suffix}`)}`,
+    );
+  }
+  if (ranked.length > 8) {
+    console.log(chalk.dim(`    ... ${ranked.length - 8} more files`));
+  }
 }
 
 function renderCoveragePoints(
@@ -881,19 +930,167 @@ function renderCoveragePoints(
   }[],
 ): void {
   console.log("");
-  console.log(chalk.bold("Coverage Points:"));
+  console.log(chalk.bold("Coverage Gaps"));
   const sortedFiles = [...files].sort((a, b) => a.file.localeCompare(b.file));
+  const missingPoints = sortedFiles.flatMap((file) =>
+    file.points.filter((point) => !point.executed),
+  );
+  const layout = createCoverageGapLayout(missingPoints);
   for (const file of sortedFiles) {
     const points = [...file.points].sort((a, b) => {
       if (a.line != b.line) return a.line - b.line;
       if (a.column != b.column) return a.column - b.column;
       return a.type.localeCompare(b.type);
     });
+    const missing = points.filter((point) => !point.executed);
+    if (!missing.length) continue;
+    console.log(
+      `  ${chalk.bold(toRelativeResultPath(file.file))} ${chalk.dim(`(${missing.length} uncovered)`)}`,
+    );
     for (const point of points) {
       if (point.executed) continue;
+      const location = `${toRelativeResultPath(point.file)}:${point.line}:${point.column}`;
+      const snippet = formatCoverageSnippet(point.file, point.line, point.column);
+      const typeLabel = point.type.padEnd(layout.typeWidth + 4);
+      const locationLabel = location.padEnd(layout.locationWidth + 4);
       console.log(
-        `${chalk.bgRed(" MISS ")} ${chalk.dim(`${point.file}:${point.line}:${point.column}`)} ${chalk.dim(point.type)}`,
+        `    ${chalk.red("x")} ${chalk.dim(typeLabel)}${chalk.dim(locationLabel)}${snippet}`,
       );
     }
   }
+}
+
+function renderCoverageBar(percent: number): string {
+  const slots = 12;
+  const filled = Math.max(
+    0,
+    Math.min(slots, Math.round((Math.max(0, Math.min(100, percent)) / 100) * slots)),
+  );
+  return `[${"=".repeat(filled)}${"-".repeat(slots - filled)}]`;
+}
+
+function createCoverageGapLayout(
+  points: {
+    file: string;
+    line: number;
+    column: number;
+    type: string;
+  }[],
+): {
+  typeWidth: number;
+  locationWidth: number;
+} {
+  return {
+    typeWidth: Math.max(...points.map((point) => point.type.length), 5),
+    locationWidth: Math.max(
+      ...points.map(
+        (point) =>
+          `${toRelativeResultPath(point.file)}:${point.line}:${point.column}`.length,
+      ),
+      1,
+    ),
+  };
+}
+
+function formatCoverageSnippet(
+  file: string,
+  line: number,
+  column: number,
+): string {
+  const sourceLine = readSourceLine(file, line);
+  if (!sourceLine) return "";
+
+  const expanded = sourceLine.replace(/\t/g, "  ");
+  const firstNonWhitespace = expanded.search(/\S/);
+  if (firstNonWhitespace == -1) return "";
+  const visible = expanded.slice(firstNonWhitespace).trimEnd();
+  if (!visible.length) return "";
+
+  const maxWidth = 72;
+  const focus = Math.max(
+    0,
+    Math.min(visible.length - 1, Math.max(0, column - 1 - firstNonWhitespace)),
+  );
+
+  if (visible.length <= maxWidth) {
+    return styleCoverageSnippetWindow(visible, 0, visible.length, focus);
+  }
+
+  const start = Math.max(
+    0,
+    Math.min(
+      visible.length - maxWidth,
+      focus - Math.floor(maxWidth / 2),
+    ),
+  );
+  const end = Math.min(visible.length, start + maxWidth);
+  return styleCoverageSnippetWindow(visible, start, end, focus);
+}
+
+function readSourceLine(file: string, line: number): string {
+  const resolved = path.resolve(process.cwd(), file);
+  let lines = sourceLineCache.get(resolved);
+  if (lines === undefined) {
+    try {
+      lines = readFileSync(resolved, "utf8").split(/\r?\n/);
+    } catch {
+      lines = null;
+    }
+    sourceLineCache.set(resolved, lines);
+  }
+  if (!lines) return "";
+  return lines[line - 1] ?? "";
+}
+
+function styleCoverageSnippetWindow(
+  visible: string,
+  start: number,
+  end: number,
+  focus: number,
+): string {
+  const prefix = start > 0 ? "..." : "";
+  const suffix = end < visible.length ? "..." : "";
+  const slice = visible.slice(start, end);
+  const localFocus = Math.max(0, Math.min(slice.length - 1, focus - start));
+  const [highlightStart, highlightEnd] = resolveCoverageHighlightSpan(
+    visible,
+    focus,
+  );
+  const localStart = Math.max(0, Math.min(slice.length, highlightStart - start));
+  const localEnd = Math.max(localStart + 1, Math.min(slice.length, highlightEnd - start));
+
+  if (!slice.length) return "";
+  if (localStart >= slice.length) {
+    return chalk.dim(`${prefix}${slice}${suffix}`);
+  }
+
+  const head = slice.slice(0, localStart);
+  const body = slice.slice(localStart, localEnd || localStart + 1);
+  const tail = slice.slice(localEnd || localStart + 1);
+  return (
+    chalk.dim(prefix + head) +
+    chalk.dim.underline(body.length ? body : slice.charAt(localFocus)) +
+    chalk.dim(tail + suffix)
+  );
+}
+
+function resolveCoverageHighlightSpan(
+  visible: string,
+  focus: number,
+): [number, number] {
+  if (!visible.length) return [0, 0];
+  const index = Math.max(0, Math.min(visible.length - 1, focus));
+  if (isCoverageBoundary(visible.charAt(index))) {
+    return [index, Math.min(visible.length, index + 1)];
+  }
+
+  let start = index;
+  let end = index + 1;
+  while (start > 0 && !isCoverageBoundary(visible.charAt(start - 1))) start--;
+  while (end < visible.length && !isCoverageBoundary(visible.charAt(end))) end++;
+  return [start, end];
+}
+
+function isCoverageBoundary(ch: string): boolean {
+  return /[\s()[\]{}.,;:+\-*/%&|^!?=<>]/.test(ch);
 }
