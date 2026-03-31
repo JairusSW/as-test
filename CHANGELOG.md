@@ -4,7 +4,7 @@
 
 ### Coverage
 
-- feat: make CLI coverage output easier to scan with a summarized coverage block, per-file breakdown, grouped uncovered points, clickable `file:line:column` locations, trimmed source snippets, and aligned gap columns.
+- feat: make CLI coverage output easier to scan with a summarized coverage block, per-file breakdown, grouped uncovered points, clickable `file:line:column` locations, trimmed source snippets, aligned gap columns, and source-aware labels such as `Function`, `Method`, `Constructor`, `Property`, and `Call`.
 
 ## 2026-03-31 - v1.0.6
 

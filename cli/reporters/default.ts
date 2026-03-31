@@ -933,7 +933,17 @@ function renderCoveragePoints(
   console.log(chalk.bold("Coverage Gaps"));
   const sortedFiles = [...files].sort((a, b) => a.file.localeCompare(b.file));
   const missingPoints = sortedFiles.flatMap((file) =>
-    file.points.filter((point) => !point.executed),
+    file.points
+      .filter((point) => !point.executed)
+      .map((point) => ({
+        ...point,
+        displayType: classifyCoveragePoint(
+          point.file,
+          point.line,
+          point.column,
+          point.type,
+        ),
+      })),
   );
   const layout = createCoverageGapLayout(missingPoints);
   for (const file of sortedFiles) {
@@ -951,7 +961,12 @@ function renderCoveragePoints(
       if (point.executed) continue;
       const location = `${toRelativeResultPath(point.file)}:${point.line}:${point.column}`;
       const snippet = formatCoverageSnippet(point.file, point.line, point.column);
-      const typeLabel = point.type.padEnd(layout.typeWidth + 4);
+      const typeLabel = classifyCoveragePoint(
+        point.file,
+        point.line,
+        point.column,
+        point.type,
+      ).padEnd(layout.typeWidth + 4);
       const locationLabel = location.padEnd(layout.locationWidth + 4);
       console.log(
         `    ${chalk.red("x")} ${chalk.dim(typeLabel)}${chalk.dim(locationLabel)}${snippet}`,
@@ -975,13 +990,14 @@ function createCoverageGapLayout(
     line: number;
     column: number;
     type: string;
+    displayType: string;
   }[],
 ): {
   typeWidth: number;
   locationWidth: number;
 } {
   return {
-    typeWidth: Math.max(...points.map((point) => point.type.length), 5),
+    typeWidth: Math.max(...points.map((point) => point.displayType.length), 5),
     locationWidth: Math.max(
       ...points.map(
         (point) =>
@@ -1025,6 +1041,115 @@ function formatCoverageSnippet(
   );
   const end = Math.min(visible.length, start + maxWidth);
   return styleCoverageSnippetWindow(visible, start, end, focus);
+}
+
+function classifyCoveragePoint(
+  file: string,
+  line: number,
+  column: number,
+  fallbackType: string,
+): string {
+  const context = getCoverageSourceContext(file, line, column);
+  if (!context) return fallbackType;
+
+  const declarationType = detectCoverageDeclarationType(context.visible);
+  if (declarationType) return declarationType;
+
+  if (detectCoverageCall(context.visible, context.focus)) return "Call";
+
+  return fallbackType;
+}
+
+function detectCoverageDeclarationType(visible: string): string | null {
+  const trimmed = visible.trim();
+  if (!trimmed.length) return null;
+
+  if (/^(?:export\s+)?function\b/.test(trimmed)) return "Function";
+  if (
+    trimmed.startsWith("constructor(") ||
+    /^(?:public\s+|private\s+|protected\s+)constructor\s*\(/.test(trimmed)
+  ) {
+    return "Constructor";
+  }
+  if (
+    /^(?:export\s+)?(?:public\s+|private\s+|protected\s+)?(?:static\s+)?[A-Za-z_]\w*(?:<[^>]+>)?\([^)]*\)\s*:\s*[^{=]+[{]?$/.test(
+      trimmed,
+    )
+  ) {
+    return "Method";
+  }
+  if (
+    /^(?:public\s+|private\s+|protected\s+)?(?:readonly\s+)?[A-Za-z_]\w*(?:<[^>]+>)?\s*:\s*[^=;{]+(?:=.*)?;?$/.test(
+      trimmed,
+    )
+  ) {
+    return "Property";
+  }
+  if (/^(?:export\s+)?class\b/.test(trimmed)) return "Class";
+  if (/^(?:export\s+)?enum\b/.test(trimmed)) return "Enum";
+  if (/^(?:export\s+)?interface\b/.test(trimmed)) return "Interface";
+  if (/^(?:export\s+)?namespace\b/.test(trimmed)) return "Namespace";
+  if (/^(?:const|let|var)\b/.test(trimmed)) return "Variable";
+  return null;
+}
+
+function detectCoverageCall(visible: string, focus: number): boolean {
+  const matches = [...visible.matchAll(/\b[A-Za-z_]\w*(?:<[^>()]+>)?\s*\(/g)];
+  if (!matches.length) return false;
+
+  let bestDistance = Number.POSITIVE_INFINITY;
+  let bestMatch: RegExpMatchArray | null = null;
+  for (const match of matches) {
+    const start = match.index ?? -1;
+    if (start == -1) continue;
+    const end = start + match[0].length;
+    const distance =
+      focus < start ? start - focus : focus >= end ? focus - end + 1 : 0;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestMatch = match;
+    }
+  }
+
+  if (!bestMatch) return false;
+  const candidate = bestMatch[0].replace(/\s*\($/, "");
+  const keyword = candidate.replace(/<[^>]+>$/, "");
+  if (
+    keyword == "if" ||
+    keyword == "for" ||
+    keyword == "while" ||
+    keyword == "switch" ||
+    keyword == "return" ||
+    keyword == "function"
+  ) {
+    return false;
+  }
+
+  return bestDistance <= Math.max(12, Math.floor(visible.length / 3));
+}
+
+function getCoverageSourceContext(
+  file: string,
+  line: number,
+  column: number,
+): {
+  visible: string;
+  focus: number;
+} | null {
+  const sourceLine = readSourceLine(file, line);
+  if (!sourceLine) return null;
+
+  const expanded = sourceLine.replace(/\t/g, "  ");
+  const firstNonWhitespace = expanded.search(/\S/);
+  if (firstNonWhitespace == -1) return null;
+  const visible = expanded.slice(firstNonWhitespace).trimEnd();
+  if (!visible.length) return null;
+
+  const focus = Math.max(
+    0,
+    Math.min(visible.length - 1, Math.max(0, column - 1 - firstNonWhitespace)),
+  );
+  return { visible, focus };
 }
 
 function readSourceLine(file: string, line: number): string {
