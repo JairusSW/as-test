@@ -1,10 +1,16 @@
 # Change Log
 
-## 2026-03-30 - v1.0.5
+## Unreleased
 
 ### Fuzzing
 
 - feat: print exact failing fuzz seeds and one-run repro commands on logical fuzz failures, and persist captured `run(...)` inputs in `.as-test/crashes` so side-effectful generators still leave behind replayable failure data.
+
+### Reporting
+
+- fix: correct reporter override output behavior.
+
+## 2026-03-30 - v1.0.5
 
 ### CLI
 
