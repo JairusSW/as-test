@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "fs";
 import * as path from "path";
 export function persistCrashRecord(rootDir, record) {
-    const entry = crashEntryKey(record.file);
+    const entry = record.entryKey?.length ? record.entryKey : crashEntryKey(record.file);
     const dir = path.resolve(process.cwd(), rootDir);
     mkdirSync(dir, { recursive: true });
     const jsonPath = path.join(dir, `${entry}.json`);
@@ -51,6 +51,17 @@ function buildCrashLog(payload) {
             lines.push(`right: ${payload.failure.right}`);
         if (payload.failure.message) {
             lines.push(`message: ${payload.failure.message}`);
+        }
+    }
+    if (payload.failures?.length) {
+        lines.push("");
+        lines.push("[fuzz-failures]");
+        for (const failure of payload.failures) {
+            lines.push(`run: ${failure.run}`);
+            lines.push(`seed: ${failure.seed}`);
+            if (failure.input)
+                lines.push(`input: ${JSON.stringify(failure.input)}`);
+            lines.push("");
         }
     }
     lines.push("");

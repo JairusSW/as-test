@@ -360,7 +360,19 @@ function renderFailedFuzzers(results) {
                 console.log(chalk.dim(`Runs: ${fuzzer.passed + fuzzer.failed + fuzzer.crashed} completed (${fuzzer.passed} passed, ${fuzzer.failed} failed, ${fuzzer.crashed} crashed)`));
                 console.log(chalk.dim(`Repro: ${repro}`));
                 console.log(chalk.dim(`Seed: ${modeResult.seed}`));
-                if (modeResult.crashFiles.length) {
+                if (fuzzer.failures?.length) {
+                    console.log(chalk.dim(`Failing seeds: ${formatFailingSeeds(fuzzer)}`));
+                    for (const failure of fuzzer.failures) {
+                        console.log(chalk.dim(`Repro ${failure.run + 1}: ${buildFuzzReproCommand(relativeFile, failure.seed, modeResult.modeName, 1)}`));
+                        if (failure.input) {
+                            console.log(chalk.dim(`Input ${failure.run + 1}: ${JSON.stringify(failure.input)}`));
+                        }
+                    }
+                }
+                if (fuzzer.crashFile?.length) {
+                    console.log(chalk.dim(`Crash: ${fuzzer.crashFile}`));
+                }
+                else if (modeResult.crashFiles.length) {
                     console.log(chalk.dim(`Crash: ${modeResult.crashFiles[0]}`));
                 }
                 console.log("");
@@ -392,9 +404,13 @@ function averageFuzzModeTime(results) {
         return 0;
     return results.reduce((sum, result) => sum + result.time, 0) / results.length;
 }
-function buildFuzzReproCommand(file, seed, modeName) {
+function buildFuzzReproCommand(file, seed, modeName, runs) {
     const modeArg = modeName != "default" ? ` --mode ${modeName}` : "";
-    return `ast fuzz ${file}${modeArg} --seed ${seed}`;
+    const runsArg = typeof runs == "number" ? ` --runs ${runs}` : "";
+    return `ast fuzz ${file}${modeArg} --seed ${seed}${runsArg}`;
+}
+function formatFailingSeeds(fuzzer) {
+    return (fuzzer.failures ?? []).map((failure) => String(failure.seed)).join(", ");
 }
 function toRelativeResultPath(file) {
     const relative = path.relative(process.cwd(), path.resolve(process.cwd(), file));

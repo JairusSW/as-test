@@ -120,6 +120,12 @@ export type FuzzerRunResult = {
     right: string;
     message: string;
   };
+  failures?: {
+    run: number;
+    seed: number;
+    input: unknown[] | null;
+  }[];
+  crashFile?: string;
 };
 
 export type FuzzResult = {

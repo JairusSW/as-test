@@ -1,4 +1,4 @@
-import { quote } from "../util/json";
+import { quote, rawOrNull, stringifyValue } from "../util/json";
 
 export class StringOptions {
   charset: string = "ascii";
@@ -211,6 +211,7 @@ export class FuzzerResult {
   public failureLeft: string = "";
   public failureRight: string = "";
   public failureMessage: string = "";
+  public failures: FuzzFailure[] = [];
 
   serialize(): string {
     return (
@@ -238,7 +239,27 @@ export class FuzzerResult {
       quote(this.failureRight) +
       ',"message":' +
       quote(this.failureMessage) +
-      "}}"
+      '},"failures":' +
+      serializeFuzzFailures(this.failures) +
+      "}"
+    );
+  }
+}
+
+export class FuzzFailure {
+  public run: i32 = 0;
+  public seed: u64 = 0;
+  public input: string = "";
+
+  serialize(): string {
+    return (
+      '{"run":' +
+      this.run.toString() +
+      ',"seed":' +
+      this.seed.toString() +
+      ',"input":' +
+      rawOrNull(this.input) +
+      "}"
     );
   }
 }
@@ -329,7 +350,7 @@ function createSkippedResult(name: string): FuzzerResult {
   return result;
 }
 
-function recordResult(result: FuzzerResult): void {
+function recordResult(result: FuzzerResult, run: i32, seed: u64): void {
   if (__as_test_fuzz_failed) {
     result.failed++;
     if (!result.failureInstr.length && __as_test_fuzz_failure_instr.length) {
@@ -338,6 +359,11 @@ function recordResult(result: FuzzerResult): void {
       result.failureRight = __as_test_fuzz_failure_right;
       result.failureMessage = __as_test_fuzz_failure_message;
     }
+    const failure = new FuzzFailure();
+    failure.run = run;
+    failure.seed = seed;
+    failure.input = __as_test_fuzz_input;
+    result.failures.push(failure);
   } else {
     result.passed++;
   }
@@ -389,7 +415,7 @@ export class Fuzzer0<R> extends FuzzerBase {
           "fuzz generator must call run() exactly once",
         );
       }
-      recordResult(result);
+      recordResult(result, i, seedBase + <u64>i);
     }
     __fuzz_callback0 = null;
     result.timeEnd = performance.now();
@@ -438,7 +464,10 @@ export class Fuzzer1<A, R> extends FuzzerBase {
           "fuzzers with arguments must call .generate(...)",
         );
       } else {
-        this.generator(seed, changetype<(a: A) => R>(__fuzz_run1));
+        this.generator(seed, (a: A): R => {
+          __as_test_fuzz_input = "[" + stringifyValue<A>(a) + "]";
+          return changetype<(a: A) => R>(__fuzz_run1)(a);
+        });
       }
       if (__fuzz_calls != 1) {
         failFuzzIteration(
@@ -448,7 +477,7 @@ export class Fuzzer1<A, R> extends FuzzerBase {
           "fuzz generator must call run() exactly once",
         );
       }
-      recordResult(result);
+      recordResult(result, i, seedBase + <u64>i);
     }
     __fuzz_callback1 = null;
     result.timeEnd = performance.now();
@@ -500,7 +529,11 @@ export class Fuzzer2<A, B, R> extends FuzzerBase {
           "fuzzers with arguments must call .generate(...)",
         );
       } else {
-        this.generator(seed, changetype<(a: A, b: B) => R>(__fuzz_run2));
+        this.generator(seed, (a: A, b: B): R => {
+          __as_test_fuzz_input =
+            "[" + stringifyValue<A>(a) + "," + stringifyValue<B>(b) + "]";
+          return changetype<(a: A, b: B) => R>(__fuzz_run2)(a, b);
+        });
       }
       if (__fuzz_calls != 1) {
         failFuzzIteration(
@@ -510,7 +543,7 @@ export class Fuzzer2<A, B, R> extends FuzzerBase {
           "fuzz generator must call run() exactly once",
         );
       }
-      recordResult(result);
+      recordResult(result, i, seedBase + <u64>i);
     }
     __fuzz_callback2 = null;
     result.timeEnd = performance.now();
@@ -564,7 +597,17 @@ export class Fuzzer3<A, B, C, R> extends FuzzerBase {
       } else {
         changetype<(seed: FuzzSeed, run: (a: A, b: B, c: C) => R) => void>(
           this.generator,
-        )(seed, changetype<(a: A, b: B, c: C) => R>(__fuzz_run3));
+        )(seed, (a: A, b: B, c: C): R => {
+          __as_test_fuzz_input =
+            "[" +
+            stringifyValue<A>(a) +
+            "," +
+            stringifyValue<B>(b) +
+            "," +
+            stringifyValue<C>(c) +
+            "]";
+          return changetype<(a: A, b: B, c: C) => R>(__fuzz_run3)(a, b, c);
+        });
       }
       if (__fuzz_calls != 1) {
         failFuzzIteration(
@@ -574,7 +617,7 @@ export class Fuzzer3<A, B, C, R> extends FuzzerBase {
           "fuzz generator must call run() exactly once",
         );
       }
-      recordResult(result);
+      recordResult(result, i, seedBase + <u64>i);
     }
     __fuzz_callback3 = null;
     result.timeEnd = performance.now();
@@ -694,6 +737,8 @@ function containsFloatValue<T>(values: T[], needle: T): bool {
 @global export let __as_test_fuzz_failure_right: string = "";
 // @ts-ignore
 @global export let __as_test_fuzz_failure_message: string = "";
+// @ts-ignore
+@global export let __as_test_fuzz_input: string = "";
 
 export function prepareFuzzIteration(): void {
   __as_test_fuzz_failed = false;
@@ -701,6 +746,7 @@ export function prepareFuzzIteration(): void {
   __as_test_fuzz_failure_left = "";
   __as_test_fuzz_failure_right = "";
   __as_test_fuzz_failure_message = "";
+  __as_test_fuzz_input = "[]";
 }
 
 export function failFuzzIteration(
@@ -720,4 +766,16 @@ export function failFuzzIteration(
 
 function panic(): void {
   unreachable();
+}
+
+function serializeFuzzFailures(values: FuzzFailure[]): string {
+  if (!values.length) return "[]";
+
+  let out = "[";
+  for (let i = 0; i < values.length; i++) {
+    if (i) out += ",";
+    out += unchecked(values[i]).serialize();
+  }
+  out += "]";
+  return out;
 }

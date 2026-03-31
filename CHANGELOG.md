@@ -2,6 +2,10 @@
 
 ## 2026-03-30 - v1.0.5
 
+### Fuzzing
+
+- feat: print exact failing fuzz seeds and one-run repro commands on logical fuzz failures, and persist captured `run(...)` inputs in `.as-test/crashes` so side-effectful generators still leave behind replayable failure data.
+
 ### CLI
 
 - fix: preserve selectors passed after `--parallel` so commands like `ast test --parallel math` still target the requested suite.

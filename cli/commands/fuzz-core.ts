@@ -30,6 +30,12 @@ export type FuzzerRunResult = {
     right: string;
     message: string;
   };
+  failures?: {
+    run: number;
+    seed: number;
+    input: unknown[] | null;
+  }[];
+  crashFile?: string;
 };
 
 export type FuzzResult = {
@@ -159,6 +165,7 @@ async function runFuzzTarget(
     const crash = persistCrashRecord(config.crashDir, {
       kind: "fuzz",
       file,
+      entryKey: buildFuzzCrashEntryKey(file, modeName ?? "default"),
       mode: modeName ?? "default",
       seed: config.seed,
       error: crashMessage,
@@ -186,6 +193,7 @@ async function runFuzzTarget(
     const crash = persistCrashRecord(config.crashDir, {
       kind: "fuzz",
       file,
+      entryKey: buildFuzzCrashEntryKey(file, modeName ?? "default"),
       mode: modeName ?? "default",
       seed: config.seed,
       error: `missing fuzz report payload from ${path.basename(file)}`,
@@ -208,13 +216,44 @@ async function runFuzzTarget(
     };
   }
 
+  const crashFiles: string[] = [];
+  for (const fuzzer of report.fuzzers) {
+    if (fuzzer.failed <= 0 && fuzzer.crashed <= 0) continue;
+    const firstFailureSeed =
+      typeof fuzzer.failures?.[0]?.seed == "number"
+        ? fuzzer.failures[0].seed
+        : config.seed;
+    const crash = persistCrashRecord(config.crashDir, {
+      kind: "fuzz",
+      file,
+      entryKey: buildFuzzFailureEntryKey(file, fuzzer.name, modeName ?? "default"),
+      mode: modeName ?? "default",
+      seed: firstFailureSeed,
+      reproCommand: buildFuzzReproCommand(
+        file,
+        firstFailureSeed,
+        modeName ?? "default",
+        1,
+      ),
+      error:
+        fuzzer.failure?.message ||
+        `fuzz failure in ${fuzzer.name} after ${fuzzer.runs} runs`,
+      stdout: passthrough.stdout,
+      stderr: "",
+      failure: fuzzer.failure,
+      failures: fuzzer.failures,
+    });
+    crashFiles.push(crash.jsonPath);
+    fuzzer.crashFile = crash.jsonPath;
+  }
+
   return {
     file,
     target: path.basename(file),
     modeName: modeName ?? "default",
     runs: report.fuzzers.reduce((sum, item) => sum + item.runs, 0),
     crashes: report.fuzzers.reduce((sum, item) => sum + item.crashed, 0),
-    crashFiles: [],
+    crashFiles,
     seed: config.seed,
     time: Date.now() - startedAt,
     buildTime,
@@ -222,6 +261,36 @@ async function runFuzzTarget(
     buildFinishedAt,
     fuzzers: report.fuzzers,
   };
+}
+
+function buildFuzzReproCommand(
+  file: string,
+  seed: number,
+  modeName: string,
+  runs?: number,
+): string {
+  const modeArg = modeName != "default" ? ` --mode ${modeName}` : "";
+  const runsArg = typeof runs == "number" ? ` --runs ${runs}` : "";
+  return `ast fuzz ${file}${modeArg} --seed ${seed}${runsArg}`;
+}
+
+function buildFuzzFailureEntryKey(
+  file: string,
+  name: string,
+  modeName: string,
+): string {
+  return `${path.basename(file).replace(/\.ts$/, "")}.${sanitizeEntryName(modeName)}.${sanitizeEntryName(name)}`;
+}
+
+function buildFuzzCrashEntryKey(file: string, modeName: string): string {
+  return `${path.basename(file).replace(/\.ts$/, "")}.${sanitizeEntryName(modeName)}`;
+}
+
+function sanitizeEntryName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "fuzzer";
 }
 
 function captureFrames(

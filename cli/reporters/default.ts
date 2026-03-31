@@ -423,9 +423,7 @@ function renderFailedFuzzers(
         console.log(chalk.dim(`Repro: ${repro}`));
         console.log(chalk.dim(`Seed: ${modeResult.seed}`));
         if (modeResult.crashFiles.length) {
-          console.log(
-            chalk.dim(`Crash: ${modeResult.crashFiles[0] as string}`),
-          );
+          console.log(chalk.dim(`Crash: ${modeResult.crashFiles[0] as string}`));
         }
         console.log("");
         continue;
@@ -455,7 +453,26 @@ function renderFailedFuzzers(
         );
         console.log(chalk.dim(`Repro: ${repro}`));
         console.log(chalk.dim(`Seed: ${modeResult.seed}`));
-        if (modeResult.crashFiles.length) {
+        if (fuzzer.failures?.length) {
+          console.log(chalk.dim(`Failing seeds: ${formatFailingSeeds(fuzzer)}`));
+          for (const failure of fuzzer.failures) {
+            console.log(
+              chalk.dim(
+                `Repro ${failure.run + 1}: ${buildFuzzReproCommand(relativeFile, failure.seed, modeResult.modeName, 1)}`,
+              ),
+            );
+            if (failure.input) {
+              console.log(
+                chalk.dim(
+                  `Input ${failure.run + 1}: ${JSON.stringify(failure.input)}`,
+                ),
+              );
+            }
+          }
+        }
+        if (fuzzer.crashFile?.length) {
+          console.log(chalk.dim(`Crash: ${fuzzer.crashFile}`));
+        } else if (modeResult.crashFiles.length) {
           console.log(
             chalk.dim(`Crash: ${modeResult.crashFiles[0] as string}`),
           );
@@ -500,9 +517,17 @@ function buildFuzzReproCommand(
   file: string,
   seed: number,
   modeName: string,
+  runs?: number,
 ): string {
   const modeArg = modeName != "default" ? ` --mode ${modeName}` : "";
-  return `ast fuzz ${file}${modeArg} --seed ${seed}`;
+  const runsArg = typeof runs == "number" ? ` --runs ${runs}` : "";
+  return `ast fuzz ${file}${modeArg} --seed ${seed}${runsArg}`;
+}
+
+function formatFailingSeeds(
+  fuzzer: FuzzResult["fuzzers"][number],
+): string {
+  return (fuzzer.failures ?? []).map((failure) => String(failure.seed)).join(", ");
 }
 
 function toRelativeResultPath(file: string): string {

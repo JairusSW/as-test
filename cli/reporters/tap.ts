@@ -312,10 +312,14 @@ function buildFuzzerFailureMessage(
   if (fuzzer.crashed > 0 || result.crashes > 0) {
     return buildFuzzMessage(result.runs, result.seed, result.crashFiles[0]);
   }
+  const failureSeeds =
+    fuzzer.failures?.length
+      ? `, failing seeds ${fuzzer.failures.map((failure) => failure.seed).join(", ")}`
+      : "";
   if (fuzzer.failure?.message?.length) {
-    return `${fuzzer.failure.message} (runs ${fuzzer.runs}, seed ${result.seed})`;
+    return `${fuzzer.failure.message} (runs ${fuzzer.runs}, seed ${result.seed}${failureSeeds})`;
   }
-  return `fuzz failed after ${fuzzer.runs} runs (seed ${result.seed})`;
+  return `fuzz failed after ${fuzzer.runs} runs (seed ${result.seed}${failureSeeds})`;
 }
 
 function buildFuzzMessage(

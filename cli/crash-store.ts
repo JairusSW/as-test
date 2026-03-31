@@ -5,6 +5,7 @@ export type CrashRecord = {
   kind: "test" | "fuzz";
   stage?: "build" | "run";
   file: string;
+  entryKey?: string;
   mode?: string;
   seed?: number;
   cwd?: string;
@@ -20,6 +21,11 @@ export type CrashRecord = {
     right?: string;
     message?: string;
   };
+  failures?: {
+    run: number;
+    seed: number;
+    input: unknown[] | null;
+  }[];
 };
 
 export function persistCrashRecord(
@@ -29,7 +35,7 @@ export function persistCrashRecord(
   jsonPath: string;
   logPath: string;
 } {
-  const entry = crashEntryKey(record.file);
+  const entry = record.entryKey?.length ? record.entryKey : crashEntryKey(record.file);
   const dir = path.resolve(process.cwd(), rootDir);
   mkdirSync(dir, { recursive: true });
 
@@ -76,6 +82,16 @@ function buildCrashLog(payload: CrashRecord & { timestamp: string }): string {
     if (payload.failure.right) lines.push(`right: ${payload.failure.right}`);
     if (payload.failure.message) {
       lines.push(`message: ${payload.failure.message}`);
+    }
+  }
+  if (payload.failures?.length) {
+    lines.push("");
+    lines.push("[fuzz-failures]");
+    for (const failure of payload.failures) {
+      lines.push(`run: ${failure.run}`);
+      lines.push(`seed: ${failure.seed}`);
+      if (failure.input) lines.push(`input: ${JSON.stringify(failure.input)}`);
+      lines.push("");
     }
   }
   lines.push("");
