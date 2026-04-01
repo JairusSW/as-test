@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2026-03-31 - v1.0.7
+
 ### Coverage
 
 - feat: make CLI coverage output easier to scan with a summarized coverage block, per-file breakdown, grouped uncovered points, clickable `file:line:column` locations, trimmed source snippets, aligned gap columns, source-aware labels such as `Function`, `Method`, `Constructor`, `Property`, and `Call`, and coverage-point ignore rules for labels, names, locations, and snippets.
