@@ -121,6 +121,45 @@
                 "type": "string"
               },
               "default": []
+            },
+            "ignore": {
+              "type": "object",
+              "description": "Ignore specific coverage points by derived label, symbol name, location, or source snippet.",
+              "additionalProperties": true,
+              "properties": {
+                "labels": {
+                  "type": "array",
+                  "description": "Ignore all points whose rendered label matches, such as Call, Method, Constructor, Property, or Function.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "default": []
+                },
+                "names": {
+                  "type": "array",
+                  "description": "Ignore declarations or calls whose extracted symbol name matches a glob pattern.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "default": []
+                },
+                "locations": {
+                  "type": "array",
+                  "description": "Ignore points whose file:line:column location matches a glob pattern.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "default": []
+                },
+                "snippets": {
+                  "type": "array",
+                  "description": "Ignore points whose trimmed source snippet matches a glob pattern.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "default": []
+                }
+              }
             }
           }
         }

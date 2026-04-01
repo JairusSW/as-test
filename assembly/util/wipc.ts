@@ -52,6 +52,8 @@ export class SnapshotReply {
 export class FuzzConfigReply {
   public runs: i32 = 1000;
   public seed: u64 = 1337;
+  public runsOverrideKind: i32 = 0;
+  public runsOverrideValue: f64 = 0.0;
 }
 
 export function sendAssertionFailure(
@@ -141,13 +143,21 @@ export function requestFuzzConfig(): FuzzConfigReply {
   if (!body.length) {
     return new FuzzConfigReply();
   }
-  const sep = body.indexOf("\n");
-  if (sep < 0) return new FuzzConfigReply();
+  const first = body.indexOf("\n");
+  if (first < 0) return new FuzzConfigReply();
   const reply = new FuzzConfigReply();
-  const runs = body.slice(0, sep);
-  const seed = body.slice(sep + 1);
+  const second = body.indexOf("\n", first + 1);
+  const third = second >= 0 ? body.indexOf("\n", second + 1) : -1;
+  const runs = body.slice(0, first);
+  const seed =
+    second >= 0 ? body.slice(first + 1, second) : body.slice(first + 1);
+  const kind =
+    second >= 0 && third >= 0 ? body.slice(second + 1, third) : "";
+  const value = third >= 0 ? body.slice(third + 1) : "";
   if (runs.length) reply.runs = I32.parseInt(runs);
   if (seed.length) reply.seed = U64.parseInt(seed);
+  if (kind.length) reply.runsOverrideKind = I32.parseInt(kind);
+  if (value.length) reply.runsOverrideValue = parseFloat(value);
   return reply;
 }
 

@@ -186,13 +186,19 @@ export class FuzzSeed {
 export abstract class FuzzerBase {
   public name: string;
   public skipped: bool;
-  constructor(name: string, skipped: bool = false) {
+  public operations: i32;
+  constructor(name: string, skipped: bool = false, operations: i32 = 0) {
     this.name = name;
     this.skipped = skipped;
+    this.operations = operations > 0 ? operations : 0;
   }
 
   generate<T extends Function>(_generator: T): this {
     return this;
+  }
+
+  runsOr(defaultRuns: i32): i32 {
+    return this.operations > 0 ? this.operations : defaultRuns;
   }
 
   abstract run(seed: u64, runs: i32): FuzzerResult;
@@ -377,8 +383,9 @@ export class Fuzzer0<R> extends FuzzerBase {
     name: string,
     private callback: () => R,
     skipped: bool = false,
+    operations: i32 = 0,
   ) {
-    super(name, skipped);
+    super(name, skipped, operations);
     this.returnsBool = !isVoid<R>();
   }
 
@@ -431,8 +438,9 @@ export class Fuzzer1<A, R> extends FuzzerBase {
     name: string,
     private callback: (a: A) => R,
     skipped: bool = false,
+    operations: i32 = 0,
   ) {
-    super(name, skipped);
+    super(name, skipped, operations);
     this.returnsBool = !isVoid<R>();
   }
 
@@ -494,8 +502,9 @@ export class Fuzzer2<A, B, R> extends FuzzerBase {
     name: string,
     private callback: (a: A, b: B) => R,
     skipped: bool = false,
+    operations: i32 = 0,
   ) {
-    super(name, skipped);
+    super(name, skipped, operations);
     this.returnsBool = !isVoid<R>();
   }
 
@@ -559,8 +568,9 @@ export class Fuzzer3<A, B, C, R> extends FuzzerBase {
     name: string,
     private callback: (a: A, b: B, c: C) => R,
     skipped: bool = false,
+    operations: i32 = 0,
   ) {
-    super(name, skipped);
+    super(name, skipped, operations);
     this.returnsBool = !isVoid<R>();
   }
 
@@ -629,16 +639,23 @@ export function createFuzzer<T extends Function>(
   name: string,
   callback: T,
   skipped: bool = false,
+  operations: i32 = 0,
 ): FuzzerBase {
   const length = callback.length;
   if (length == 0) {
-    return new Fuzzer0<usize>(name, changetype<() => usize>(callback), skipped);
+    return new Fuzzer0<usize>(
+      name,
+      changetype<() => usize>(callback),
+      skipped,
+      operations,
+    );
   }
   if (length == 1) {
     return new Fuzzer1<usize, usize>(
       name,
       changetype<(a: usize) => usize>(callback),
       skipped,
+      operations,
     );
   }
   if (length == 2) {
@@ -646,6 +663,7 @@ export function createFuzzer<T extends Function>(
       name,
       changetype<(a: usize, b: usize) => usize>(callback),
       skipped,
+      operations,
     );
   }
   if (length == 3) {
@@ -653,10 +671,16 @@ export function createFuzzer<T extends Function>(
       name,
       changetype<(a: usize, b: usize, c: usize) => usize>(callback),
       skipped,
+      operations,
     );
   }
   panic();
-  return new Fuzzer0<usize>(name, changetype<() => usize>(callback), skipped);
+  return new Fuzzer0<usize>(
+    name,
+    changetype<() => usize>(callback),
+    skipped,
+    operations,
+  );
 }
 
 function buildAlphabet(options: StringOptions): i32[] {

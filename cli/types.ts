@@ -19,6 +19,14 @@ export class CoverageOptions {
   includeSpecs: boolean = false;
   include: string[] = [];
   exclude: string[] = [];
+  ignore: CoverageIgnoreOptions = new CoverageIgnoreOptions();
+}
+
+export class CoverageIgnoreOptions {
+  labels: string[] = [];
+  names: string[] = [];
+  locations: string[] = [];
+  snippets: string[] = [];
 }
 
 export class Suite {

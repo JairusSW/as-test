@@ -29,11 +29,38 @@ export async function fuzz(configPath = DEFAULT_CONFIG_PATH, selectors = [], mod
     return results;
 }
 function resolveFuzzConfig(raw, overrides) {
-    const config = Object.assign({}, raw, overrides);
+    const config = Object.assign({}, raw);
+    if (typeof overrides.seed == "number") {
+        config.seed = overrides.seed;
+    }
+    if (typeof overrides.runs == "number") {
+        config.runs = overrides.runs;
+    }
+    config.runsOverrideKind = 0;
+    config.runsOverrideValue = 0;
+    if (overrides.runsOverride) {
+        config.runsOverrideKind = encodeRunsOverrideKind(overrides.runsOverride.kind);
+        config.runsOverrideValue = overrides.runsOverride.value;
+        if (overrides.runsOverride.kind == "set") {
+            config.runs = Math.max(1, Math.round(overrides.runsOverride.value));
+        }
+    }
     if (config.target != "bindings") {
         throw new Error(`fuzz target must be "bindings"; received "${config.target}"`);
     }
     return config;
+}
+function encodeRunsOverrideKind(kind) {
+    switch (kind) {
+        case "set":
+            return 1;
+        case "scale":
+            return 2;
+        case "add":
+            return 3;
+        case "percent-add":
+            return 4;
+    }
 }
 async function runFuzzTarget(file, outDir, duplicateBasenames, config, buildStartedAt, buildFinishedAt, buildTime, modeName) {
     const startedAt = Date.now();
@@ -48,7 +75,8 @@ async function runFuzzTarget(file, outDir, duplicateBasenames, config, buildStar
         if (type == 0x02) {
             const event = JSON.parse(payload.toString("utf8"));
             if (String(event.kind ?? "") == "fuzz:config") {
-                respond(`${config.runs}\n${config.seed}`);
+                const resolved = config;
+                respond(`${config.runs}\n${config.seed}\n${resolved.runsOverrideKind ?? 0}\n${resolved.runsOverrideValue ?? 0}`);
             }
             else {
                 respond("");

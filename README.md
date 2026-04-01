@@ -83,6 +83,23 @@ Minimal `as-test.config.json`:
 }
 ```
 
+Coverage point filtering is configurable when you want to ignore known-noisy gaps:
+
+```json
+{
+  "coverage": {
+    "enabled": true,
+    "include": ["assembly/src/**/*.ts"],
+    "ignore": {
+      "labels": ["Call"],
+      "names": ["panic", "serialize"],
+      "locations": ["assembly/src/fuzz.ts:38:*"],
+      "snippets": ["*message: string*"]
+    }
+  }
+}
+```
+
 ## Writing Tests
 
 Tests usually live in `assembly/__tests__/*.spec.ts`.
@@ -216,6 +233,23 @@ fuzz("bounded integer addition", (left: i32, right: i32): bool => {
 }).generate((seed: FuzzSeed, run: (left: i32, right: i32) => bool): void => {
   run(seed.i32({ min: -1000, max: 1000 }), seed.i32({ min: -1000, max: 1000 }));
 });
+```
+
+Pass a third argument to override the operation count for one target without changing the global fuzz config:
+
+```ts
+fuzz("hot path stays stable", (): void => {
+  expect(1 + 1).toBe(2);
+}, 250);
+```
+
+You can still override fuzz runs from the CLI when you want to force a different count for the current command:
+
+```bash
+npx ast fuzz --runs 500
+npx ast fuzz --runs 1.5x
+npx ast fuzz --runs +10%
+npx ast fuzz --runs +100000
 ```
 
 If you used `npx ast init` with a fuzzer example, the config is already there. Otherwise, add a `fuzz` block to `as-test.config.json` so `npx ast fuzz` knows what to build:

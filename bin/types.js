@@ -21,6 +21,15 @@ export class CoverageOptions {
         this.includeSpecs = false;
         this.include = [];
         this.exclude = [];
+        this.ignore = new CoverageIgnoreOptions();
+    }
+}
+export class CoverageIgnoreOptions {
+    constructor() {
+        this.labels = [];
+        this.names = [];
+        this.locations = [];
+        this.snippets = [];
     }
 }
 export class Suite {

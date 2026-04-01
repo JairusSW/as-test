@@ -1259,7 +1259,7 @@ function buildBasicFuzzerExample(): string {
 fuzz("basic string fuzzer", (value: string): bool => {
   expect(value.length >= 0).toBe(true);
   return value.length <= 24;
-}).generate((seed: FuzzSeed, run: (value: string) => bool): void => {
+}, 250).generate((seed: FuzzSeed, run: (value: string) => bool): void => {
   run(
     seed.string({
       charset: "ascii",

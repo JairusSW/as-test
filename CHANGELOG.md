@@ -4,7 +4,12 @@
 
 ### Coverage
 
-- feat: make CLI coverage output easier to scan with a summarized coverage block, per-file breakdown, grouped uncovered points, clickable `file:line:column` locations, trimmed source snippets, aligned gap columns, and source-aware labels such as `Function`, `Method`, `Constructor`, `Property`, and `Call`.
+- feat: make CLI coverage output easier to scan with a summarized coverage block, per-file breakdown, grouped uncovered points, clickable `file:line:column` locations, trimmed source snippets, aligned gap columns, source-aware labels such as `Function`, `Method`, `Constructor`, `Property`, and `Call`, and coverage-point ignore rules for labels, names, locations, and snippets.
+
+### Fuzzing
+
+- feat: allow `fuzz(...)` and `xfuzz(...)` targets to override their own operation count with an optional third argument, so one file can mix short smoke fuzzers and heavier targets without changing the global `fuzz.runs` config.
+- feat: make `--runs` / `--fuzz-runs` accept absolute and relative overrides such as `500`, `1.5x`, `+10%`, and `+100000`, applying them to each fuzzer's effective run count for that command.
 
 ## 2026-03-31 - v1.0.6
 

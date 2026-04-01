@@ -340,6 +340,22 @@ function validateCoverageValue(value, path, issues) {
     }
     validateStringArrayField(obj, "include", path, issues);
     validateStringArrayField(obj, "exclude", path, issues);
+    if ("ignore" in obj && obj.ignore != undefined) {
+        if (!obj.ignore || typeof obj.ignore != "object" || Array.isArray(obj.ignore)) {
+            issues.push({
+                path: `${path}.ignore`,
+                message: "must be an object",
+                fix: 'set "ignore" to an object such as { "labels": ["Call"], "names": ["panic"] }',
+            });
+        }
+        else {
+            const ignore = obj.ignore;
+            validateStringArrayField(ignore, "labels", `${path}.ignore`, issues);
+            validateStringArrayField(ignore, "names", `${path}.ignore`, issues);
+            validateStringArrayField(ignore, "locations", `${path}.ignore`, issues);
+            validateStringArrayField(ignore, "snippets", `${path}.ignore`, issues);
+        }
+    }
 }
 function validateStringArrayField(raw, key, pathPrefix, issues) {
     if (!(key in raw) || raw[key] == undefined)

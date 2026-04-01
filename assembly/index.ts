@@ -169,8 +169,9 @@ export function xit(description: string, callback: () => void): void {
 export function fuzz<T extends Function>(
   description: string,
   callback: T,
+  operations: i32 = 0,
 ): FuzzerBase {
-  const entry = createFuzzer(description, callback);
+  const entry = createFuzzer(description, callback, false, operations);
   entryFuzzers.push(entry);
   return entry;
 }
@@ -178,8 +179,9 @@ export function fuzz<T extends Function>(
 export function xfuzz<T extends Function>(
   description: string,
   callback: T,
+  operations: i32 = 0,
 ): FuzzerBase {
-  const entry = createFuzzer(description, callback, true);
+  const entry = createFuzzer(description, callback, true, operations);
   entryFuzzers.push(entry);
   return entry;
 }
@@ -421,6 +423,8 @@ function containsOnlySuites(values: Suite[]): bool {
 class FuzzConfig {
   runs: i32 = 1000;
   seed: u64 = 1337;
+  runsOverrideKind: i32 = 0;
+  runsOverrideValue: f64 = 0.0;
 }
 
 class FuzzReport {
@@ -444,7 +448,10 @@ function runFuzzers(): void {
   for (let i = 0; i < entryFuzzers.length; i++) {
     const fuzzer = unchecked(entryFuzzers[i]);
     prepareFuzzIteration();
-    const result = fuzzer.run(config.seed, config.runs);
+    const result = fuzzer.run(
+      config.seed,
+      resolveFuzzerRuns(fuzzer, config),
+    );
     report.fuzzers.push(result);
   }
   sendReport(report.serialize());
@@ -455,7 +462,29 @@ function requestFuzzConfig(): FuzzConfig {
   const reply = requestHostFuzzConfig();
   out.runs = reply.runs;
   out.seed = reply.seed;
+  out.runsOverrideKind = reply.runsOverrideKind;
+  out.runsOverrideValue = reply.runsOverrideValue;
   return out;
+}
+
+function resolveFuzzerRuns(fuzzer: FuzzerBase, config: FuzzConfig): i32 {
+  const baseRuns = fuzzer.runsOr(config.runs);
+  const resolved = applyFuzzRunsOverride(
+    baseRuns,
+    config.runsOverrideKind,
+    config.runsOverrideValue,
+  );
+  return resolved > 0 ? resolved : 1;
+}
+
+function applyFuzzRunsOverride(baseRuns: i32, kind: i32, value: f64): i32 {
+  if (kind == 1) return <i32>value;
+  if (kind == 2) return <i32>Math.round(<f64>baseRuns * value);
+  if (kind == 3) return baseRuns + <i32>value;
+  if (kind == 4) {
+    return baseRuns + <i32>Math.round((<f64>baseRuns * value) / 100.0);
+  }
+  return baseRuns;
 }
 
 function registerSuite(

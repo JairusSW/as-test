@@ -11,7 +11,17 @@ const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 const MAGIC = Buffer.from("WIPC");
 const HEADER_SIZE = 9;
 
-export type FuzzOverrides = Partial<Pick<FuzzConfig, "runs" | "seed">>;
+export type FuzzRunOverride =
+  | { kind: "set"; value: number }
+  | { kind: "scale"; value: number }
+  | { kind: "add"; value: number }
+  | { kind: "percent-add"; value: number };
+
+export type FuzzOverrides = {
+  runs?: number;
+  seed?: number;
+  runsOverride?: FuzzRunOverride;
+};
 
 export type FuzzerRunResult = {
   name: string;
@@ -55,6 +65,11 @@ export type FuzzResult = {
 
 type FuzzPayload = {
   fuzzers?: FuzzerRunResult[];
+};
+
+type ResolvedFuzzConfig = FuzzConfig & {
+  runsOverrideKind: number;
+  runsOverrideValue: number;
 };
 
 export async function fuzz(
@@ -109,14 +124,42 @@ export async function fuzz(
 function resolveFuzzConfig(
   raw: FuzzConfig,
   overrides: FuzzOverrides,
-): FuzzConfig {
-  const config = Object.assign({}, raw, overrides);
+): ResolvedFuzzConfig {
+  const config = Object.assign({}, raw) as ResolvedFuzzConfig;
+  if (typeof overrides.seed == "number") {
+    config.seed = overrides.seed;
+  }
+  if (typeof overrides.runs == "number") {
+    config.runs = overrides.runs;
+  }
+  config.runsOverrideKind = 0;
+  config.runsOverrideValue = 0;
+  if (overrides.runsOverride) {
+    config.runsOverrideKind = encodeRunsOverrideKind(overrides.runsOverride.kind);
+    config.runsOverrideValue = overrides.runsOverride.value;
+    if (overrides.runsOverride.kind == "set") {
+      config.runs = Math.max(1, Math.round(overrides.runsOverride.value));
+    }
+  }
   if (config.target != "bindings") {
     throw new Error(
       `fuzz target must be "bindings"; received "${config.target}"`,
     );
   }
   return config;
+}
+
+function encodeRunsOverrideKind(kind: FuzzRunOverride["kind"]): number {
+  switch (kind) {
+    case "set":
+      return 1;
+    case "scale":
+      return 2;
+    case "add":
+      return 3;
+    case "percent-add":
+      return 4;
+  }
 }
 
 async function runFuzzTarget(
@@ -145,7 +188,10 @@ async function runFuzzTarget(
         unknown
       >;
       if (String(event.kind ?? "") == "fuzz:config") {
-        respond(`${config.runs}\n${config.seed}`);
+        const resolved = config as ResolvedFuzzConfig;
+        respond(
+          `${config.runs}\n${config.seed}\n${resolved.runsOverrideKind ?? 0}\n${resolved.runsOverrideValue ?? 0}`,
+        );
       } else {
         respond("");
       }

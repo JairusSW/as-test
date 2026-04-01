@@ -10,6 +10,7 @@ import { buildWebRunnerSource } from "./web-runner-source.js";
 import { createReporter as createDefaultReporter } from "../reporters/default.js";
 import { createTapReporter } from "../reporters/tap.js";
 import { persistCrashRecord } from "../crash-store.js";
+import { describeCoveragePoint } from "../coverage-points.js";
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 class SnapshotStore {
     constructor(specFile, snapshotDir, duplicateSpecBasenames = new Set()) {
@@ -1091,6 +1092,8 @@ function collectCoverageSummary(reports, enabled, showPoints, coverage) {
         for (const point of report.coverage.points) {
             if (isIgnoredCoverageFile(point.file, coverage))
                 continue;
+            if (isIgnoredCoveragePoint(point, coverage))
+                continue;
             const key = `${point.file}::${point.hash}`;
             const existing = uniquePoints.get(key);
             if (!existing) {
@@ -1246,10 +1249,19 @@ function resolveCoverageOptions(raw) {
             includeSpecs: false,
             include: [],
             exclude: [],
+            ignore: {
+                labels: [],
+                names: [],
+                locations: [],
+                snippets: [],
+            },
         };
     }
     if (raw && typeof raw == "object") {
         const obj = raw;
+        const ignore = obj.ignore && typeof obj.ignore == "object" && !Array.isArray(obj.ignore)
+            ? obj.ignore
+            : null;
         return {
             enabled: obj.enabled == null ? false : Boolean(obj.enabled),
             includeSpecs: Boolean(obj.includeSpecs),
@@ -1259,6 +1271,20 @@ function resolveCoverageOptions(raw) {
             exclude: Array.isArray(obj.exclude)
                 ? obj.exclude.filter((item) => typeof item == "string")
                 : [],
+            ignore: {
+                labels: Array.isArray(ignore?.labels)
+                    ? ignore.labels.filter((item) => typeof item == "string")
+                    : [],
+                names: Array.isArray(ignore?.names)
+                    ? ignore.names.filter((item) => typeof item == "string")
+                    : [],
+                locations: Array.isArray(ignore?.locations)
+                    ? ignore.locations.filter((item) => typeof item == "string")
+                    : [],
+                snippets: Array.isArray(ignore?.snippets)
+                    ? ignore.snippets.filter((item) => typeof item == "string")
+                    : [],
+            },
         };
     }
     return {
@@ -1266,7 +1292,48 @@ function resolveCoverageOptions(raw) {
         includeSpecs: false,
         include: [],
         exclude: [],
+        ignore: {
+            labels: [],
+            names: [],
+            locations: [],
+            snippets: [],
+        },
     };
+}
+function isIgnoredCoveragePoint(point, coverage) {
+    const ignore = coverage.ignore;
+    if (!ignore.labels.length &&
+        !ignore.names.length &&
+        !ignore.locations.length &&
+        !ignore.snippets.length) {
+        return false;
+    }
+    const info = describeCoveragePoint(point.file, point.line, point.column, point.type);
+    const location = `${point.file.replace(/\\/g, "/")}:${point.line}:${point.column}`;
+    const label = info.displayType.toLowerCase();
+    const name = info.subjectName?.toLowerCase() ?? "";
+    const snippet = info.visible.toLowerCase();
+    if (ignore.labels.some((pattern) => matchesCoverageTextPattern(label, pattern.toLowerCase()))) {
+        return true;
+    }
+    if (name.length &&
+        ignore.names.some((pattern) => matchesCoverageTextPattern(name, pattern.toLowerCase()))) {
+        return true;
+    }
+    if (ignore.locations.some((pattern) => matchesCoverageTextPattern(location, pattern.replace(/\\/g, "/")))) {
+        return true;
+    }
+    if (snippet.length &&
+        ignore.snippets.some((pattern) => matchesCoverageTextPattern(snippet, pattern.toLowerCase()))) {
+        return true;
+    }
+    return false;
+}
+function matchesCoverageTextPattern(value, pattern) {
+    const normalized = pattern.trim();
+    if (!normalized.length)
+        return false;
+    return globPatternToRegExp(normalized).test(value);
 }
 function compareCoveragePoints(a, b) {
     if (a.line !== b.line)

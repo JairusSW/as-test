@@ -3,10 +3,10 @@ import { diff } from "typer-diff";
 import { readFileSync } from "fs";
 import * as path from "path";
 import { formatTime } from "../util.js";
+import { describeCoveragePoint, readCoverageSourceLine, resolveCoverageHighlightSpan, } from "../coverage-points.js";
 export const createReporter = (context) => {
     return new DefaultReporter(context);
 };
-const sourceLineCache = new Map();
 class DefaultReporter {
     constructor(context) {
         this.context = context;
@@ -685,7 +685,7 @@ function renderCoveragePoints(files) {
         .filter((point) => !point.executed)
         .map((point) => ({
         ...point,
-        displayType: classifyCoveragePoint(point.file, point.line, point.column, point.type),
+        displayType: describeCoveragePoint(point.file, point.line, point.column, point.type).displayType,
     })));
     const layout = createCoverageGapLayout(missingPoints);
     for (const file of sortedFiles) {
@@ -705,7 +705,7 @@ function renderCoveragePoints(files) {
                 continue;
             const location = `${toRelativeResultPath(point.file)}:${point.line}:${point.column}`;
             const snippet = formatCoverageSnippet(point.file, point.line, point.column);
-            const typeLabel = classifyCoveragePoint(point.file, point.line, point.column, point.type).padEnd(layout.typeWidth + 4);
+            const typeLabel = describeCoveragePoint(point.file, point.line, point.column, point.type).displayType.padEnd(layout.typeWidth + 4);
             const locationLabel = location.padEnd(layout.locationWidth + 4);
             console.log(`    ${chalk.red("x")} ${chalk.dim(typeLabel)}${chalk.dim(locationLabel)}${snippet}`);
         }
@@ -723,7 +723,7 @@ function createCoverageGapLayout(points) {
     };
 }
 function formatCoverageSnippet(file, line, column) {
-    const sourceLine = readSourceLine(file, line);
+    const sourceLine = readCoverageSourceLine(file, line);
     if (!sourceLine)
         return "";
     const expanded = sourceLine.replace(/\t/g, "  ");
@@ -741,106 +741,6 @@ function formatCoverageSnippet(file, line, column) {
     const start = Math.max(0, Math.min(visible.length - maxWidth, focus - Math.floor(maxWidth / 2)));
     const end = Math.min(visible.length, start + maxWidth);
     return styleCoverageSnippetWindow(visible, start, end, focus);
-}
-function classifyCoveragePoint(file, line, column, fallbackType) {
-    const context = getCoverageSourceContext(file, line, column);
-    if (!context)
-        return fallbackType;
-    const declarationType = detectCoverageDeclarationType(context.visible);
-    if (declarationType)
-        return declarationType;
-    if (detectCoverageCall(context.visible, context.focus))
-        return "Call";
-    return fallbackType;
-}
-function detectCoverageDeclarationType(visible) {
-    const trimmed = visible.trim();
-    if (!trimmed.length)
-        return null;
-    if (/^(?:export\s+)?function\b/.test(trimmed))
-        return "Function";
-    if (trimmed.startsWith("constructor(") ||
-        /^(?:public\s+|private\s+|protected\s+)constructor\s*\(/.test(trimmed)) {
-        return "Constructor";
-    }
-    if (/^(?:export\s+)?(?:public\s+|private\s+|protected\s+)?(?:static\s+)?[A-Za-z_]\w*(?:<[^>]+>)?\([^)]*\)\s*:\s*[^{=]+[{]?$/.test(trimmed)) {
-        return "Method";
-    }
-    if (/^(?:public\s+|private\s+|protected\s+)?(?:readonly\s+)?[A-Za-z_]\w*(?:<[^>]+>)?\s*:\s*[^=;{]+(?:=.*)?;?$/.test(trimmed)) {
-        return "Property";
-    }
-    if (/^(?:export\s+)?class\b/.test(trimmed))
-        return "Class";
-    if (/^(?:export\s+)?enum\b/.test(trimmed))
-        return "Enum";
-    if (/^(?:export\s+)?interface\b/.test(trimmed))
-        return "Interface";
-    if (/^(?:export\s+)?namespace\b/.test(trimmed))
-        return "Namespace";
-    if (/^(?:const|let|var)\b/.test(trimmed))
-        return "Variable";
-    return null;
-}
-function detectCoverageCall(visible, focus) {
-    const matches = [...visible.matchAll(/\b[A-Za-z_]\w*(?:<[^>()]+>)?\s*\(/g)];
-    if (!matches.length)
-        return false;
-    let bestDistance = Number.POSITIVE_INFINITY;
-    let bestMatch = null;
-    for (const match of matches) {
-        const start = match.index ?? -1;
-        if (start == -1)
-            continue;
-        const end = start + match[0].length;
-        const distance = focus < start ? start - focus : focus >= end ? focus - end + 1 : 0;
-        if (distance < bestDistance) {
-            bestDistance = distance;
-            bestMatch = match;
-        }
-    }
-    if (!bestMatch)
-        return false;
-    const candidate = bestMatch[0].replace(/\s*\($/, "");
-    const keyword = candidate.replace(/<[^>]+>$/, "");
-    if (keyword == "if" ||
-        keyword == "for" ||
-        keyword == "while" ||
-        keyword == "switch" ||
-        keyword == "return" ||
-        keyword == "function") {
-        return false;
-    }
-    return bestDistance <= Math.max(12, Math.floor(visible.length / 3));
-}
-function getCoverageSourceContext(file, line, column) {
-    const sourceLine = readSourceLine(file, line);
-    if (!sourceLine)
-        return null;
-    const expanded = sourceLine.replace(/\t/g, "  ");
-    const firstNonWhitespace = expanded.search(/\S/);
-    if (firstNonWhitespace == -1)
-        return null;
-    const visible = expanded.slice(firstNonWhitespace).trimEnd();
-    if (!visible.length)
-        return null;
-    const focus = Math.max(0, Math.min(visible.length - 1, Math.max(0, column - 1 - firstNonWhitespace)));
-    return { visible, focus };
-}
-function readSourceLine(file, line) {
-    const resolved = path.resolve(process.cwd(), file);
-    let lines = sourceLineCache.get(resolved);
-    if (lines === undefined) {
-        try {
-            lines = readFileSync(resolved, "utf8").split(/\r?\n/);
-        }
-        catch {
-            lines = null;
-        }
-        sourceLineCache.set(resolved, lines);
-    }
-    if (!lines)
-        return "";
-    return lines[line - 1] ?? "";
 }
 function styleCoverageSnippetWindow(visible, start, end, focus) {
     const prefix = start > 0 ? "..." : "";
@@ -861,22 +761,4 @@ function styleCoverageSnippetWindow(visible, start, end, focus) {
     return (chalk.dim(prefix + head) +
         chalk.dim.underline(body.length ? body : slice.charAt(localFocus)) +
         chalk.dim(tail + suffix));
-}
-function resolveCoverageHighlightSpan(visible, focus) {
-    if (!visible.length)
-        return [0, 0];
-    const index = Math.max(0, Math.min(visible.length - 1, focus));
-    if (isCoverageBoundary(visible.charAt(index))) {
-        return [index, Math.min(visible.length, index + 1)];
-    }
-    let start = index;
-    let end = index + 1;
-    while (start > 0 && !isCoverageBoundary(visible.charAt(start - 1)))
-        start--;
-    while (end < visible.length && !isCoverageBoundary(visible.charAt(end)))
-        end++;
-    return [start, end];
-}
-function isCoverageBoundary(ch) {
-    return /[\s()[\]{}.,;:+\-*/%&|^!?=<>]/.test(ch);
 }

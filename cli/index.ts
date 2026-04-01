@@ -436,7 +436,7 @@ function printCommandHelp(command: string): void {
       "  --fuzz                   Run fuzz targets after the normal test pass\n",
     );
     process.stdout.write(
-      "  --fuzz-runs <n>          Override fuzz iteration count for this run\n",
+      "  --fuzz-runs <value>      Override fuzz iteration count, e.g. 500, 1.5x, +10%, +100000\n",
     );
     process.stdout.write(
       "  --fuzz-seed <n>          Override fuzz seed for this run\n",
@@ -490,7 +490,7 @@ function printCommandHelp(command: string): void {
       "  --mode <name[,name...]>  Run one or multiple named config modes\n",
     );
     process.stdout.write(
-      "  --runs <n>               Override fuzz iteration count\n",
+      "  --runs <value>           Override fuzz iteration count, e.g. 500, 1.5x, +10%, +100000\n",
     );
     process.stdout.write("  --seed <n>               Override fuzz seed\n");
     process.stdout.write(
@@ -723,9 +723,10 @@ function resolveFuzzOverrides(
             runs: "--fuzz-runs",
             seed: "--fuzz-seed",
           };
-    const runs = parseNumberFlag(rawArgs, i, direct.runs);
+    const runs = parseFuzzRunsFlag(rawArgs, i, direct.runs);
     if (runs) {
-      out.runs = runs.number;
+      out.runs = runs.absoluteRuns;
+      out.runsOverride = runs.override;
       if (runs.consumeNext) i++;
       continue;
     }
@@ -738,6 +739,84 @@ function resolveFuzzOverrides(
   }
 
   return out;
+}
+
+function parseFuzzRunsFlag(
+  rawArgs: string[],
+  index: number,
+  flag: string,
+):
+  | {
+      key: string;
+      absoluteRuns?: number;
+      override: FuzzOverrides["runsOverride"];
+      consumeNext: boolean;
+    }
+  | null {
+  const arg = rawArgs[index]!;
+  let value = "";
+  let consumeNext = false;
+  if (arg == flag) {
+    const next = rawArgs[index + 1];
+    if (!next || !next.length) {
+      throw new Error(
+        `${flag} requires a value such as 500, 1.5x, +10%, or +100000`,
+      );
+    }
+    value = next;
+    consumeNext = true;
+  } else if (arg.startsWith(`${flag}=`)) {
+    value = arg.slice(flag.length + 1);
+    if (!value.length) {
+      throw new Error(
+        `${flag} requires a value such as 500, 1.5x, +10%, or +100000`,
+      );
+    }
+  } else {
+    return null;
+  }
+
+  const parsed = parseFuzzRunsValue(flag, value.trim());
+  return {
+    key: flag,
+    absoluteRuns: parsed.kind == "set" ? parsed.value : undefined,
+    override: parsed,
+    consumeNext,
+  };
+}
+
+function parseFuzzRunsValue(
+  flag: string,
+  value: string,
+): NonNullable<FuzzOverrides["runsOverride"]> {
+  if (/^\d+$/.test(value)) {
+    const parsed = parseIntegerFlag(flag, value);
+    return { kind: "set", value: parsed };
+  }
+  if (/^[+-]\d+$/.test(value)) {
+    const delta = Number(value);
+    if (!Number.isFinite(delta) || !Number.isInteger(delta)) {
+      throw new Error(`${flag} additive run override must be an integer`);
+    }
+    return { kind: "add", value: delta };
+  }
+  if (/^\d+(?:\.\d+)?x$/i.test(value)) {
+    const factor = Number(value.slice(0, -1));
+    if (!Number.isFinite(factor) || factor <= 0) {
+      throw new Error(`${flag} multiplier must be greater than 0`);
+    }
+    return { kind: "scale", value: factor };
+  }
+  if (/^[+-]\d+(?:\.\d+)?%$/.test(value)) {
+    const percent = Number(value.slice(0, -1));
+    if (!Number.isFinite(percent)) {
+      throw new Error(`${flag} percentage must be numeric`);
+    }
+    return { kind: "percent-add", value: percent };
+  }
+  throw new Error(
+    `${flag} must be a run count or expression such as 500, 1.5x, +10%, or +100000`,
+  );
 }
 
 function resolveListFlags(rawArgs: string[], command: string): CliListFlags {
