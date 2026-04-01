@@ -1,0 +1,6 @@
+{
+  "extends": "../../as-pect.asconfig.json",
+  "options": {
+    "enable": ["simd"]
+  }
+}

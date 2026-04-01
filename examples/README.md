@@ -12,6 +12,7 @@ Each example is now a standalone project initialized with `ast init`.
 - `06-skips`: `xdescribe`, `xtest`, `xit`, and `xexpect`.
 - `07-fuzzing`: `fuzz(...)`, custom generators, `ast fuzz`, and `ast test --fuzz`.
 - `07-web`: browser-runner example using `default.web.js` and a `web-headless` mode.
+- `08-json-as-runner-compare`: compares `as-test` and `as-pect` against the `json-as` test suite in `naive`, `swar`, and `simd` modes.
 
 ## Run One Example
 

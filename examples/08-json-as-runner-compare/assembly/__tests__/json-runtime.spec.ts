@@ -1,0 +1,138 @@
+import { JSON } from "../src/json-as";
+import { describe, expect } from "as-test";
+import { bs } from "../src/json-as";
+import { Vec3 } from "./types";
+
+describe("Should cover JSON.Value type creation broadly", () => {
+  const values = [JSON.Value.from("text"), JSON.Value.from(true), JSON.Value.from(false), JSON.Value.from(0), JSON.Value.from(123), JSON.Value.from(3.5), JSON.Value.from(new Vec3())];
+
+  expect(values[0].type.toString()).toBe(JSON.Types.String.toString());
+  expect(values[1].type.toString()).toBe(JSON.Types.Bool.toString());
+  expect(values[2].type.toString()).toBe(JSON.Types.Bool.toString());
+  expect(values[3].toString()).toBe("0");
+  expect(values[4].toString()).toBe("123");
+  expect(values[5].toString()).toBe("3.5");
+  expect(values[6].toString()).toBe('{"x":1.0,"y":2.0,"z":3.0}');
+});
+
+describe("Should preserve signed integer tags in JSON.Value", () => {
+  const negative = JSON.Value.from<i32>(-42);
+  const obj = new JSON.Obj();
+  obj.set("n", -42);
+
+  expect(negative.type.toString()).toBe(JSON.Types.I32.toString());
+  expect(negative.toString()).toBe("-42");
+  expect(JSON.stringify(negative)).toBe("-42");
+  expect(JSON.stringify(obj)).toBe('{"n":-42}');
+});
+
+describe("Should mutate JSON.Obj instances deeply", () => {
+  const root = new JSON.Obj();
+  const inner = new JSON.Obj();
+  const meta = new JSON.Obj();
+
+  root.set("name", "json-as");
+  root.set("enabled", true);
+  root.set("count", 3);
+  inner.set("a", 1);
+  inner.set("b", 2);
+  meta.set("inner", inner);
+  root.set("meta", meta);
+
+  expect(root.has("name").toString()).toBe("true");
+  expect(root.get("name")!.get<string>()).toBe("json-as");
+  expect(root.get("enabled")!.get<bool>().toString()).toBe("true");
+  expect(root.get("count")!.toString()).toBe("3");
+  expect(root.get("meta")!.get<JSON.Obj>().get("inner")!.get<JSON.Obj>().get("a")!.toString()).toBe("1");
+  expect(root.get("meta")!.get<JSON.Obj>().get("inner")!.get<JSON.Obj>().get("b")!.toString()).toBe("2");
+
+  root.delete("count");
+  expect(root.has("count").toString()).toBe("false");
+  expect(JSON.stringify(root)).toBe('{"name":"json-as","enabled":true,"meta":{"inner":{"a":1,"b":2}}}');
+});
+
+describe("Should build JSON.Obj values from serializable objects", () => {
+  const typed = new Vec3();
+  const fromStruct = JSON.Obj.from(typed);
+  const fromMap = JSON.Obj.from(new Map<string, i32>().set("x", 7).set("y", 9));
+
+  expect(fromStruct.get("x")!.toString()).toBe("1.0");
+  expect(fromStruct.get("z")!.toString()).toBe("3.0");
+  expect(fromMap.get("x")!.toString()).toBe("7");
+  expect(fromMap.get("y")!.toString()).toBe("9");
+});
+
+describe("Should cover JSON.Box conversions through JSON.Value", () => {
+  const nullBox = JSON.Box.fromValue<i32>(JSON.parse<JSON.Value>("null"));
+  const intBox = JSON.Box.fromValue<i32>(JSON.parse<JSON.Value>("42"));
+  const boolBox = JSON.Box.fromValue<bool>(JSON.parse<JSON.Value>("true"));
+
+  expect((nullBox == null).toString()).toBe("true");
+  expect((intBox == null).toString()).toBe("false");
+  expect(intBox!.value.toString()).toBe("42");
+  expect((boolBox == null).toString()).toBe("false");
+  expect(boolBox!.value.toString()).toBe("true");
+});
+
+describe("Should preserve JSON.Raw in arrays and maps", () => {
+  const rawArray = JSON.parse<JSON.Raw[]>('[{"x":1},[1,2,3],"abc",false,null]');
+  expect(rawArray.length.toString()).toBe("5");
+  expect(rawArray[0].toString()).toBe('{"x":1}');
+  expect(rawArray[1].toString()).toBe("[1,2,3]");
+  expect(rawArray[2].toString()).toBe('"abc"');
+  expect(rawArray[3].toString()).toBe("false");
+  expect(rawArray[4].toString()).toBe("null");
+
+  const rawMap = JSON.parse<Map<string, JSON.Raw>>('{"obj":{"x":1},"arr":[1,2],"str":"abc","bool":true}');
+  expect(rawMap.get("obj")!.toString()).toBe('{"x":1}');
+  expect(rawMap.get("arr")!.toString()).toBe("[1,2]");
+  expect(rawMap.get("str")!.toString()).toBe('"abc"');
+  expect(rawMap.get("bool")!.toString()).toBe("true");
+});
+
+describe("Should traverse parsed arbitrary runtime structures", () => {
+  const parsed = JSON.parse<JSON.Value>('{"items":[{"kind":"a","value":1},{"kind":"b","value":[2,3]}],"ok":true}');
+  const root = parsed.get<JSON.Obj>();
+  const items = root.get("items")!.get<JSON.Value[]>();
+
+  expect(root.get("ok")!.get<bool>().toString()).toBe("true");
+  expect(items.length.toString()).toBe("2");
+  expect(items[0].get<JSON.Obj>().get("kind")!.get<string>()).toBe("a");
+  expect(items[0].get<JSON.Obj>().get("value")!.get<f64>().toString()).toBe("1.0");
+  expect(items[1].get<JSON.Obj>().get("kind")!.get<string>()).toBe("b");
+
+  const nested = items[1].get<JSON.Obj>().get("value")!.get<JSON.Value[]>();
+  expect(nested.length.toString()).toBe("2");
+  expect(nested[0].get<f64>().toString()).toBe("2.0");
+  expect(nested[1].get<f64>().toString()).toBe("3.0");
+  expect(JSON.stringify(parsed)).toBe('{"items":[{"kind":"a","value":1.0},{"kind":"b","value":[2.0,3.0]}],"ok":true}');
+});
+
+describe("Should preserve bs state for JSON.internal helpers", () => {
+  bs.offset = bs.buffer;
+  bs.stackSize = 0;
+  bs.proposeSize(16);
+  bs.offset += 6;
+
+  const beforeStringifyOffset = bs.offset;
+  const beforeStringifyStack = bs.stackSize;
+  const serialized = JSON.internal.stringify<JSON.Value[]>([JSON.Value.from(1), JSON.Value.from(true)]);
+
+  expect(serialized).toBe("[1,true]");
+  expect(bs.offset).toBe(beforeStringifyOffset);
+  expect(bs.stackSize).toBe(beforeStringifyStack);
+
+  const beforeParseOffset = bs.offset;
+  const beforeParseStack = bs.stackSize;
+  const parsed = JSON.internal.parse<JSON.Value>('{"x":1,"y":true}');
+  const parsedObj = parsed.get<JSON.Obj>();
+
+  expect(parsedObj.get("x")!.get<f64>().toString()).toBe("1.0");
+  expect(parsedObj.get("y")!.get<bool>().toString()).toBe("true");
+  expect(JSON.internal.stringify(parsed)).toBe('{"x":1.0,"y":true}');
+  expect(bs.offset).toBe(beforeParseOffset);
+  expect(bs.stackSize).toBe(beforeParseStack);
+
+  bs.offset = bs.buffer;
+  bs.stackSize = 0;
+});

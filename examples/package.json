@@ -3,13 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "npm run test:01 && npm run test:02 && npm run test:03 && npm run test:04 && npm run test:05 && npm run test:06 && npm run test:07",
+    "test": "npm run test:01 && npm run test:02 && npm run test:03 && npm run test:04 && npm run test:05 && npm run test:06 && npm run test:07 && npm run test:08",
     "test:01": "npm --prefix ./01-basic test",
     "test:02": "npm --prefix ./02-hooks test",
     "test:03": "npm --prefix ./03-matchers test",
     "test:04": "npm --prefix ./04-snapshots test",
     "test:05": "npm --prefix ./05-mocking-and-imports test",
     "test:06": "npm --prefix ./06-skips test",
-    "test:07": "npm --prefix ./07-fuzzing test"
+    "test:07": "npm --prefix ./07-fuzzing test",
+    "test:08": "npm --prefix ./08-json-as-runner-compare test"
   }
 }

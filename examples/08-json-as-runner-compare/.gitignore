@@ -1,0 +1,4 @@
+node_modules/
+.as-test/
+assembly/__tests__/as-pect/
+compare-runners/test-runner-results.json
