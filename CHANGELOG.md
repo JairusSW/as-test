@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 2026-04-18 - v1.0.11
+
+### Coverage
+
+- fix: ignore additional AssemblyScript compile-time builtin calls during coverage instrumentation, including `isVector`, `isVoid`, and `lengthof`.
+
 ## 2026-04-18 - v1.0.10
 
 ### Reporting

@@ -44,6 +44,7 @@ const COVERAGE_IGNORED_CALLS = new Set([
 ]);
 
 const COVERAGE_IGNORED_BUILTINS = new Set([
+  // Compile-time and type-introspection builtins from AssemblyScript stdlib.
   "alignof",
   "changetype",
   "idof",
@@ -60,7 +61,10 @@ const COVERAGE_IGNORED_BUILTINS = new Set([
   "isReference",
   "isSigned",
   "isString",
+  "isVector",
+  "isVoid",
   "isUnsigned",
+  "lengthof",
   "load",
   "nameof",
   "offsetof",
