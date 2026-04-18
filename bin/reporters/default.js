@@ -283,7 +283,7 @@ class DefaultReporter {
             renderSnapshotSummary(event.snapshotSummary, true);
         }
         if (event.coverageSummary.enabled) {
-            renderCoverageSummary(event.coverageSummary);
+            renderCoverageSummary(event.coverageSummary, event.showCoverage);
             if (event.showCoverage && event.coverageSummary.uncovered) {
                 renderCoveragePoints(event.coverageSummary.files);
             }
@@ -633,9 +633,13 @@ function renderSummaryLine(label, summary, layout = {
     process.stdout.write(", ");
     process.stdout.write(totalText.padStart(layout.totalWidth) + "\n");
 }
-function renderCoverageSummary(summary) {
+function renderCoverageSummary(summary, showCoverage) {
     console.log("");
-    console.log(chalk.bold("Coverage"));
+    const shouldShowCoverageHint = !showCoverage && summary.total > 0 && summary.uncovered > 0;
+    const coverageHeading = shouldShowCoverageHint
+        ? "Coverage (run with --show-coverage to display uncovered points)"
+        : "Coverage";
+    console.log(chalk.bold(coverageHeading));
     if (!summary.files.length || summary.total <= 0) {
         console.log(`  ${chalk.dim("No eligible source files were tracked for coverage.")}`);
         return;

@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+## 2026-04-18 - v1.0.10
+
+### Reporting
+
+- feat: when coverage is incomplete and `--show-coverage` is not passed, the default reporter now prints `Coverage (run with --show-coverage to display uncovered points)`; otherwise it keeps the plain `Coverage` header.
+
+### Assertions
+
+- fix: register top-level `expect(...)` and `log(...)` calls (outside explicit suites) into a synthetic global suite so they are counted and reported in final totals.
+
+## 2026-04-18 - v1.0.9
+
+### Runtime
+
+- fix: align default runtime command selection with `buildOptions.target` so `bindings` runs no longer probe `default.wasi.js` first or emit unnecessary fallback warnings.
+
+### Fuzzing
+
+- feat: allow per-fuzzer operation overrides via `.generate(generator, operations)` and `.generateTyped(generator, operations)` in addition to the existing third `fuzz(..., operations)` argument.
+
+### Type Ergonomics
+
+- feat: add and publish an IDE-only declaration shim (`assembly/as-test.intellisense.d.ts`) so `FuzzSeed` option objects can omit fields like `exclude` without TypeScript IntelliSense errors.
+
+### Examples
+
+- chore: remove `examples/08-json-as-runner-compare` and update `examples/package.json` test scripts accordingly.
+
 ## 2026-03-31 - v1.0.7
 
 ### Coverage

@@ -41,6 +41,7 @@ export { __as_test_json_value } from "./util/json";
 
 let entrySuites: Suite[] = [];
 let entryFuzzers: FuzzerBase[] = [];
+let globalExpectationSuite: Suite | null = null;
 
 // @ts-ignore
 const FILE = isDefined(ENTRY_FILE) ? ENTRY_FILE : "unknown";
@@ -210,10 +211,7 @@ export function expect<T>(
   location: string = "",
 ): Expectation<T> {
   const test = new Expectation<T>(value, message, snapshotKey(), location);
-
-  if (current_suite) {
-    current_suite!.addExpectation(test);
-  }
+  resolveExpectationSuite().addExpectation(test);
 
   return test;
 }
@@ -257,11 +255,10 @@ export function __as_test_log_is_enabled(): bool {
 export function __as_test_log_serialized(formatted: string): void {
   if (!formatted) return;
   const lines = formatted.split("\n");
+  const suite = resolveExpectationSuite();
   for (let i = 0; i < lines.length; i++) {
     const line = unchecked(lines[i]);
-    if (current_suite) {
-      current_suite!.addLog(new Log(line));
-    }
+    suite.addLog(new Log(line));
   }
 }
 
@@ -507,6 +504,20 @@ function registerSuite(
   suite.file = FILE;
   entrySuites.push(suite);
   suites.push(suite);
+}
+
+function resolveExpectationSuite(): Suite {
+  if (current_suite) return current_suite!;
+  return ensureGlobalExpectationSuite();
+}
+
+function ensureGlobalExpectationSuite(): Suite {
+  if (globalExpectationSuite) return globalExpectationSuite!;
+  const suite = new Suite("global", (): void => {}, "describe");
+  suite.file = FILE;
+  globalExpectationSuite = suite;
+  entrySuites.push(suite);
+  return suite;
 }
 
 class CoverageReport {
