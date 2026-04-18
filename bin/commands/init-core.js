@@ -397,11 +397,19 @@ function printPlan(root, target, example, fuzzExample, install) {
             isDir: false,
         });
         fileEntries.push({
+            path: ".as-test/runners/default.bindings.hooks.js",
+            isDir: false,
+        });
+        fileEntries.push({
             path: ".as-test/runners/default.wasi.js",
             isDir: false,
         });
         fileEntries.push({
             path: ".as-test/runners/default.web.js",
+            isDir: false,
+        });
+        fileEntries.push({
+            path: ".as-test/runners/default.web.hooks.js",
             isDir: false,
         });
     }
@@ -515,8 +523,16 @@ function applyInit(root, target, example, fuzzExample, force) {
         writeManagedFile(runnerPath, buildBindingsRunner(), force, summary, ".as-test/runners/default.bindings.js");
     }
     if (target == "wasi" || target == "bindings" || target == "web") {
+        const hooksPath = path.join(root, ".as-test/runners/default.bindings.hooks.js");
+        writeManagedFile(hooksPath, buildBindingsRunnerHooks(), force, summary, ".as-test/runners/default.bindings.hooks.js");
+    }
+    if (target == "wasi" || target == "bindings" || target == "web") {
         const runnerPath = path.join(root, ".as-test/runners/default.web.js");
         writeManagedFile(runnerPath, buildWebRunnerSource(), force, summary, ".as-test/runners/default.web.js");
+    }
+    if (target == "wasi" || target == "bindings" || target == "web") {
+        const hooksPath = path.join(root, ".as-test/runners/default.web.hooks.js");
+        writeManagedFile(hooksPath, buildWebRunnerHooks(), force, summary, ".as-test/runners/default.web.hooks.js");
     }
     const pkgPath = path.join(root, "package.json");
     const pkg = existsSync(pkgPath)
@@ -1028,7 +1044,10 @@ function buildBindingsRunner() {
 import path from "path";
 import { pathToFileURL } from "url";
 
-let patched = false;
+const HOOKS_PATH = path.resolve(
+  path.dirname(new URL(import.meta.url).pathname),
+  "./default.bindings.hooks.js",
+);
 
 function readExact(length) {
   const out = Buffer.alloc(length);
@@ -1055,20 +1074,76 @@ function writeRaw(data) {
   fs.writeSync(1, view);
 }
 
-function withNodeIo(imports = {}) {
-  if (!patched) {
-    patched = true;
-    const originalWrite = process.stdout.write.bind(process.stdout);
-    process.stdout.write = (chunk, ...args) => {
-      if (chunk instanceof ArrayBuffer) {
-        writeRaw(chunk);
-        return true;
-      }
-      return originalWrite(chunk, ...args);
-    };
-    process.stdin.read = (size) => readExact(Number(size ?? 0));
+function createRunnerContext({ wasmPath, module, helperPath }) {
+  return {
+    wasmPath,
+    helperPath,
+    module,
+    argv: process.argv.slice(2),
+    env: process.env,
+    readFrame(size) {
+      return readExact(Number(size ?? 0));
+    },
+    writeFrame(data) {
+      writeRaw(data);
+      return true;
+    },
+  };
+}
+
+function createAsTestImports(ctx) {
+  const originalWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = (chunk, ...args) => {
+    if (chunk instanceof ArrayBuffer) {
+      return ctx.writeFrame(chunk);
+    }
+    return originalWrite(chunk, ...args);
+  };
+  process.stdin.read = (size) => ctx.readFrame(size);
+  return {};
+}
+
+function mergeImports(...groups) {
+  const out = {};
+  for (const group of groups) {
+    if (!group || typeof group != "object") continue;
+    for (const moduleName of Object.keys(group)) {
+      out[moduleName] = Object.assign(out[moduleName] || {}, group[moduleName]);
+    }
   }
-  return imports;
+  return out;
+}
+
+async function loadRunnerHooks() {
+  if (!fs.existsSync(HOOKS_PATH)) {
+    return {
+      createUserImports() {
+        return {};
+      },
+      async runModule(_exports, _ctx) {},
+    };
+  }
+  const mod = await import(pathToFileURL(HOOKS_PATH).href + "?t=" + Date.now());
+  return {
+    createUserImports:
+      typeof mod.createUserImports == "function"
+        ? mod.createUserImports
+        : () => ({}),
+    runModule:
+      typeof mod.runModule == "function" ? mod.runModule : async () => {},
+  };
+}
+
+async function instantiateModule(ctx, hooks) {
+  const helper = await import(pathToFileURL(ctx.helperPath).href);
+  if (typeof helper.instantiate !== "function") {
+    throw new Error("bindings helper missing instantiate export");
+  }
+  const imports = mergeImports(
+    createAsTestImports(ctx),
+    await hooks.createUserImports(ctx),
+  );
+  return helper.instantiate(ctx.module, imports);
 }
 
 const wasmPathArg = process.argv[2];
@@ -1083,14 +1158,49 @@ const jsPath = wasmPath.replace(/\\.wasm$/, ".js");
 try {
   const binary = fs.readFileSync(wasmPath);
   const module = new WebAssembly.Module(binary);
-  const mod = await import(pathToFileURL(jsPath).href);
-  if (typeof mod.instantiate !== "function") {
-    throw new Error("bindings helper missing instantiate export");
-  }
-  mod.instantiate(module, withNodeIo({}));
+  const ctx = createRunnerContext({ wasmPath, module, helperPath: jsPath });
+  const hooks = await loadRunnerHooks();
+  const exports = await instantiateModule(ctx, hooks);
+  await hooks.runModule(exports, ctx);
 } catch (error) {
   process.stderr.write("failed to run bindings module: " + String(error) + "\\n");
   process.exit(1);
+}
+`;
+}
+function buildBindingsRunnerHooks() {
+    return `export function createUserImports(_ctx) {
+  return {
+    // env: {
+    //   now_ms: () => Date.now(),
+    // },
+  };
+}
+
+export async function runModule(_exports, _ctx) {
+  // The generated bindings helper already calls exports._start().
+  // Add extra startup calls here when your module exposes them.
+  //
+  // Example:
+  // _exports.run?.();
+}
+`;
+}
+function buildWebRunnerHooks() {
+    return `export function createUserImports(_ctx) {
+  return {
+    // env: {
+    //   now_ms: () => performance.now(),
+    // },
+  };
+}
+
+export async function runModule(_exports, _ctx) {
+  // The generated bindings helper already calls exports._start().
+  // Add extra startup calls here when your module exposes them.
+  //
+  // Example:
+  // _exports.run?.();
 }
 `;
 }

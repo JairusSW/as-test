@@ -1,3 +1,21 @@
+export function buildWebRunnerHooksSource() {
+    return `export function createUserImports(_ctx) {
+  return {
+    // env: {
+    //   now_ms: () => performance.now(),
+    // },
+  };
+}
+
+export async function runModule(_exports, _ctx) {
+  // The generated bindings helper already calls exports._start().
+  // Add extra startup calls here when your module exposes them.
+  //
+  // Example:
+  // _exports.run?.();
+}
+`;
+}
 export function buildWebRunnerSource() {
     const html = String.raw `<!doctype html>
 <html lang="en">
@@ -135,6 +153,7 @@ ws.addEventListener("open", () => {
   worker.postMessage({
     kind: "init",
     helperUrl: "/artifact.js",
+    hooksUrl: "/runner-hooks.js",
     wasmUrl: "/artifact.wasm",
     replyBuffer,
   });
@@ -165,6 +184,49 @@ ws.addEventListener("error", () => {
     const worker = String.raw `let replyState = null;
 let replyBytes = null;
 
+function createRunnerContext({ helperUrl, wasmUrl, module }) {
+  return {
+    helperUrl,
+    wasmUrl,
+    module,
+    postFrame(frame) {
+      self.postMessage({ kind: "wipc", frame }, [frame]);
+      return true;
+    },
+    readFrame(size) {
+      return readReply(Number(size ?? 0));
+    },
+  };
+}
+
+function createAsTestImports(ctx) {
+  globalThis.process = {
+    stdout: {
+      write(data) {
+        const frame = data instanceof ArrayBuffer ? data : data?.buffer;
+        return ctx.postFrame(frame);
+      },
+    },
+    stdin: {
+      read(size) {
+        return ctx.readFrame(size);
+      },
+    },
+  };
+  return {};
+}
+
+function mergeImports(...groups) {
+  const out = {};
+  for (const group of groups) {
+    if (!group || typeof group != "object") continue;
+    for (const moduleName of Object.keys(group)) {
+      out[moduleName] = Object.assign(out[moduleName] || {}, group[moduleName]);
+    }
+  }
+  return out;
+}
+
 self.onmessage = async (event) => {
   const message = event.data ?? {};
   if (message.kind != "init") {
@@ -175,22 +237,8 @@ self.onmessage = async (event) => {
   replyState = new Int32Array(shared, 0, 2);
   replyBytes = new Uint8Array(shared, 8);
 
-  globalThis.process = {
-    stdout: {
-      write(data) {
-        const frame = data instanceof ArrayBuffer ? data : data?.buffer;
-        self.postMessage({ kind: "wipc", frame }, [frame]);
-        return true;
-      },
-    },
-    stdin: {
-      read(size) {
-        return readReply(Number(size ?? 0));
-      },
-    },
-  };
-
   try {
+    const hooks = await import(message.hooksUrl);
     const helper = await import(message.helperUrl);
     if (typeof helper.instantiate != "function") {
       throw new Error("bindings helper missing instantiate export");
@@ -201,8 +249,22 @@ self.onmessage = async (event) => {
     }
     const binary = await response.arrayBuffer();
     const module = new WebAssembly.Module(binary);
+    const ctx = createRunnerContext({
+      helperUrl: message.helperUrl,
+      wasmUrl: message.wasmUrl,
+      module,
+    });
+    const imports = mergeImports(
+      createAsTestImports(ctx),
+      typeof hooks.createUserImports == "function"
+        ? await hooks.createUserImports(ctx)
+        : {},
+    );
     self.postMessage({ kind: "ready" });
-    await helper.instantiate(module, {});
+    const exports = await helper.instantiate(module, imports);
+    if (typeof hooks.runModule == "function") {
+      await hooks.runModule(exports, ctx);
+    }
     self.postMessage({ kind: "done" });
   } catch (error) {
     const message =
@@ -235,6 +297,7 @@ function readReply(max) {
   return out.buffer;
 }
 `;
+    const hooks = buildWebRunnerHooksSource();
     return `import { createHash } from "crypto";
 import { existsSync, readFileSync } from "fs";
 import http from "http";
@@ -244,6 +307,7 @@ import { spawn } from "child_process";
 const INDEX_HTML = ${JSON.stringify(html)};
 const CLIENT_JS = ${JSON.stringify(client)};
 const WORKER_JS = ${JSON.stringify(worker)};
+const DEFAULT_HOOKS_JS = ${JSON.stringify(hooks)};
 const MAGIC = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const HEADLESS_FLAGS = [
   "--headless=new",
@@ -264,6 +328,7 @@ if (!wasmArg) {
 
 const wasmPath = path.resolve(process.cwd(), wasmArg);
 const helperPath = wasmPath.replace(/\\.wasm$/, ".js");
+const hooksPath = path.resolve(process.cwd(), ".as-test/runners/default.web.hooks.js");
 if (!existsSync(wasmPath)) {
   process.stderr.write("missing wasm artifact: " + wasmPath + "\\n");
   process.exit(1);
@@ -319,6 +384,14 @@ const server = http.createServer((req, res) => {
       "Content-Type": "text/javascript; charset=utf-8",
     });
     res.end(readFileSync(helperPath, "utf8"));
+    return;
+  }
+  if (url == "/runner-hooks.js") {
+    res.writeHead(200, {
+      ...headers,
+      "Content-Type": "text/javascript; charset=utf-8",
+    });
+    res.end(existsSync(hooksPath) ? readFileSync(hooksPath, "utf8") : DEFAULT_HOOKS_JS);
     return;
   }
   if (url == "/artifact.wasm") {

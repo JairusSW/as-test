@@ -14,17 +14,17 @@
       "percent": 100,
       "points": [
         {
-          "hash": "35fa897f3",
+          "hash": "35fa82394",
           "file": "assembly/__tests__/clock.ts",
-          "line": 4,
+          "line": 5,
           "column": 45,
           "type": "Expression",
           "executed": true
         },
         {
-          "hash": "35fa893b5",
+          "hash": "35fa81f56",
           "file": "assembly/__tests__/clock.ts",
-          "line": 4,
+          "line": 5,
           "column": 59,
           "type": "Block",
           "executed": true
