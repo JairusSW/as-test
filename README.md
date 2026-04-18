@@ -243,6 +243,17 @@ fuzz("hot path stays stable", (): void => {
 }, 250);
 ```
 
+Or pass it as the second argument to `.generate(...)`:
+
+```ts
+fuzz("ascii strings survive concatenation boundaries", (input: string): bool => {
+  expect(input.length <= 40).toBe(true);
+  return true;
+}).generate((seed: FuzzSeed, run: (input: string) => bool): void => {
+  run(seed.string({ charset: "ascii", min: 0, max: 40 }));
+}, 250);
+```
+
 You can still override fuzz runs from the CLI when you want to force a different count for the current command:
 
 ```bash

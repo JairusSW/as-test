@@ -1,6 +1,6 @@
 {
   "name": "as-test",
-  "version": "1.0.7",
+  "version": "1.0.9",
   "author": "Jairus Tanaka",
   "repository": {
     "type": "git",
@@ -39,6 +39,7 @@
   "description": "Testing framework for AssemblyScript. Compatible with WASI or Bindings",
   "files": [
     "assembly/**/*.ts",
+    "assembly/**/*.d.ts",
     "!assembly/__tests__/**",
     "!assembly/tsconfig.json",
     "bin/**/*.js",

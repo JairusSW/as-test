@@ -193,7 +193,8 @@ export abstract class FuzzerBase {
     this.operations = operations > 0 ? operations : 0;
   }
 
-  generate<T extends Function>(_generator: T): this {
+  generate<T extends Function>(_generator: T, operations: i32 = 0): this {
+    if (operations > 0) this.operations = operations;
     return this;
   }
 
@@ -389,14 +390,19 @@ export class Fuzzer0<R> extends FuzzerBase {
     this.returnsBool = !isVoid<R>();
   }
 
-  generate<T extends Function>(generator: T): this {
+  generate<T extends Function>(generator: T, operations: i32 = 0): this {
     this.generator =
       changetype<(seed: FuzzSeed, run: () => R) => void>(generator);
+    if (operations > 0) this.operations = operations;
     return this;
   }
 
-  generateTyped(generator: (seed: FuzzSeed, run: () => R) => void): this {
+  generateTyped(
+    generator: (seed: FuzzSeed, run: () => R) => void,
+    operations: i32 = 0,
+  ): this {
     this.generator = generator;
+    if (operations > 0) this.operations = operations;
     return this;
   }
 
@@ -444,14 +450,19 @@ export class Fuzzer1<A, R> extends FuzzerBase {
     this.returnsBool = !isVoid<R>();
   }
 
-  generate<T extends Function>(generator: T): this {
+  generate<T extends Function>(generator: T, operations: i32 = 0): this {
     this.generator =
       changetype<(seed: FuzzSeed, run: (a: A) => R) => void>(generator);
+    if (operations > 0) this.operations = operations;
     return this;
   }
 
-  generateTyped(generator: (seed: FuzzSeed, run: (a: A) => R) => void): this {
+  generateTyped(
+    generator: (seed: FuzzSeed, run: (a: A) => R) => void,
+    operations: i32 = 0,
+  ): this {
     this.generator = generator;
+    if (operations > 0) this.operations = operations;
     return this;
   }
 
@@ -508,16 +519,19 @@ export class Fuzzer2<A, B, R> extends FuzzerBase {
     this.returnsBool = !isVoid<R>();
   }
 
-  generate<T extends Function>(generator: T): this {
+  generate<T extends Function>(generator: T, operations: i32 = 0): this {
     this.generator =
       changetype<(seed: FuzzSeed, run: (a: A, b: B) => R) => void>(generator);
+    if (operations > 0) this.operations = operations;
     return this;
   }
 
   generateTyped(
     generator: (seed: FuzzSeed, run: (a: A, b: B) => R) => void,
+    operations: i32 = 0,
   ): this {
     this.generator = generator;
+    if (operations > 0) this.operations = operations;
     return this;
   }
 
@@ -574,15 +588,18 @@ export class Fuzzer3<A, B, C, R> extends FuzzerBase {
     this.returnsBool = !isVoid<R>();
   }
 
-  generate<T extends Function>(generator: T): this {
+  generate<T extends Function>(generator: T, operations: i32 = 0): this {
     this.generator = changetype<usize>(generator);
+    if (operations > 0) this.operations = operations;
     return this;
   }
 
   generateTyped(
     generator: (seed: FuzzSeed, run: (a: A, b: B, c: C) => R) => void,
+    operations: i32 = 0,
   ): this {
     this.generator = changetype<usize>(generator);
+    if (operations > 0) this.operations = operations;
     return this;
   }
 
