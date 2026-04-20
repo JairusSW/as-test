@@ -162,7 +162,7 @@ export function loadConfig(CONFIG_PATH: string, warn: boolean = false): Config {
         ? [fuzzRaw.input]
         : new FuzzConfig().input;
     config.fuzz.runs = normalizePositiveNumber(config.fuzz.runs, 1000);
-    config.fuzz.seed = normalizeNonNegativeNumber(config.fuzz.seed, 1337);
+    config.fuzz.seed = normalizeNonNegativeNumber(config.fuzz.seed, -1);
     config.fuzz.maxInputBytes = normalizePositiveNumber(
       config.fuzz.maxInputBytes,
       4096,

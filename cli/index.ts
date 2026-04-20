@@ -439,7 +439,7 @@ function printCommandHelp(command: string): void {
       "  --fuzz-runs <value>      Override fuzz iteration count, e.g. 500, 1.5x, +10%, +100000\n",
     );
     process.stdout.write(
-      "  --fuzz-seed <n>          Override fuzz seed for this run\n",
+      "  --fuzz-seed <n>          Pin fuzz seed for this run (default uses random seed)\n",
     );
     process.stdout.write(
       "  --parallel              Run files through an ordered worker pool using an automatic worker count\n",
@@ -492,7 +492,9 @@ function printCommandHelp(command: string): void {
     process.stdout.write(
       "  --runs <value>           Override fuzz iteration count, e.g. 500, 1.5x, +10%, +100000\n",
     );
-    process.stdout.write("  --seed <n>               Override fuzz seed\n");
+    process.stdout.write(
+      "  --seed <n>               Pin fuzz seed (default uses random seed)\n",
+    );
     process.stdout.write(
       "  --jobs <n>               Run files through an ordered worker pool\n",
     );

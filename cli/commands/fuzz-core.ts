@@ -72,6 +72,8 @@ type ResolvedFuzzConfig = FuzzConfig & {
   runsOverrideValue: number;
 };
 
+const MAX_DEFAULT_SEED = 0x7fffffff;
+
 export async function fuzz(
   configPath: string = DEFAULT_CONFIG_PATH,
   selectors: string[] = [],
@@ -128,6 +130,8 @@ function resolveFuzzConfig(
   const config = Object.assign({}, raw) as ResolvedFuzzConfig;
   if (typeof overrides.seed == "number") {
     config.seed = overrides.seed;
+  } else if (config.seed < 0) {
+    config.seed = generateRandomSeed();
   }
   if (typeof overrides.runs == "number") {
     config.runs = overrides.runs;
@@ -147,6 +151,10 @@ function resolveFuzzConfig(
     );
   }
   return config;
+}
+
+function generateRandomSeed(): number {
+  return Math.floor(Math.random() * (MAX_DEFAULT_SEED + 1));
 }
 
 function encodeRunsOverrideKind(kind: FuzzRunOverride["kind"]): number {

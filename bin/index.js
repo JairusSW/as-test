@@ -282,7 +282,7 @@ function printCommandHelp(command) {
         process.stdout.write("  --disable <feature>      Disable feature (coverage|try-as)\n");
         process.stdout.write("  --fuzz                   Run fuzz targets after the normal test pass\n");
         process.stdout.write("  --fuzz-runs <value>      Override fuzz iteration count, e.g. 500, 1.5x, +10%, +100000\n");
-        process.stdout.write("  --fuzz-seed <n>          Override fuzz seed for this run\n");
+        process.stdout.write("  --fuzz-seed <n>          Pin fuzz seed for this run (default uses random seed)\n");
         process.stdout.write("  --parallel              Run files through an ordered worker pool using an automatic worker count\n");
         process.stdout.write("  --jobs <n>               Run files through an ordered worker pool\n");
         process.stdout.write("  --build-jobs <n>         Limit concurrent build tasks (defaults to --jobs)\n");
@@ -303,7 +303,7 @@ function printCommandHelp(command) {
         process.stdout.write("  --config <path>          Use a specific config file\n");
         process.stdout.write("  --mode <name[,name...]>  Run one or multiple named config modes\n");
         process.stdout.write("  --runs <value>           Override fuzz iteration count, e.g. 500, 1.5x, +10%, +100000\n");
-        process.stdout.write("  --seed <n>               Override fuzz seed\n");
+        process.stdout.write("  --seed <n>               Pin fuzz seed (default uses random seed)\n");
         process.stdout.write("  --jobs <n>               Run files through an ordered worker pool\n");
         process.stdout.write("  --build-jobs <n>         Limit concurrent build tasks (defaults to --jobs)\n");
         process.stdout.write("  --run-jobs <n>           Limit concurrent run tasks (defaults to --jobs)\n");

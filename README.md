@@ -276,6 +276,8 @@ If you used `npx ast init` with a fuzzer example, the config is already there. O
 
 `ast fuzz` runs fuzz files across the selected modes, reports one result per file, and keeps the final summary separate from the normal test totals. If you want one combined command, use `ast test --fuzz`.
 
+By default, each fuzz run campaign picks a new random base seed. Pin a seed with `--seed <n>` (or `--fuzz-seed <n>` on `ast test`) when you want deterministic replay.
+
 When a fuzzer fails, `as-test` now prints the exact failing seeds and one-run repro commands such as `ast fuzz ... --seed <seed+n> --runs 1`. Crash records in `.as-test/crashes` also include the captured inputs passed to `run(...)`, which helps when the generator itself has side effects.
 
 Run only fuzzers:

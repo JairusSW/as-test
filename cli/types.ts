@@ -73,7 +73,7 @@ export class ReporterConfig {
 export class FuzzConfig {
   input: string[] = ["./assembly/__fuzz__/*.fuzz.ts"];
   runs: number = 1000;
-  seed: number = 1337;
+  seed: number = -1;
   maxInputBytes: number = 4096;
   target: string = "bindings";
   corpusDir: string = "./.as-test/fuzz/corpus";

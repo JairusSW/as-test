@@ -259,8 +259,7 @@
         },
         "seed": {
           "type": "number",
-          "description": "Base deterministic seed for input mutation.",
-          "default": 1337
+          "description": "Optional base seed for input mutation. If omitted, a random seed is generated each run."
         },
         "maxInputBytes": {
           "type": "number",
@@ -287,7 +286,6 @@
       "default": {
         "input": ["./assembly/__fuzz__/*.fuzz.ts"],
         "runs": 1000,
-        "seed": 1337,
         "maxInputBytes": 4096,
         "target": "bindings",
         "corpusDir": "./.as-test/fuzz/corpus",

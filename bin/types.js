@@ -77,7 +77,7 @@ export class FuzzConfig {
     constructor() {
         this.input = ["./assembly/__fuzz__/*.fuzz.ts"];
         this.runs = 1000;
-        this.seed = 1337;
+        this.seed = -1;
         this.maxInputBytes = 4096;
         this.target = "bindings";
         this.corpusDir = "./.as-test/fuzz/corpus";

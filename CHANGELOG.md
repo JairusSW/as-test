@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fuzzing
+
+- feat: make fuzz campaigns use a random base seed by default when `fuzz.seed` and CLI seed overrides are not set, while keeping deterministic replay via `--seed` / `--fuzz-seed`.
+
 ## 2026-04-18 - v1.0.11
 
 ### Coverage

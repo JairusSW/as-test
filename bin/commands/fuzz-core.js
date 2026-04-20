@@ -8,6 +8,7 @@ import { persistCrashRecord } from "../crash-store.js";
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 const MAGIC = Buffer.from("WIPC");
 const HEADER_SIZE = 9;
+const MAX_DEFAULT_SEED = 0x7fffffff;
 export async function fuzz(configPath = DEFAULT_CONFIG_PATH, selectors = [], modeName, overrides = {}) {
     const loadedConfig = loadConfig(configPath, false);
     const mode = applyMode(loadedConfig, modeName);
@@ -33,6 +34,9 @@ function resolveFuzzConfig(raw, overrides) {
     if (typeof overrides.seed == "number") {
         config.seed = overrides.seed;
     }
+    else if (config.seed < 0) {
+        config.seed = generateRandomSeed();
+    }
     if (typeof overrides.runs == "number") {
         config.runs = overrides.runs;
     }
@@ -49,6 +53,9 @@ function resolveFuzzConfig(raw, overrides) {
         throw new Error(`fuzz target must be "bindings"; received "${config.target}"`);
     }
     return config;
+}
+function generateRandomSeed() {
+    return Math.floor(Math.random() * (MAX_DEFAULT_SEED + 1));
 }
 function encodeRunsOverrideKind(kind) {
     switch (kind) {

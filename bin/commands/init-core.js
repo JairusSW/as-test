@@ -472,7 +472,6 @@ function applyInit(root, target, example, fuzzExample, force) {
                 fuzz: {
                     input: ["assembly/__fuzz__/*.fuzz.ts"],
                     runs: 1000,
-                    seed: 1337,
                     target: "bindings",
                     corpusDir: ".as-test/corpus",
                     crashDir: ".as-test/crashes",
