@@ -33,6 +33,7 @@ const MAGIC_C: u8 = 0x43; // C
 const HEADER_SIZE: i32 = 9;
 const IOV_SIZE: usize = sizeof<usize>() * 2;
 const U32_SIZE: usize = sizeof<u32>();
+const REPORT_CHUNK_BYTES: i32 = 65536;
 
 // @ts-ignore
 const IS_BINDINGS: bool = isDefined(AS_TEST_BINDINGS);
@@ -162,7 +163,35 @@ export function requestFuzzConfig(): FuzzConfigReply {
 }
 
 export function sendReport(report: string): void {
-  sendFrame(MessageType.DATA, String.UTF8.encode(report));
+  const payload = String.UTF8.encode(report);
+  if (payload.byteLength <= REPORT_CHUNK_BYTES) {
+    sendFrame(MessageType.DATA, payload);
+    sendFrame(MessageType.CLOSE, new ArrayBuffer(0));
+    return;
+  }
+
+  const totalBytes = payload.byteLength;
+  const chunkCount = (totalBytes + REPORT_CHUNK_BYTES - 1) / REPORT_CHUNK_BYTES;
+  sendJson(
+    MessageType.CALL,
+    `{"kind":"report:start","encoding":"utf8-chunks","totalBytes":${totalBytes.toString()},"chunkCount":${chunkCount.toString()},"chunkBytes":${REPORT_CHUNK_BYTES.toString()}}`,
+  );
+
+  const ptr = changetype<usize>(payload);
+  let offset = 0;
+  while (offset < totalBytes) {
+    const size = min<i32>(REPORT_CHUNK_BYTES, totalBytes - offset);
+    const chunk = new ArrayBuffer(size);
+    memory.copy(changetype<usize>(chunk), ptr + offset, size);
+    sendFrame(MessageType.DATA, chunk);
+    offset += size;
+  }
+
+  sendJson(
+    MessageType.CALL,
+    `{"kind":"report:end","totalBytes":${totalBytes.toString()},"chunkCount":${chunkCount.toString()}}`,
+  );
+  sendFrame(MessageType.CLOSE, new ArrayBuffer(0));
 }
 
 export function sendWarning(message: string): void {

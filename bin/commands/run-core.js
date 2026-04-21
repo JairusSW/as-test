@@ -1483,6 +1483,31 @@ async function runProcess(invocation, specFile, crashDir, modeName, snapshots, s
     let stderrPendingLine = "";
     let stdoutBuffer = "";
     let spawnError = null;
+    let sawChannelClose = false;
+    const runtimeEvents = {
+        sawFileStart: false,
+        sawFileEnd: false,
+        fileName: path.basename(specFile),
+        fileVerdict: "none",
+        fileTime: "",
+        suiteStarts: 0,
+        suiteEnds: 0,
+        assertionFails: 0,
+        warnings: 0,
+        logs: 0,
+    };
+    const reportStream = {
+        dataFrames: 0,
+        dataBytes: 0,
+        sawChunkStart: false,
+        sawChunkEnd: false,
+        chunkCountExpected: 0,
+        chunkBytesExpected: 0,
+        chunkTotalBytesExpected: 0,
+        chunkFramesReceived: 0,
+        chunkBytesReceived: 0,
+        chunks: [],
+    };
     child.on("error", (error) => {
         spawnError = error;
     });
@@ -1512,6 +1537,7 @@ async function runProcess(invocation, specFile, crashDir, modeName, snapshots, s
             const event = msg;
             const kind = String(event.kind ?? "");
             if (kind === "event:assert-fail") {
+                runtimeEvents.assertionFails++;
                 reporter.onAssertionFail?.({
                     key: String(event.key ?? ""),
                     instr: String(event.instr ?? ""),
@@ -1522,6 +1548,8 @@ async function runProcess(invocation, specFile, crashDir, modeName, snapshots, s
                 return;
             }
             if (kind === "event:file-start") {
+                runtimeEvents.sawFileStart = true;
+                runtimeEvents.fileName = String(event.file ?? runtimeEvents.fileName);
                 reporter.onFileStart?.({
                     file: String(event.file ?? "unknown"),
                     depth: 0,
@@ -1531,6 +1559,10 @@ async function runProcess(invocation, specFile, crashDir, modeName, snapshots, s
                 return;
             }
             if (kind === "event:file-end") {
+                runtimeEvents.sawFileEnd = true;
+                runtimeEvents.fileName = String(event.file ?? runtimeEvents.fileName);
+                runtimeEvents.fileVerdict = String(event.verdict ?? "none");
+                runtimeEvents.fileTime = String(event.time ?? "");
                 reporter.onFileEnd?.({
                     file: String(event.file ?? "unknown"),
                     depth: 0,
@@ -1542,6 +1574,7 @@ async function runProcess(invocation, specFile, crashDir, modeName, snapshots, s
                 return;
             }
             if (kind === "event:suite-start") {
+                runtimeEvents.suiteStarts++;
                 reporter.onSuiteStart?.({
                     file: String(event.file ?? "unknown"),
                     depth: Number(event.depth ?? 0),
@@ -1551,6 +1584,7 @@ async function runProcess(invocation, specFile, crashDir, modeName, snapshots, s
                 return;
             }
             if (kind === "event:suite-end") {
+                runtimeEvents.suiteEnds++;
                 reporter.onSuiteEnd?.({
                     file: String(event.file ?? "unknown"),
                     depth: Number(event.depth ?? 0),
@@ -1561,12 +1595,14 @@ async function runProcess(invocation, specFile, crashDir, modeName, snapshots, s
                 return;
             }
             if (kind === "event:warn") {
+                runtimeEvents.warnings++;
                 reporter.onWarning?.({
                     message: String(event.message ?? ""),
                 });
                 return;
             }
             if (kind === "event:log") {
+                runtimeEvents.logs++;
                 reporter.onLog?.({
                     file: String(event.file ?? "unknown"),
                     depth: Number(event.depth ?? 0),
@@ -1584,15 +1620,42 @@ async function runProcess(invocation, specFile, crashDir, modeName, snapshots, s
                 this.send(MessageType.CALL, Buffer.from(`${result.ok ? "1" : "0"}\n${result.expected}`, "utf8"));
                 return;
             }
+            if (kind === "report:start") {
+                reportStream.sawChunkStart = true;
+                reportStream.sawChunkEnd = false;
+                reportStream.chunkCountExpected = Number(event.chunkCount ?? 0);
+                reportStream.chunkBytesExpected = Number(event.chunkBytes ?? 0);
+                reportStream.chunkTotalBytesExpected = Number(event.totalBytes ?? 0);
+                reportStream.chunkFramesReceived = 0;
+                reportStream.chunkBytesReceived = 0;
+                reportStream.chunks = [];
+                return;
+            }
+            if (kind === "report:end") {
+                reportStream.sawChunkEnd = true;
+                return;
+            }
             this.sendJSON(MessageType.CALL, { ok: true, expected: "" });
         }
         onDataMessage(data) {
+            reportStream.dataFrames++;
+            reportStream.dataBytes += data.length;
+            if (reportStream.sawChunkStart && !reportStream.sawChunkEnd) {
+                reportStream.chunkFramesReceived++;
+                reportStream.chunkBytesReceived += data.length;
+                reportStream.chunks.push(data.toString("utf8"));
+                return;
+            }
             try {
                 report = JSON.parse(data.toString("utf8"));
+                parseError = null;
             }
             catch (error) {
                 parseError = String(error);
             }
+        }
+        onClose() {
+            sawChannelClose = true;
         }
     }
     const _channel = new TestChannel(child.stdout, child.stdin);
@@ -1614,29 +1677,93 @@ async function runProcess(invocation, specFile, crashDir, modeName, snapshots, s
         });
         return createRuntimeFailureReport(specFile, modeName, "failed to start test runtime", errorText, stdoutBuffer, stderrBuffer);
     }
+    if (reportStream.sawChunkStart) {
+        if (!reportStream.sawChunkEnd) {
+            parseError =
+                parseError ??
+                    "missing report:end marker for chunked report payload";
+        }
+        else {
+            const chunkedPayload = reportStream.chunks.join("");
+            try {
+                report = JSON.parse(chunkedPayload);
+                parseError = null;
+            }
+            catch (error) {
+                parseError = `could not parse chunked report payload: ${String(error)}`;
+            }
+            if (reportStream.chunkCountExpected > 0 &&
+                reportStream.chunkFramesReceived !== reportStream.chunkCountExpected) {
+                parseError =
+                    parseError ??
+                        `chunk count mismatch: expected ${reportStream.chunkCountExpected}, received ${reportStream.chunkFramesReceived}`;
+            }
+            if (reportStream.chunkTotalBytesExpected > 0 &&
+                reportStream.chunkBytesReceived !== reportStream.chunkTotalBytesExpected) {
+                parseError =
+                    parseError ??
+                        `chunk size mismatch: expected ${reportStream.chunkTotalBytesExpected} bytes, received ${reportStream.chunkBytesReceived}`;
+            }
+        }
+    }
     if (parseError) {
         const errorText = `could not parse report payload: ${parseError}`;
+        const diagnostics = buildRuntimeReportDiagnostics(code, sawChannelClose, reportStream, runtimeEvents);
+        const fullError = `${errorText}\n${diagnostics}`;
         persistCrashRecord(crashDir, {
             kind: "test",
             file: specFile,
             mode: modeName ?? "default",
-            error: errorText,
+            error: fullError,
             stdout: stdoutBuffer,
             stderr: stderrBuffer,
         });
-        return createRuntimeFailureReport(specFile, modeName, "runtime returned an invalid report payload", errorText, stdoutBuffer, stderrBuffer);
+        return createRuntimeFailureReport(specFile, modeName, "runtime returned an invalid report payload", fullError, stdoutBuffer, stderrBuffer);
     }
     if (!report) {
+        const synthesized = synthesizeReportFromRuntimeEvents(specFile, runtimeEvents);
+        if (synthesized) {
+            reporter.onWarning?.({
+                message: "runtime report payload missing; reconstructed result from streamed lifecycle events",
+            });
+            if (code !== 0 || hasMeaningfulRuntimeOutput(stderrBuffer)) {
+                const errorParts = [];
+                if (code !== 0) {
+                    errorParts.push(`child process exited with code ${code}`);
+                }
+                const stderrText = normalizeRuntimeOutput(stderrBuffer);
+                if (stderrText.length) {
+                    errorParts.push(stderrText);
+                }
+                const diagnostics = buildRuntimeReportDiagnostics(code, sawChannelClose, reportStream, runtimeEvents);
+                errorParts.push(diagnostics);
+                const errorText = errorParts.join("\n\n");
+                persistCrashRecord(crashDir, {
+                    kind: "test",
+                    file: specFile,
+                    mode: modeName ?? "default",
+                    error: errorText || "runtime reported an unknown error",
+                    stdout: stdoutBuffer,
+                    stderr: stderrBuffer,
+                });
+                return appendRuntimeFailureReport(synthesized, specFile, modeName, code !== 0
+                    ? `test runtime failed with exit code ${code}`
+                    : "test runtime wrote to stderr", errorText, stdoutBuffer, stderrBuffer);
+            }
+            return synthesized;
+        }
         const errorText = "missing report payload from test runtime";
+        const diagnostics = buildRuntimeReportDiagnostics(code, sawChannelClose, reportStream, runtimeEvents);
+        const fullError = `${errorText}\n${diagnostics}`;
         persistCrashRecord(crashDir, {
             kind: "test",
             file: specFile,
             mode: modeName ?? "default",
-            error: errorText,
+            error: fullError,
             stdout: stdoutBuffer,
             stderr: stderrBuffer,
         });
-        return createRuntimeFailureReport(specFile, modeName, "test runtime exited without sending a report", errorText, stdoutBuffer, stderrBuffer);
+        return createRuntimeFailureReport(specFile, modeName, "test runtime exited without sending a report", fullError, stdoutBuffer, stderrBuffer);
     }
     if (code !== 0 || hasMeaningfulRuntimeOutput(stderrBuffer)) {
         const errorParts = [];
@@ -1661,6 +1788,52 @@ async function runProcess(invocation, specFile, crashDir, modeName, snapshots, s
             : "test runtime wrote to stderr", errorText, stdoutBuffer, stderrBuffer);
     }
     return report;
+}
+function synthesizeReportFromRuntimeEvents(specFile, runtimeEvents) {
+    if (!runtimeEvents.sawFileEnd &&
+        runtimeEvents.suiteStarts <= 0 &&
+        runtimeEvents.suiteEnds <= 0) {
+        return null;
+    }
+    let verdict = runtimeEvents.fileVerdict;
+    if (verdict == "none" && runtimeEvents.assertionFails > 0) {
+        verdict = "fail";
+    }
+    else if (verdict == "none" && runtimeEvents.sawFileEnd) {
+        verdict = "ok";
+    }
+    return {
+        suites: [
+            {
+                file: specFile,
+                description: runtimeEvents.fileName || path.basename(specFile),
+                depth: 0,
+                kind: "file",
+                verdict,
+                time: {
+                    start: 0,
+                    end: 0,
+                },
+                suites: [],
+                logs: [],
+                tests: [],
+            },
+        ],
+        coverage: {
+            total: 0,
+            covered: 0,
+            uncovered: 0,
+            percent: 100,
+            points: [],
+        },
+    };
+}
+function buildRuntimeReportDiagnostics(code, sawChannelClose, reportStream, runtimeEvents) {
+    return [
+        `runtime diagnostics: exitCode=${code}, channelClose=${sawChannelClose ? "yes" : "no"}`,
+        `report stream: dataFrames=${reportStream.dataFrames}, dataBytes=${reportStream.dataBytes}, chunked=${reportStream.sawChunkStart ? "yes" : "no"}, chunkStart=${reportStream.sawChunkStart ? "yes" : "no"}, chunkEnd=${reportStream.sawChunkEnd ? "yes" : "no"}, chunkFrames=${reportStream.chunkFramesReceived}, expectedChunkFrames=${reportStream.chunkCountExpected}, chunkBytes=${reportStream.chunkBytesReceived}, expectedChunkBytes=${reportStream.chunkTotalBytesExpected}`,
+        `runtime events: fileStart=${runtimeEvents.sawFileStart ? "yes" : "no"}, fileEnd=${runtimeEvents.sawFileEnd ? "yes" : "no"}, fileVerdict=${runtimeEvents.fileVerdict}, suiteStarts=${runtimeEvents.suiteStarts}, suiteEnds=${runtimeEvents.suiteEnds}, assertionFails=${runtimeEvents.assertionFails}, warnings=${runtimeEvents.warnings}, logs=${runtimeEvents.logs}`,
+    ].join("\n");
 }
 function createRuntimeFailureReport(specFile, modeName, title, details, stdout, stderr) {
     return appendRuntimeFailureReport({

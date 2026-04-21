@@ -78,12 +78,35 @@ async function runFuzzTarget(file, outDir, duplicateBasenames, config, buildStar
     const binary = readFileSync(wasmPath);
     const module = new WebAssembly.Module(binary);
     let report = null;
+    let reportParseError = null;
+    const reportStream = {
+        sawChunkStart: false,
+        sawChunkEnd: false,
+        chunkCountExpected: 0,
+        chunkTotalBytesExpected: 0,
+        chunkFramesReceived: 0,
+        chunkBytesReceived: 0,
+        chunks: [],
+    };
     const captured = captureFrames((type, payload, respond) => {
         if (type == 0x02) {
             const event = JSON.parse(payload.toString("utf8"));
-            if (String(event.kind ?? "") == "fuzz:config") {
+            const kind = String(event.kind ?? "");
+            if (kind == "fuzz:config") {
                 const resolved = config;
                 respond(`${config.runs}\n${config.seed}\n${resolved.runsOverrideKind ?? 0}\n${resolved.runsOverrideValue ?? 0}`);
+            }
+            else if (kind == "report:start") {
+                reportStream.sawChunkStart = true;
+                reportStream.sawChunkEnd = false;
+                reportStream.chunkCountExpected = Number(event.chunkCount ?? 0);
+                reportStream.chunkTotalBytesExpected = Number(event.totalBytes ?? 0);
+                reportStream.chunkFramesReceived = 0;
+                reportStream.chunkBytesReceived = 0;
+                reportStream.chunks = [];
+            }
+            else if (kind == "report:end") {
+                reportStream.sawChunkEnd = true;
             }
             else {
                 respond("");
@@ -91,7 +114,20 @@ async function runFuzzTarget(file, outDir, duplicateBasenames, config, buildStar
             return;
         }
         if (type == 0x03) {
-            report = JSON.parse(payload.toString("utf8"));
+            if (reportStream.sawChunkStart && !reportStream.sawChunkEnd) {
+                reportStream.chunkFramesReceived++;
+                reportStream.chunkBytesReceived += payload.length;
+                reportStream.chunks.push(payload.toString("utf8"));
+            }
+            else {
+                try {
+                    report = JSON.parse(payload.toString("utf8"));
+                    reportParseError = null;
+                }
+                catch (error) {
+                    reportParseError = String(error);
+                }
+            }
         }
     });
     try {
@@ -126,14 +162,35 @@ async function runFuzzTarget(file, outDir, duplicateBasenames, config, buildStar
         };
     }
     const passthrough = captured.restore();
+    if (reportStream.sawChunkStart) {
+        if (reportStream.sawChunkEnd) {
+            const chunkedPayload = reportStream.chunks.join("");
+            try {
+                report = JSON.parse(chunkedPayload);
+                reportParseError = null;
+            }
+            catch (error) {
+                reportParseError = String(error);
+            }
+        }
+    }
     if (!report?.fuzzers) {
+        const diagnostics = [
+            `chunked=${reportStream.sawChunkStart ? "yes" : "no"}`,
+            `chunkStart=${reportStream.sawChunkStart ? "yes" : "no"}`,
+            `chunkEnd=${reportStream.sawChunkEnd ? "yes" : "no"}`,
+            `chunkFrames=${reportStream.chunkFramesReceived}`,
+            `expectedChunkFrames=${reportStream.chunkCountExpected}`,
+            `chunkBytes=${reportStream.chunkBytesReceived}`,
+            `expectedChunkBytes=${reportStream.chunkTotalBytesExpected}`,
+        ].join(", ");
         const crash = persistCrashRecord(config.crashDir, {
             kind: "fuzz",
             file,
             entryKey: buildFuzzCrashEntryKey(file, modeName ?? "default"),
             mode: modeName ?? "default",
             seed: config.seed,
-            error: `missing fuzz report payload from ${path.basename(file)}`,
+            error: `${reportParseError ? `invalid fuzz report payload: ${reportParseError}` : `missing fuzz report payload from ${path.basename(file)}`} (${diagnostics})`,
             stdout: passthrough.stdout,
             stderr: "",
         });
