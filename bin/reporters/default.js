@@ -354,8 +354,8 @@ function renderFailedFuzzers(results) {
                     rendered = true;
                 }
                 console.log(`${chalk.bgRed(" FAIL ")} ${formatFuzzFailureTitle(modeResult.file, fuzzer.name)}`);
-                if (fuzzer.failure?.message?.length) {
-                    console.log(chalk.dim(`Message: ${fuzzer.failure.message}`));
+                if (fuzzer.failure) {
+                    renderAssertionFailureDetails(fuzzer.failure.left, fuzzer.failure.right, fuzzer.failure.message);
                 }
                 console.log(chalk.dim(`Mode: ${modeResult.modeName}`));
                 console.log(chalk.dim(`Runs: ${fuzzer.passed + fuzzer.failed + fuzzer.crashed} completed (${fuzzer.passed} passed, ${fuzzer.failed} failed, ${fuzzer.crashed} crashed)`));
@@ -487,52 +487,11 @@ function collectSuiteFailures(suite, file, path, printed) {
         if (printed.has(dedupeKey))
             continue;
         printed.add(dedupeKey);
-        const left = JSON.stringify(test.left);
-        const right = JSON.stringify(test.right);
-        if (left == "null" && right == "null") {
-            console.log(`${chalk.bgRed(" FAIL ")} ${chalk.dim(title)} ${chalk.dim("(" + where + ")")}`);
-            if (modeName.length) {
-                console.log(chalk.dim(`Mode: ${modeName}`));
-            }
-            const normalizedMessage = normalizeFailureMessage(message);
-            if (normalizedMessage.length) {
-                for (const line of normalizedMessage.split("\n")) {
-                    console.log(chalk.dim(line));
-                }
-            }
-            else {
-                console.log(chalk.dim("runtime error"));
-            }
-            console.log("");
-            continue;
-        }
-        const diffResult = diff(left, right);
-        let expected = "";
-        for (const res of diffResult.diff) {
-            switch (res.type) {
-                case "correct":
-                    expected += chalk.dim(res.value);
-                    break;
-                case "extra":
-                    expected += chalk.red.strikethrough(res.value);
-                    break;
-                case "missing":
-                    expected += chalk.bgBlack(res.value);
-                    break;
-                case "wrong":
-                    expected += chalk.bgRed(res.value);
-                    break;
-                case "untouched":
-                case "spacer":
-                    break;
-            }
-        }
         console.log(`${chalk.bgRed(" FAIL ")} ${chalk.dim(title)} ${chalk.dim("(" + where + ")")}`);
         if (modeName.length) {
             console.log(chalk.dim(`Mode: ${modeName}`));
         }
-        console.log(`${chalk.dim("(expected) ->")} ${expected}`);
-        console.log(`${chalk.dim("(received) ->")} ${chalk.dim(left)}\n`);
+        renderAssertionFailureDetails(test.left, test.right, message);
     }
     const suites = Array.isArray(suiteAny.suites)
         ? suiteAny.suites
@@ -543,6 +502,46 @@ function collectSuiteFailures(suite, file, path, printed) {
 }
 function normalizeFailureMessage(message) {
     return message.replace(/\r\n/g, "\n").trim();
+}
+function renderAssertionFailureDetails(leftRaw, rightRaw, messageRaw) {
+    const left = JSON.stringify(leftRaw);
+    const right = JSON.stringify(rightRaw);
+    const message = String(messageRaw ?? "");
+    if (left == "null" && right == "null") {
+        const normalizedMessage = normalizeFailureMessage(message);
+        if (normalizedMessage.length) {
+            for (const line of normalizedMessage.split("\n")) {
+                console.log(chalk.dim(line));
+            }
+        }
+        else {
+            console.log(chalk.dim("runtime error"));
+        }
+        return;
+    }
+    const diffResult = diff(left, right);
+    let expected = "";
+    for (const res of diffResult.diff) {
+        switch (res.type) {
+            case "correct":
+                expected += chalk.dim(res.value);
+                break;
+            case "extra":
+                expected += chalk.red.strikethrough(res.value);
+                break;
+            case "missing":
+                expected += chalk.bgBlack(res.value);
+                break;
+            case "wrong":
+                expected += chalk.bgRed(res.value);
+                break;
+            case "untouched":
+            case "spacer":
+                break;
+        }
+    }
+    console.log(`${chalk.dim("(expected) ->")} ${expected}`);
+    console.log(`${chalk.dim("(received) ->")} ${chalk.dim(left)}\n`);
 }
 function renderSnapshotSummary(snapshotSummary, leadingGap = true) {
     if (leadingGap) {
