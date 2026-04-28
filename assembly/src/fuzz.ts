@@ -34,8 +34,28 @@ export class ArrayOptions {
   max: i32 = 16;
 }
 
+const DEFAULT_I32_OPTIONS = new IntegerOptions<i32>();
+const DEFAULT_U32_OPTIONS = new IntegerOptions<u32>();
+const DEFAULT_F32_OPTIONS = new FloatOptions<f32>();
+const DEFAULT_F64_OPTIONS = new FloatOptions<f64>();
+const DEFAULT_STRING_OPTIONS = new StringOptions();
+const DEFAULT_BYTES_OPTIONS = new BytesOptions();
+const DEFAULT_ARRAY_OPTIONS = new ArrayOptions();
+
 export class FuzzSeed {
-  constructor(private state: u64) {}
+  private state: u32;
+
+  constructor(seed: u64) {
+    this.reseed(seed);
+  }
+
+  reseed(seed: u64): void {
+    const lo = <u32>seed;
+    const hi = <u32>(seed >> 32);
+    let mixed = lo ^ (hi * 0x9e3779b9) ^ 0xa341316c;
+    if (mixed == 0) mixed = 0x6d2b79f5;
+    this.state = mixed;
+  }
 
   boolean(): bool {
     return (this.nextU32() & 1) == 1;
@@ -46,59 +66,108 @@ export class FuzzSeed {
     return unchecked(values[this.nextRange(0, values.length - 1)]);
   }
 
-  i32(options: IntegerOptions<i32> = new IntegerOptions<i32>()): i32 {
-    return this.nextI32InRange(options.min, options.max, options.exclude);
+  i32(options: IntegerOptions<i32> | null = null): i32 {
+    const config = options != null ? options : DEFAULT_I32_OPTIONS;
+    return this.nextI32InRange(config.min, config.max, config.exclude);
   }
 
-  u32(options: IntegerOptions<u32> = new IntegerOptions<u32>()): u32 {
-    return this.nextU32InRange(options.min, options.max, options.exclude);
+  u32(options: IntegerOptions<u32> | null = null): u32 {
+    const config = options != null ? options : DEFAULT_U32_OPTIONS;
+    return this.nextU32InRange(config.min, config.max, config.exclude);
   }
 
-  f32(options: FloatOptions<f32> = new FloatOptions<f32>()): f32 {
+  f32(options: FloatOptions<f32> | null = null): f32 {
+    const config = options != null ? options : DEFAULT_F32_OPTIONS;
     return <f32>(
-      this.nextF64InRange<f32>(options.min, options.max, options.exclude)
+      this.nextF64InRange<f32>(config.min, config.max, config.exclude)
     );
   }
 
-  f64(options: FloatOptions<f64> = new FloatOptions<f64>()): f64 {
-    return this.nextF64InRange<f64>(options.min, options.max, options.exclude);
+  f64(options: FloatOptions<f64> | null = null): f64 {
+    const config = options != null ? options : DEFAULT_F64_OPTIONS;
+    return this.nextF64InRange<f64>(config.min, config.max, config.exclude);
   }
 
-  bytes(options: BytesOptions = new BytesOptions()): Uint8Array {
-    validateLengthRange("seed.bytes()", options.min, options.max);
-    const length = this.nextRange(options.min, options.max);
+  bytes(options: BytesOptions | null = null): Uint8Array {
+    const config = options != null ? options : DEFAULT_BYTES_OPTIONS;
+    validateLengthRange("seed.bytes()", config.min, config.max);
+    const length = this.nextRange(config.min, config.max);
     const out = new Uint8Array(length);
+    const include = config.include;
+    const exclude = config.exclude;
+    if (include.length) {
+      if (!exclude.length) {
+        for (let i = 0; i < length; i++) {
+          unchecked(
+            (out[i] = <u8>unchecked(include[this.nextRange(0, include.length - 1)])),
+          );
+        }
+        return out;
+      }
+      for (let i = 0; i < length; i++) {
+        unchecked((out[i] = this.byteFromOptions(config)));
+      }
+      return out;
+    }
+    if (!exclude.length) {
+      for (let i = 0; i < length; i++) {
+        unchecked((out[i] = <u8>(this.nextU32() & 0xff)));
+      }
+      return out;
+    }
     for (let i = 0; i < length; i++) {
-      out[i] = this.byteFromOptions(options);
+      unchecked((out[i] = this.byteFromOptions(config)));
     }
     return out;
   }
 
-  buffer(options: BytesOptions = new BytesOptions()): ArrayBuffer {
+  buffer(options: BytesOptions | null = null): ArrayBuffer {
     return this.bytes(options).buffer;
   }
 
-  string(options: StringOptions = new StringOptions()): string {
-    validateLengthRange("seed.string()", options.min, options.max);
-    const alphabet = buildAlphabet(options);
+  string(options: StringOptions | null = null): string {
+    const config = options != null ? options : DEFAULT_STRING_OPTIONS;
+    validateLengthRange("seed.string()", config.min, config.max);
+    const alphabet = buildAlphabet(config);
     if (!alphabet.length) {
       panic();
     }
-    const length = this.nextRange(options.min, options.max);
-    let out = options.prefix;
-    for (let i = 0; i < length; i++) {
-      out += String.fromCharCode(this.pick(alphabet));
+    const coreLength = this.nextRange(config.min, config.max);
+    const prefixLength = config.prefix.length;
+    const suffixLength = config.suffix.length;
+    const totalLength = prefixLength + coreLength + suffixLength;
+    if (!totalLength) return "";
+
+    // Allocate UTF-16 payload directly and fill code units in one pass.
+    const outPtr = __new(<usize>(totalLength << 1), idof<string>());
+    let cursor: usize = outPtr;
+
+    for (let i = 0; i < prefixLength; i++) {
+      store<u16>(cursor, <u16>config.prefix.charCodeAt(i));
+      cursor += 2;
     }
-    out += options.suffix;
-    return out;
+
+    const last = alphabet.length - 1;
+    for (let i = 0; i < coreLength; i++) {
+      store<u16>(cursor, <u16>unchecked(alphabet[this.nextRange(0, last)]));
+      cursor += 2;
+    }
+
+    for (let i = 0; i < suffixLength; i++) {
+      store<u16>(cursor, <u16>config.suffix.charCodeAt(i));
+      cursor += 2;
+    }
+
+    return changetype<string>(outPtr);
   }
 
   array<T>(
     item: (seed: FuzzSeed) => T,
-    options: ArrayOptions = new ArrayOptions(),
+    options: ArrayOptions | null = null,
   ): Array<T> {
-    validateLengthRange("seed.array()", options.min, options.max);
-    const length = this.nextRange(options.min, options.max);
+    const config = options != null ? options : DEFAULT_ARRAY_OPTIONS;
+    validateLengthRange("seed.array()", config.min, config.max);
+    const length = this.nextRange(config.min, config.max);
     const out = new Array<T>(length);
     for (let i = 0; i < length; i++) {
       unchecked((out[i] = item(this)));
@@ -110,17 +179,23 @@ export class FuzzSeed {
     const include = options.include;
     const exclude = options.exclude;
     if (include.length) {
+      if (!exclude.length) {
+        return <u8>unchecked(include[this.nextRange(0, include.length - 1)]);
+      }
       for (let attempts = 0; attempts < 1024; attempts++) {
         const picked = unchecked(
           include[this.nextRange(0, include.length - 1)],
         );
-        if (!exclude.includes(picked)) return picked;
+        if (!containsValue<u8>(exclude, picked)) return picked;
       }
       panic();
     }
+    if (!exclude.length) {
+      return <u8>(this.nextU32() & 0xff);
+    }
     for (let attempts = 0; attempts < 1024; attempts++) {
       const value = <u8>(this.nextU32() & 0xff);
-      if (!exclude.includes(value)) return value;
+      if (!containsValue<u8>(exclude, value)) return value;
     }
     panic();
     return 0;
@@ -128,6 +203,9 @@ export class FuzzSeed {
 
   private nextI32InRange(min: i32, max: i32, exclude: i32[]): i32 {
     if (max < min) panic();
+    if (!exclude.length) {
+      return max <= min ? min : min + <i32>(this.nextU32() % <u32>(max - min + 1));
+    }
     for (let attempts = 0; attempts < 1024; attempts++) {
       const value =
         max <= min ? min : min + <i32>(this.nextU32() % <u32>(max - min + 1));
@@ -139,6 +217,9 @@ export class FuzzSeed {
 
   private nextU32InRange(min: u32, max: u32, exclude: u32[]): u32 {
     if (max < min) panic();
+    if (!exclude.length) {
+      return max <= min ? min : min + (this.nextU32() % (max - min + 1));
+    }
     for (let attempts = 0; attempts < 1024; attempts++) {
       const value = max <= min ? min : min + (this.nextU32() % (max - min + 1));
       if (!containsValue<u32>(exclude, value)) return value;
@@ -151,6 +232,9 @@ export class FuzzSeed {
     const left = <f64>min;
     const right = <f64>max;
     if (right < left) panic();
+    if (!exclude.length) {
+      return left + (right - left) * this.nextUnit();
+    }
     for (let attempts = 0; attempts < 1024; attempts++) {
       const value = left + (right - left) * this.nextUnit();
       if (!containsFloatValue<T>(exclude, changetype<T>(value))) return value;
@@ -169,11 +253,14 @@ export class FuzzSeed {
   }
 
   private nextU32(): u32 {
-    this.state += 0x9e3779b97f4a7c15;
-    let z = this.state;
-    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9;
-    z = (z ^ (z >> 27)) * 0x94d049bb133111eb;
-    return <u32>(z ^ (z >> 31));
+    // mulberry32: very fast integer-only PRNG suitable for fuzz input generation.
+    let x = this.state;
+    x += 0x6d2b79f5;
+    this.state = x;
+    let z = x;
+    z = <u32>Math.imul(z ^ (z >> 15), z | 1);
+    z ^= z + <u32>Math.imul(z ^ (z >> 7), z | 61);
+    return z ^ (z >> 14);
   }
 
   private nextU64(): u64 {
@@ -182,6 +269,21 @@ export class FuzzSeed {
     return (hi << 32) | lo;
   }
 }
+
+const ASCII_ALPHABET: i32[] = rangeChars(32, 126);
+const ALPHA_ALPHABET: i32[] = rangeChars(65, 90).concat(rangeChars(97, 122));
+const DIGIT_ALPHABET: i32[] = rangeChars(48, 57);
+const HEX_ALPHABET: i32[] = DIGIT_ALPHABET.concat(rangeChars(97, 102));
+const ALNUM_ALPHABET: i32[] = ALPHA_ALPHABET.concat(DIGIT_ALPHABET);
+const BASE64_ALPHABET: i32[] = ALPHA_ALPHABET.concat(DIGIT_ALPHABET).concat([
+  43,
+  47,
+  61,
+]);
+const IDENTIFIER_ALPHABET: i32[] = [95].concat(ALPHA_ALPHABET).concat(
+  DIGIT_ALPHABET,
+);
+const WHITESPACE_ALPHABET: i32[] = [9, 10, 13, 32];
 
 export abstract class FuzzerBase {
   public name: string;
@@ -409,12 +511,13 @@ export class Fuzzer0<R> extends FuzzerBase {
   run(seedBase: u64, runs: i32): FuzzerResult {
     if (this.skipped) return createSkippedResult(this.name);
     const result = createResult(this.name, runs);
+    const seed = new FuzzSeed(seedBase);
     __fuzz_callback0 = changetype<() => usize>(this.callback);
     __fuzz_returns_bool = this.returnsBool;
     for (let i = 0; i < runs; i++) {
       prepareFuzzIteration();
       __fuzz_calls = 0;
-      const seed = new FuzzSeed(seedBase + <u64>i);
+      seed.reseed(seedBase + <u64>i);
       if (this.generator) {
         this.generator(seed, changetype<() => R>(__fuzz_run0));
       } else {
@@ -469,12 +572,13 @@ export class Fuzzer1<A, R> extends FuzzerBase {
   run(seedBase: u64, runs: i32): FuzzerResult {
     if (this.skipped) return createSkippedResult(this.name);
     const result = createResult(this.name, runs);
+    const seed = new FuzzSeed(seedBase);
     __fuzz_callback1 = changetype<(a: usize) => usize>(this.callback);
     __fuzz_returns_bool = this.returnsBool;
     for (let i = 0; i < runs; i++) {
       prepareFuzzIteration();
       __fuzz_calls = 0;
-      const seed = new FuzzSeed(seedBase + <u64>i);
+      seed.reseed(seedBase + <u64>i);
       if (!this.generator) {
         failFuzzIteration(
           "generate",
@@ -538,12 +642,13 @@ export class Fuzzer2<A, B, R> extends FuzzerBase {
   run(seedBase: u64, runs: i32): FuzzerResult {
     if (this.skipped) return createSkippedResult(this.name);
     const result = createResult(this.name, runs);
+    const seed = new FuzzSeed(seedBase);
     __fuzz_callback2 = changetype<(a: usize, b: usize) => usize>(this.callback);
     __fuzz_returns_bool = this.returnsBool;
     for (let i = 0; i < runs; i++) {
       prepareFuzzIteration();
       __fuzz_calls = 0;
-      const seed = new FuzzSeed(seedBase + <u64>i);
+      seed.reseed(seedBase + <u64>i);
       if (!this.generator) {
         failFuzzIteration(
           "generate",
@@ -606,6 +711,7 @@ export class Fuzzer3<A, B, C, R> extends FuzzerBase {
   run(seedBase: u64, runs: i32): FuzzerResult {
     if (this.skipped) return createSkippedResult(this.name);
     const result = createResult(this.name, runs);
+    const seed = new FuzzSeed(seedBase);
     __fuzz_callback3 = changetype<(a: usize, b: usize, c: usize) => usize>(
       this.callback,
     );
@@ -613,7 +719,7 @@ export class Fuzzer3<A, B, C, R> extends FuzzerBase {
     for (let i = 0; i < runs; i++) {
       prepareFuzzIteration();
       __fuzz_calls = 0;
-      const seed = new FuzzSeed(seedBase + <u64>i);
+      seed.reseed(seedBase + <u64>i);
       if (!this.generator) {
         failFuzzIteration(
           "generate",
@@ -701,13 +807,13 @@ export function createFuzzer<T extends Function>(
 }
 
 function buildAlphabet(options: StringOptions): i32[] {
-  const out = baseAlphabet(options.charset);
-  if (options.charset == "custom") {
-    out.length = 0;
+  if (!options.include.length && !options.exclude.length) {
+    return baseAlphabet(options.charset);
   }
+  const out = baseAlphabet(options.charset).slice(0);
   for (let i = 0; i < options.include.length; i++) {
     const value = unchecked(options.include[i]);
-    if (!out.includes(value)) out.push(value);
+    if (!containsValue<i32>(out, value)) out.push(value);
   }
   for (let i = 0; i < options.exclude.length; i++) {
     removeFirst(out, unchecked(options.exclude[i]));
@@ -716,21 +822,15 @@ function buildAlphabet(options: StringOptions): i32[] {
 }
 
 function baseAlphabet(charset: string): i32[] {
-  if (charset == "alpha") return rangeChars(65, 90).concat(rangeChars(97, 122));
-  if (charset == "alnum")
-    return baseAlphabet("alpha").concat(rangeChars(48, 57));
-  if (charset == "digit") return rangeChars(48, 57);
-  if (charset == "hex") return rangeChars(48, 57).concat(rangeChars(97, 102));
-  if (charset == "base64")
-    return rangeChars(65, 90)
-      .concat(rangeChars(97, 122))
-      .concat(rangeChars(48, 57))
-      .concat([43, 47, 61]);
-  if (charset == "identifier")
-    return [95].concat(baseAlphabet("alpha")).concat(rangeChars(48, 57));
-  if (charset == "whitespace") return [9, 10, 13, 32];
+  if (charset == "alpha") return ALPHA_ALPHABET;
+  if (charset == "alnum") return ALNUM_ALPHABET;
+  if (charset == "digit") return DIGIT_ALPHABET;
+  if (charset == "hex") return HEX_ALPHABET;
+  if (charset == "base64") return BASE64_ALPHABET;
+  if (charset == "identifier") return IDENTIFIER_ALPHABET;
+  if (charset == "whitespace") return WHITESPACE_ALPHABET;
   if (charset == "custom") return [];
-  return rangeChars(32, 126);
+  return ASCII_ALPHABET;
 }
 
 function rangeChars(start: i32, end: i32): i32[] {
@@ -745,6 +845,7 @@ function removeFirst(values: i32[], needle: i32): void {
   const index = values.indexOf(needle);
   if (index >= 0) values.splice(index, 1);
 }
+
 
 function validateLengthRange(label: string, min: i32, max: i32): void {
   if (min < 0 || max < 0) panic();

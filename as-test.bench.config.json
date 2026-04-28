@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/as-test/as-test.config.schema.json",
+  "input": [],
+  "output": ".as-test/",
+  "config": "none",
+  "coverage": false,
+  "env": {},
+  "fuzz": {
+    "input": ["assembly/__fuzz__/seed-perf.fuzz.ts"],
+    "runs": 20000,
+    "seed": 1337,
+    "maxInputBytes": 4096,
+    "target": "bindings",
+    "corpusDir": ".as-test/fuzz/corpus",
+    "crashDir": ".as-test/crashes"
+  },
+  "buildOptions": {
+    "target": "bindings"
+  },
+  "runOptions": {
+    "runtime": {
+      "cmd": "node .as-test/runners/default.bindings.js <file>"
+    },
+    "reporter": "default"
+  }
+}

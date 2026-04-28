@@ -68,6 +68,8 @@
     "test": "node ./bin/index.js test --parallel",
     "test:ci": "node ./bin/index.js test --parallel --tap --config ./as-test.ci.config.json",
     "fuzz": "node ./bin/index.js fuzz",
+    "bench:seed": "node ./bin/index.js fuzz --config ./as-test.bench.config.json --clean",
+    "bench:seed:compare": "bash ./tools/bench-seed-compare.sh 7",
     "test:examples": "npm --prefix ./examples run test",
     "ci:act": "bash ./tools/act.sh push",
     "ci:act:pr": "bash ./tools/act.sh pull_request",
