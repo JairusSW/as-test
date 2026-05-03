@@ -6,6 +6,7 @@ export type FuzzFlags = {
 
 type FuzzCommandDeps = {
   resolveCommandArgs(rawArgs: string[], command: string): string[];
+  resolveFuzzerSelectors(rawArgs: string[], command: "fuzz" | "test"): string[];
   resolveListFlags(rawArgs: string[], command: string): CliListFlags;
   resolveJobs(rawArgs: string[], command: "fuzz"): number;
   resolveExecutionModes(
@@ -22,6 +23,7 @@ type FuzzCommandDeps = {
   runFuzzModes(
     configPath: string | undefined,
     selectors: string[],
+    fuzzerSelectors: string[],
     modes: (string | undefined)[],
     rawArgs: string[],
   ): Promise<void>;
@@ -34,6 +36,7 @@ export async function executeFuzzCommand(
   deps: FuzzCommandDeps,
 ): Promise<void> {
   const commandArgs = deps.resolveCommandArgs(rawArgs, "fuzz");
+  const fuzzerSelectors = deps.resolveFuzzerSelectors(rawArgs, "fuzz");
   const listFlags = deps.resolveListFlags(rawArgs, "fuzz");
   const modeTargets = deps.resolveExecutionModes(configPath, selectedModes);
   if (listFlags.list || listFlags.listModes) {
@@ -46,5 +49,11 @@ export async function executeFuzzCommand(
     );
     return;
   }
-  await deps.runFuzzModes(configPath, commandArgs, modeTargets, rawArgs);
+  await deps.runFuzzModes(
+    configPath,
+    commandArgs,
+    fuzzerSelectors,
+    modeTargets,
+    rawArgs,
+  );
 }

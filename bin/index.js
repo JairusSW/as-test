@@ -62,6 +62,7 @@ else if (COMMANDS.includes(args[0])) {
         else if (command === "run") {
             executeRunCommand(_args, flags, configPath, selectedModes, {
                 resolveCommandArgs,
+                resolveSuiteSelectors,
                 resolveListFlags,
                 resolveFeatureToggles,
                 resolveParallelJobs,
@@ -78,6 +79,8 @@ else if (COMMANDS.includes(args[0])) {
         else if (command === "test") {
             executeTestCommand(_args, flags, configPath, selectedModes, {
                 resolveCommandArgs,
+                resolveSuiteSelectors,
+                resolveFuzzerSelectors,
                 resolveListFlags,
                 resolveFeatureToggles,
                 resolveParallelJobs,
@@ -95,6 +98,7 @@ else if (COMMANDS.includes(args[0])) {
         else if (command === "fuzz") {
             executeFuzzCommand(_args, configPath, selectedModes, {
                 resolveCommandArgs,
+                resolveFuzzerSelectors,
                 resolveListFlags,
                 resolveJobs,
                 resolveExecutionModes,
@@ -252,6 +256,8 @@ function printCommandHelp(command) {
         process.stdout.write("  --overwrite-snapshots    Overwrite existing snapshot entries on mismatch\n");
         process.stdout.write("  --no-snapshot            Disable snapshot assertions for this run\n");
         process.stdout.write("  --show-coverage          Print uncovered coverage point details\n");
+        process.stdout.write("  --suite <name[,name...]> Filter results to matching suite names or suite slug paths\n");
+        process.stdout.write("  --suites <name[,name...]> Alias for --suite\n");
         process.stdout.write("  --enable <feature>       Enable feature (coverage|try-as)\n");
         process.stdout.write("  --disable <feature>      Disable feature (coverage|try-as)\n");
         process.stdout.write("  --reporter <name|path>   Use built-in reporter (default|tap) or custom module path\n");
@@ -278,6 +284,8 @@ function printCommandHelp(command) {
         process.stdout.write("  --overwrite-snapshots    Overwrite existing snapshot entries on mismatch\n");
         process.stdout.write("  --no-snapshot            Disable snapshot assertions for this run\n");
         process.stdout.write("  --show-coverage          Print uncovered coverage point details\n");
+        process.stdout.write("  --suite <name[,name...]> Filter results to matching suite names or suite slug paths\n");
+        process.stdout.write("  --suites <name[,name...]> Alias for --suite\n");
         process.stdout.write("  --enable <feature>       Enable feature (coverage|try-as)\n");
         process.stdout.write("  --disable <feature>      Disable feature (coverage|try-as)\n");
         process.stdout.write("  --fuzz                   Run fuzz targets after the normal test pass\n");
@@ -304,6 +312,10 @@ function printCommandHelp(command) {
         process.stdout.write("  --mode <name[,name...]>  Run one or multiple named config modes\n");
         process.stdout.write("  --runs <value>           Override fuzz iteration count, e.g. 500, 1.5x, +10%, +100000\n");
         process.stdout.write("  --seed <n>               Pin fuzz seed (default uses random seed)\n");
+        process.stdout.write("  --fuzzer <name[,name...]> Filter results to matching fuzz target names\n");
+        process.stdout.write("  --fuzzers <name[,name...]> Alias for --fuzzer\n");
+        process.stdout.write("  --suite <name[,name...]> Alias for --fuzzer\n");
+        process.stdout.write("  --suites <name[,name...]> Alias for --fuzzer\n");
         process.stdout.write("  --jobs <n>               Run files through an ordered worker pool\n");
         process.stdout.write("  --build-jobs <n>         Limit concurrent build tasks (defaults to --jobs)\n");
         process.stdout.write("  --run-jobs <n>           Limit concurrent run tasks (defaults to --jobs)\n");
@@ -384,7 +396,20 @@ function resolveCommandArgs(rawArgs, command) {
             i++;
             continue;
         }
+        if (arg == "--suite" ||
+            arg == "--suites" ||
+            arg == "--fuzzer" ||
+            arg == "--fuzzers") {
+            i++;
+            continue;
+        }
         if (arg.startsWith("--reporter=")) {
+            continue;
+        }
+        if (arg.startsWith("--suite=") ||
+            arg.startsWith("--suites=") ||
+            arg.startsWith("--fuzzer=") ||
+            arg.startsWith("--fuzzers=")) {
             continue;
         }
         if (arg == "--tap") {
@@ -499,6 +524,47 @@ function resolveFuzzOverrides(rawArgs, command) {
         }
     }
     return out;
+}
+function resolveSuiteSelectors(rawArgs, command) {
+    return resolveNamedSelectors(rawArgs, command, ["--suite", "--suites"]);
+}
+function resolveFuzzerSelectors(rawArgs, command) {
+    const flags = command == "fuzz"
+        ? ["--fuzzer", "--fuzzers", "--suite", "--suites"]
+        : ["--fuzzer", "--fuzzers"];
+    return resolveNamedSelectors(rawArgs, command, flags);
+}
+function resolveNamedSelectors(rawArgs, command, flags) {
+    const out = [];
+    let seenCommand = false;
+    for (let i = 0; i < rawArgs.length; i++) {
+        const arg = rawArgs[i];
+        if (!seenCommand) {
+            if (arg == command)
+                seenCommand = true;
+            continue;
+        }
+        let parsed = null;
+        for (const flag of flags) {
+            parsed = parseStringFlag(rawArgs, i, flag);
+            if (parsed)
+                break;
+        }
+        if (!parsed)
+            continue;
+        appendNamedSelectorTokens(out, parsed.value);
+        if (parsed.consumeNext)
+            i++;
+    }
+    return [...new Set(out)];
+}
+function appendNamedSelectorTokens(out, value) {
+    for (const token of value.split(",")) {
+        const normalized = token.trim();
+        if (!normalized.length)
+            continue;
+        out.push(normalized);
+    }
 }
 function parseFuzzRunsFlag(rawArgs, index, flag) {
     const arg = rawArgs[index];
@@ -996,7 +1062,7 @@ async function buildFileForMode(cache, args) {
     }
     return false;
 }
-async function runTestSequential(runFlags, configPath, selectors, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal, allowNoSpecFiles = false, modeName, reporterOverride, emitRunComplete = true) {
+async function runTestSequential(runFlags, configPath, selectors, suiteSelectors, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal, allowNoSpecFiles = false, modeName, reporterOverride, emitRunComplete = true) {
     const files = await resolveSelectedFiles(configPath, selectors);
     if (!files.length) {
         if (!allowNoSpecFiles) {
@@ -1025,6 +1091,7 @@ async function runTestSequential(runFlags, configPath, selectors, buildFeatureTo
         const artifactKey = resolvePerFileArtifactKey(file, duplicateSpecBasenames);
         const result = await run(runFlags, configPath, [file], false, {
             reporter,
+            suiteSelectors,
             emitRunStart: false,
             emitRunComplete: false,
             logFileName: `test.${artifactKey}.log.json`,
@@ -1113,7 +1180,7 @@ async function runBuildModes(configPath, selectors, modes, buildFeatureToggles, 
     }
     process.stdout.write(`${chalk.bold("Summary:")} built ${builtCount} file(s) across ${modes.length || 1} mode(s) in ${formatTime(Date.now() - allStartedAt)}\n`);
 }
-async function runRuntimeModes(runFlags, configPath, selectors, modes) {
+async function runRuntimeModes(runFlags, configPath, selectors, suiteSelectors, modes) {
     await ensureWebBrowsersReady(configPath, modes, runFlags.browser);
     const modeSummaryTotal = Math.max(modes.length, 1);
     const fileSummaryTotal = await resolveConfiguredFileTotal(configPath);
@@ -1123,13 +1190,13 @@ async function runRuntimeModes(runFlags, configPath, selectors, modes) {
     };
     if (effectiveRunFlags.jobs > 1) {
         if (modes.length > 1) {
-            const failed = await runRuntimeMatrixParallel(effectiveRunFlags, configPath, selectors, modes, modeSummaryTotal, fileSummaryTotal);
+            const failed = await runRuntimeMatrixParallel(effectiveRunFlags, configPath, selectors, suiteSelectors, modes, modeSummaryTotal, fileSummaryTotal);
             process.exit(failed ? 1 : 0);
             return;
         }
         let failed = false;
         for (const modeName of modes) {
-            const result = await runRuntimeSingleParallel(effectiveRunFlags, configPath, selectors, modeName, modeSummaryTotal, fileSummaryTotal);
+            const result = await runRuntimeSingleParallel(effectiveRunFlags, configPath, selectors, suiteSelectors, modeName, modeSummaryTotal, fileSummaryTotal);
             if (result)
                 failed = true;
         }
@@ -1137,7 +1204,7 @@ async function runRuntimeModes(runFlags, configPath, selectors, modes) {
         return;
     }
     if (modes.length > 1) {
-        const failed = await runRuntimeMatrix(effectiveRunFlags, configPath, selectors, modes, modeSummaryTotal, fileSummaryTotal);
+        const failed = await runRuntimeMatrix(effectiveRunFlags, configPath, selectors, suiteSelectors, modes, modeSummaryTotal, fileSummaryTotal);
         process.exit(failed ? 1 : 0);
         return;
     }
@@ -1147,6 +1214,7 @@ async function runRuntimeModes(runFlags, configPath, selectors, modes) {
         const result = await run(effectiveRunFlags, configPath, selectors, false, {
             reporterPath: effectiveRunFlags.reporterPath,
             modeName,
+            suiteSelectors,
             modeSummaryTotal,
             modeSummaryExecuted: 1,
             fileSummaryTotal,
@@ -1157,7 +1225,7 @@ async function runRuntimeModes(runFlags, configPath, selectors, modes) {
     }
     process.exit(failed ? 1 : 0);
 }
-async function runRuntimeMatrix(runFlags, configPath, selectors, modes, modeSummaryTotal, fileSummaryTotal) {
+async function runRuntimeMatrix(runFlags, configPath, selectors, suiteSelectors, modes, modeSummaryTotal, fileSummaryTotal) {
     const files = await resolveSelectedFiles(configPath, selectors);
     if (!files.length) {
         throw await buildNoTestFilesMatchedError(configPath, selectors);
@@ -1205,6 +1273,7 @@ async function runRuntimeMatrix(runFlags, configPath, selectors, modes, modeSumm
                 const result = await run(runFlags, configPath, [file], false, {
                     reporter: silentReporter,
                     reporterKind: "default",
+                    suiteSelectors,
                     emitRunStart: false,
                     emitRunComplete: false,
                     logFileName: `run.${artifactKey}.log.json`,
@@ -1256,7 +1325,7 @@ async function runRuntimeMatrix(runFlags, configPath, selectors, modes, modeSumm
     });
     return allResults.some((result) => result.failed);
 }
-async function runTestModes(runFlags, configPath, selectors, modes, buildFeatureToggles, fuzzEnabled, fuzzOverrides) {
+async function runTestModes(runFlags, configPath, selectors, suiteSelectors, fuzzerSelectors, modes, buildFeatureToggles, fuzzEnabled, fuzzOverrides) {
     await ensureWebBrowsersReady(configPath, modes, runFlags.browser);
     const modeSummaryTotal = Math.max(modes.length, 1);
     const fileSummaryTotal = await resolveConfiguredFileTotal(configPath, selectors);
@@ -1266,13 +1335,13 @@ async function runTestModes(runFlags, configPath, selectors, modes, buildFeature
     };
     if (effectiveRunFlags.jobs > 1) {
         if (modes.length > 1) {
-            const failed = await runTestMatrixParallel(effectiveRunFlags, configPath, selectors, modes, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal, fuzzEnabled, fuzzOverrides);
+            const failed = await runTestMatrixParallel(effectiveRunFlags, configPath, selectors, suiteSelectors, fuzzerSelectors, modes, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal, fuzzEnabled, fuzzOverrides);
             process.exit(failed ? 1 : 0);
             return;
         }
         let failed = false;
         for (const modeName of modes) {
-            const modeFailed = await runTestSingleParallel(effectiveRunFlags, configPath, selectors, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal, fuzzEnabled, fuzzOverrides, modeName);
+            const modeFailed = await runTestSingleParallel(effectiveRunFlags, configPath, selectors, suiteSelectors, fuzzerSelectors, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal, fuzzEnabled, fuzzOverrides, modeName);
             if (modeFailed)
                 failed = true;
         }
@@ -1280,21 +1349,21 @@ async function runTestModes(runFlags, configPath, selectors, modes, buildFeature
         return;
     }
     if (modes.length > 1) {
-        const failed = await runTestMatrix(effectiveRunFlags, configPath, selectors, modes, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal, fuzzEnabled, fuzzOverrides);
+        const failed = await runTestMatrix(effectiveRunFlags, configPath, selectors, suiteSelectors, fuzzerSelectors, modes, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal, fuzzEnabled, fuzzOverrides);
         process.exit(failed ? 1 : 0);
         return;
     }
     let failed = false;
     for (const modeName of modes) {
         const reporterSession = await createRunReporter(configPath, effectiveRunFlags.reporterPath, modeName);
-        const modeResult = await runTestSequential(effectiveRunFlags, configPath, selectors, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal, fuzzEnabled, modeName, reporterSession.reporter, !fuzzEnabled);
+        const modeResult = await runTestSequential(effectiveRunFlags, configPath, selectors, suiteSelectors, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal, fuzzEnabled, modeName, reporterSession.reporter, !fuzzEnabled);
         if (modeResult.failed)
             failed = true;
         if (fuzzEnabled) {
             if (reporterSession.reporterKind == "default") {
                 process.stdout.write("\n");
             }
-            const fuzzResults = await runFuzzMatrixResults(configPath, selectors, [modeName], fuzzOverrides, reporterSession.reporter);
+            const fuzzResults = await runFuzzMatrixResults(configPath, selectors, fuzzerSelectors, [modeName], fuzzOverrides, reporterSession.reporter);
             if (fuzzResults.some(hasFuzzFailures))
                 failed = true;
             reporterSession.reporter.onRunComplete?.({
@@ -1315,7 +1384,7 @@ async function runTestModes(runFlags, configPath, selectors, modes, buildFeature
     }
     process.exit(failed ? 1 : 0);
 }
-async function runTestMatrix(runFlags, configPath, selectors, modes, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal, fuzzEnabled, fuzzOverrides) {
+async function runTestMatrix(runFlags, configPath, selectors, suiteSelectors, fuzzerSelectors, modes, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal, fuzzEnabled, fuzzOverrides) {
     const files = await resolveSelectedFiles(configPath, selectors);
     if (!files.length) {
         if (!fuzzEnabled) {
@@ -1420,7 +1489,7 @@ async function runTestMatrix(runFlags, configPath, selectors, modes, buildFeatur
         if (reporterSession.reporterKind == "default") {
             process.stdout.write("\n");
         }
-        const fuzzResults = await runFuzzMatrixResults(configPath, selectors, modes, fuzzOverrides, reporter);
+        const fuzzResults = await runFuzzMatrixResults(configPath, selectors, fuzzerSelectors, modes, fuzzOverrides, reporter);
         if (fuzzResults.some(hasFuzzFailures))
             failed = true;
         fuzzSummary = summarizeFuzzExecutions(fuzzResults);
@@ -1441,14 +1510,14 @@ async function runTestMatrix(runFlags, configPath, selectors, modes, buildFeatur
     reporter.flush?.();
     return failed;
 }
-async function runFuzzModes(configPath, selectors, modes, rawArgs) {
+async function runFuzzModes(configPath, selectors, fuzzerSelectors, modes, rawArgs) {
     const overrides = resolveFuzzOverrides(rawArgs, "fuzz");
     const parallelSettings = resolveFuzzParallelJobs(rawArgs);
     const clean = rawArgs.includes("--clean");
     const fuzzFiles = await resolveSelectedFuzzFiles(configPath, selectors);
     const { jobs, buildJobs, runJobs } = resolveEffectiveParallelJobs(parallelSettings, fuzzFiles.length);
     if (jobs > 1) {
-        const results = await runFuzzMatrixResultsParallel(configPath, selectors, modes, overrides, jobs, buildJobs, runJobs, clean);
+        const results = await runFuzzMatrixResultsParallel(configPath, selectors, fuzzerSelectors, modes, overrides, jobs, buildJobs, runJobs, clean);
         const reporterSession = await createRunReporter(configPath);
         reporterSession.reporter.onFuzzComplete?.(buildFuzzCompleteEvent(results, modes));
         reporterSession.reporter.flush?.();
@@ -1456,12 +1525,12 @@ async function runFuzzModes(configPath, selectors, modes, rawArgs) {
         return;
     }
     const reporterSession = await createRunReporter(configPath);
-    const results = await runFuzzMatrixResults(configPath, selectors, modes, overrides, reporterSession.reporter);
+    const results = await runFuzzMatrixResults(configPath, selectors, fuzzerSelectors, modes, overrides, reporterSession.reporter);
     reporterSession.reporter.onFuzzComplete?.(buildFuzzCompleteEvent(results, modes));
     reporterSession.reporter.flush?.();
     process.exit(results.some(hasFuzzFailures) ? 1 : 0);
 }
-async function runRuntimeSingleParallel(runFlags, configPath, selectors, modeName, modeSummaryTotal, fileSummaryTotal) {
+async function runRuntimeSingleParallel(runFlags, configPath, selectors, suiteSelectors, modeName, modeSummaryTotal, fileSummaryTotal) {
     const files = await resolveSelectedFiles(configPath, selectors);
     if (!files.length) {
         throw await buildNoTestFilesMatchedError(configPath, selectors);
@@ -1493,6 +1562,7 @@ async function runRuntimeSingleParallel(runFlags, configPath, selectors, modeNam
             reporter: buffered?.reporter,
             reporterKind: buffered?.reporterKind,
             modeName,
+            suiteSelectors,
             emitRunComplete: false,
             fileSummaryTotal: 1,
             modeSummaryTotal,
@@ -1522,7 +1592,7 @@ async function runRuntimeSingleParallel(runFlags, configPath, selectors, modeNam
     reporter.flush?.();
     return results.some((result) => result.failed);
 }
-async function runRuntimeMatrixParallel(runFlags, configPath, selectors, modes, modeSummaryTotal, fileSummaryTotal) {
+async function runRuntimeMatrixParallel(runFlags, configPath, selectors, suiteSelectors, modes, modeSummaryTotal, fileSummaryTotal) {
     const files = await resolveSelectedFiles(configPath, selectors);
     if (!files.length) {
         throw await buildNoTestFilesMatchedError(configPath, selectors);
@@ -1572,6 +1642,7 @@ async function runRuntimeMatrixParallel(runFlags, configPath, selectors, modes, 
                 const result = await run(runFlags, configPath, [file], false, {
                     reporter: silentReporter,
                     reporterKind: "default",
+                    suiteSelectors,
                     emitRunStart: false,
                     emitRunComplete: false,
                     logFileName: `run.${artifactKey}.log.json`,
@@ -1627,7 +1698,7 @@ async function runRuntimeMatrixParallel(runFlags, configPath, selectors, modes, 
     reporter.flush?.();
     return allResults.some((result) => result.failed);
 }
-async function runTestSingleParallel(runFlags, configPath, selectors, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal, fuzzEnabled, fuzzOverrides, modeName) {
+async function runTestSingleParallel(runFlags, configPath, selectors, suiteSelectors, fuzzerSelectors, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal, fuzzEnabled, fuzzOverrides, modeName) {
     const files = await resolveSelectedFiles(configPath, selectors);
     if (!files.length && !fuzzEnabled) {
         throw await buildNoTestFilesMatchedError(configPath, selectors);
@@ -1672,6 +1743,7 @@ async function runTestSingleParallel(runFlags, configPath, selectors, buildFeatu
                 const result = await run({ ...runFlags, clean: true }, configPath, [file], false, {
                     reporter: buffered?.reporter,
                     reporterKind: buffered?.reporterKind,
+                    suiteSelectors,
                     emitRunComplete: false,
                     logFileName: `test.${artifactKey}.log.json`,
                     coverageFileName: `coverage.${artifactKey}.log.json`,
@@ -1699,7 +1771,7 @@ async function runTestSingleParallel(runFlags, configPath, selectors, buildFeatu
         if (reporterSession.reporterKind == "default") {
             process.stdout.write("\n");
         }
-        const fuzzResults = await runFuzzMatrixResultsParallel(configPath, selectors, [modeName], fuzzOverrides, runFlags.jobs, runFlags.buildJobs, runFlags.runJobs, runFlags.clean);
+        const fuzzResults = await runFuzzMatrixResultsParallel(configPath, selectors, fuzzerSelectors, [modeName], fuzzOverrides, runFlags.jobs, runFlags.buildJobs, runFlags.runJobs, runFlags.clean);
         if (fuzzResults.some(hasFuzzFailures))
             failed = true;
         fuzzSummary = summarizeFuzzExecutions(fuzzResults);
@@ -1720,7 +1792,7 @@ async function runTestSingleParallel(runFlags, configPath, selectors, buildFeatu
     reporter.flush?.();
     return failed;
 }
-async function runTestMatrixParallel(runFlags, configPath, selectors, modes, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal, fuzzEnabled, fuzzOverrides) {
+async function runTestMatrixParallel(runFlags, configPath, selectors, suiteSelectors, fuzzerSelectors, modes, buildFeatureToggles, modeSummaryTotal, fileSummaryTotal, fuzzEnabled, fuzzOverrides) {
     const files = await resolveSelectedFiles(configPath, selectors);
     if (!files.length) {
         if (!fuzzEnabled) {
@@ -1776,6 +1848,7 @@ async function runTestMatrixParallel(runFlags, configPath, selectors, modes, bui
                 const result = await run(runFlags, configPath, [file], false, {
                     reporter: silentReporter,
                     reporterKind: "default",
+                    suiteSelectors,
                     emitRunStart: false,
                     emitRunComplete: false,
                     logFileName: `test.${artifactKey}.log.json`,
@@ -1823,7 +1896,7 @@ async function runTestMatrixParallel(runFlags, configPath, selectors, modes, bui
         if (reporterSession.reporterKind == "default") {
             process.stdout.write("\n");
         }
-        const fuzzResults = await runFuzzMatrixResultsParallel(configPath, selectors, modes, fuzzOverrides, runFlags.jobs, runFlags.buildJobs, runFlags.runJobs, runFlags.clean);
+        const fuzzResults = await runFuzzMatrixResultsParallel(configPath, selectors, fuzzerSelectors, modes, fuzzOverrides, runFlags.jobs, runFlags.buildJobs, runFlags.runJobs, runFlags.clean);
         if (fuzzResults.some(hasFuzzFailures))
             failed = true;
         fuzzSummary = summarizeFuzzExecutions(fuzzResults);
@@ -1844,7 +1917,7 @@ async function runTestMatrixParallel(runFlags, configPath, selectors, modes, bui
     reporter.flush?.();
     return failed;
 }
-async function runFuzzMatrixResultsParallel(configPath, selectors, modes, overrides, jobs, buildJobs, runJobs, clean) {
+async function runFuzzMatrixResultsParallel(configPath, selectors, fuzzerSelectors, modes, overrides, jobs, buildJobs, runJobs, clean) {
     const files = await resolveSelectedFuzzFiles(configPath, selectors);
     if (!files.length) {
         throw new Error(`No fuzz files matched: ${selectors.length ? selectors.join(", ") : "configured input patterns"}`);
@@ -1856,7 +1929,7 @@ async function runFuzzMatrixResultsParallel(configPath, selectors, modes, overri
         const token = renderQueuedFileStart(queueDisplay, path.basename(file));
         const fileResults = [];
         for (const modeName of modes) {
-            const modeResults = await fuzz(configPath, [file], modeName, overrides);
+            const modeResults = await fuzz(configPath, [file], modeName, overrides, fuzzerSelectors);
             fileResults.push(...modeResults);
         }
         ordered[index] = fileResults;
@@ -1868,7 +1941,7 @@ async function runFuzzMatrixResultsParallel(configPath, selectors, modes, overri
     queueDisplay.flush();
     return ordered.flat();
 }
-async function runFuzzMatrixResults(configPath, selectors, modes, overrides, reporter) {
+async function runFuzzMatrixResults(configPath, selectors, fuzzerSelectors, modes, overrides, reporter) {
     const files = await resolveSelectedFuzzFiles(configPath, selectors);
     if (!files.length) {
         throw new Error(`No fuzz files matched: ${selectors.length ? selectors.join(", ") : "configured input patterns"}`);
@@ -1877,7 +1950,7 @@ async function runFuzzMatrixResults(configPath, selectors, modes, overrides, rep
     for (const file of files) {
         const fileResults = [];
         for (const modeName of modes) {
-            const modeResults = await fuzz(configPath, [file], modeName, overrides);
+            const modeResults = await fuzz(configPath, [file], modeName, overrides, fuzzerSelectors);
             fileResults.push(...modeResults);
             results.push(...modeResults);
         }

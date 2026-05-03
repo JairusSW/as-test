@@ -1,6 +1,7 @@
 export { createRunReporter, run } from "./run-core.js";
 export async function executeRunCommand(rawArgs, flags, configPath, selectedModes, deps) {
     const commandArgs = deps.resolveCommandArgs(rawArgs, "run");
+    const suiteSelectors = deps.resolveSuiteSelectors(rawArgs, "run");
     const listFlags = deps.resolveListFlags(rawArgs, "run");
     const featureToggles = deps.resolveFeatureToggles(rawArgs, "run");
     const runFlags = {
@@ -20,5 +21,5 @@ export async function executeRunCommand(rawArgs, flags, configPath, selectedMode
         await deps.listExecutionPlan("run", configPath, commandArgs, modeTargets, listFlags);
         return;
     }
-    await deps.runRuntimeModes(runFlags, configPath, commandArgs, modeTargets);
+    await deps.runRuntimeModes(runFlags, configPath, commandArgs, suiteSelectors, modeTargets);
 }

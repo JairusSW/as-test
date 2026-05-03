@@ -1,5 +1,7 @@
 export async function executeTestCommand(rawArgs, flags, configPath, selectedModes, deps) {
     const commandArgs = deps.resolveCommandArgs(rawArgs, "test");
+    const suiteSelectors = deps.resolveSuiteSelectors(rawArgs, "test");
+    const fuzzerSelectors = deps.resolveFuzzerSelectors(rawArgs, "test");
     const listFlags = deps.resolveListFlags(rawArgs, "test");
     const featureToggles = deps.resolveFeatureToggles(rawArgs, "test");
     const buildFeatureToggles = {
@@ -25,5 +27,5 @@ export async function executeTestCommand(rawArgs, flags, configPath, selectedMod
         await deps.listExecutionPlan("test", configPath, commandArgs, modeTargets, listFlags, fuzzEnabled);
         return;
     }
-    await deps.runTestModes(runFlags, configPath, commandArgs, modeTargets, buildFeatureToggles, fuzzEnabled, fuzzOverrides);
+    await deps.runTestModes(runFlags, configPath, commandArgs, suiteSelectors, fuzzerSelectors, modeTargets, buildFeatureToggles, fuzzEnabled, fuzzOverrides);
 }

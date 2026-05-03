@@ -413,6 +413,7 @@ function renderFailedFuzzers(
         relativeFile,
         modeResult.seed,
         modeResult.modeName,
+        modeResult.fuzzers[0]?.selector,
       );
 
       if (modeResult.crashes > 0 && !modeResult.fuzzers.length) {
@@ -440,6 +441,12 @@ function renderFailedFuzzers(
           console.log("");
           rendered = true;
         }
+        const fuzzerRepro = buildFuzzReproCommand(
+          relativeFile,
+          modeResult.seed,
+          modeResult.modeName,
+          fuzzer.selector,
+        );
 
         console.log(
           `${chalk.bgRed(" FAIL ")} ${formatFuzzFailureTitle(
@@ -460,14 +467,14 @@ function renderFailedFuzzers(
             `Runs: ${fuzzer.passed + fuzzer.failed + fuzzer.crashed} completed (${fuzzer.passed} passed, ${fuzzer.failed} failed, ${fuzzer.crashed} crashed)`,
           ),
         );
-        console.log(chalk.dim(`Repro: ${repro}`));
+        console.log(chalk.dim(`Repro: ${fuzzerRepro}`));
         console.log(chalk.dim(`Seed: ${modeResult.seed}`));
         if (fuzzer.failures?.length) {
           console.log(chalk.dim(`Failing seeds: ${formatFailingSeeds(fuzzer)}`));
           for (const failure of fuzzer.failures) {
             console.log(
               chalk.dim(
-                `Repro ${failure.run + 1}: ${buildFuzzReproCommand(relativeFile, failure.seed, modeResult.modeName, 1)}`,
+                `Repro ${failure.run + 1}: ${buildFuzzReproCommand(relativeFile, failure.seed, modeResult.modeName, fuzzer.selector, 1)}`,
               ),
             );
             if (failure.input) {
@@ -526,11 +533,13 @@ function buildFuzzReproCommand(
   file: string,
   seed: number,
   modeName: string,
+  fuzzer?: string,
   runs?: number,
 ): string {
   const modeArg = modeName != "default" ? ` --mode ${modeName}` : "";
+  const fuzzerArg = fuzzer?.length ? ` --fuzzer ${fuzzer}` : "";
   const runsArg = typeof runs == "number" ? ` --runs ${runs}` : "";
-  return `ast fuzz ${file}${modeArg} --seed ${seed}${runsArg}`;
+  return `ast fuzz ${file}${modeArg}${fuzzerArg} --seed ${seed}${runsArg}`;
 }
 
 function formatFailingSeeds(
@@ -600,9 +609,11 @@ function collectSuiteFailures(
   file: string,
   path: string[],
   printed: Set<string>,
+  inheritedModeName: string = "",
 ): void {
   const suiteAny = suite as Record<string, unknown>;
   const nextPath = [...path, String(suiteAny.description ?? "unknown")];
+  const modeName = String(suiteAny.modeName ?? inheritedModeName);
   const tests = Array.isArray(suiteAny.tests)
     ? (suiteAny.tests as Record<string, unknown>[])
     : [];
@@ -614,7 +625,7 @@ function collectSuiteFailures(
     const title = `${nextPath.join(" > ")}#${assertionIndex}`;
     const loc = String(test.location ?? "");
     const where = loc.length ? `${file}:${loc}` : file;
-    const modeName = String(suiteAny.modeName ?? "");
+    const suitePath = String(suiteAny.path ?? "");
     const message = String(test.message ?? "");
     const dedupeKey = `${file}::${modeName}::${title}::${String(test.left)}::${String(test.right)}::${message}`;
     if (printed.has(dedupeKey)) continue;
@@ -626,6 +637,17 @@ function collectSuiteFailures(
     if (modeName.length) {
       console.log(chalk.dim(`Mode: ${modeName}`));
     }
+    if (suitePath.length) {
+      console.log(
+        chalk.dim(
+          `Repro: ${buildSuiteReproCommand(
+            toRelativeResultPath(file),
+            suitePath,
+            modeName,
+          )}`,
+        ),
+      );
+    }
     renderAssertionFailureDetails(test.left, test.right, message);
   }
 
@@ -633,8 +655,17 @@ function collectSuiteFailures(
     ? (suiteAny.suites as unknown[])
     : [];
   for (const sub of suites) {
-    collectSuiteFailures(sub, file, nextPath, printed);
+    collectSuiteFailures(sub, file, nextPath, printed, modeName);
   }
+}
+
+function buildSuiteReproCommand(
+  file: string,
+  suitePath: string,
+  modeName?: string,
+): string {
+  const modeArg = modeName && modeName != "default" ? ` --mode ${modeName}` : "";
+  return `ast run ${file}${modeArg} --suite ${suitePath}`;
 }
 
 function normalizeFailureMessage(message: string): string {

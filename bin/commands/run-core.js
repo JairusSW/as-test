@@ -327,6 +327,9 @@ function formatReadableLog(file, suites, modeName, buildCommand, runCommand, sna
         lines.push("", "Failures:");
         for (const failure of failures) {
             lines.push(`FAIL  ${failure.title}${failure.where.length ? ` (${failure.where})` : ""}`);
+            if (failure.suitePath.length) {
+                lines.push(`Repro: ${buildSuiteReproCommand(file, failure.suitePath, modeName)}`);
+            }
             if (failure.message.length)
                 lines.push(`Message: ${failure.message}`);
             if (failure.left.length)
@@ -352,6 +355,139 @@ function formatInvocation(invocation) {
         .map((part) => (/[\s"'\\]/.test(part) ? JSON.stringify(part) : part))
         .join(" ");
 }
+function filterSelectedSuites(suites, selectors, file, modeName) {
+    const annotated = annotateSuitePaths(suites, []);
+    const matches = resolveSuiteSelectionMatches(annotated, selectors, file);
+    const selected = new Set(matches.map((match) => match.resolvedPath));
+    return cloneSelectedSuites(annotated, selected, file, modeName);
+}
+function annotateSuitePaths(suites, pathParts) {
+    return suites.map((suite) => annotateSuiteNode(suite, pathParts));
+}
+function annotateSuiteNode(suite, pathParts) {
+    const description = String(suite?.description ?? "unknown");
+    const slug = slugifySelectorSegment(description);
+    const nextParts = [...pathParts, slug];
+    const nextSuites = Array.isArray(suite?.suites)
+        ? suite.suites
+        : [];
+    const annotatedSuites = annotateSuitePaths(nextSuites, nextParts);
+    return {
+        ...suite,
+        path: nextParts.join("/"),
+        suites: annotatedSuites,
+    };
+}
+function resolveSuiteSelectionMatches(suites, selectors, file) {
+    const matches = [];
+    for (const selector of selectors) {
+        const normalized = selector.trim();
+        if (!normalized.length)
+            continue;
+        if (normalized.includes("/")) {
+            const resolved = resolveExplicitSuitePath(suites, normalized);
+            if (!resolved) {
+                throw new Error(`No suites matched "${selector}" in ${path.basename(file)}.`);
+            }
+            matches.push({
+                kind: "path",
+                raw: selector,
+                resolvedPath: resolved.path,
+                depth: resolved.depth,
+            });
+            continue;
+        }
+        const resolved = resolveBareSuiteSelector(suites, normalized);
+        if (!resolved) {
+            throw new Error(`No suites matched "${selector}" in ${path.basename(file)}.`);
+        }
+        matches.push({
+            kind: "bare",
+            raw: selector,
+            resolvedPath: resolved.path,
+            depth: resolved.depth,
+        });
+    }
+    return matches;
+}
+function resolveExplicitSuitePath(suites, selector) {
+    const normalized = selector
+        .split("/")
+        .map((part) => slugifySelectorSegment(part))
+        .filter((part) => part.length)
+        .join("/");
+    if (!normalized.length)
+        return null;
+    let match = null;
+    walkSuites(suites, (suite, depth) => {
+        if (suite.path == normalized) {
+            match = { path: suite.path, depth };
+            return true;
+        }
+        return false;
+    });
+    return match;
+}
+function resolveBareSuiteSelector(suites, selector) {
+    const slug = slugifySelectorSegment(selector);
+    if (!slug.length)
+        return null;
+    const matches = [];
+    walkSuites(suites, (suite, depth) => {
+        const leaf = String(suite.path ?? "").split("/").pop() ?? "";
+        if (leaf == slug) {
+            matches.push({ path: String(suite.path), depth });
+        }
+        return false;
+    });
+    if (!matches.length)
+        return null;
+    matches.sort((a, b) => a.depth - b.depth || a.path.localeCompare(b.path));
+    const shallowest = matches[0];
+    const ambiguous = matches.filter((match) => match.depth == shallowest.depth);
+    if (ambiguous.length > 1) {
+        throw new Error(`Suite selector "${selector}" is ambiguous. Matches: ${ambiguous.map((match) => match.path).join(", ")}`);
+    }
+    return shallowest;
+}
+function walkSuites(suites, visitor, depth = 0) {
+    for (const suite of suites) {
+        if (visitor(suite, depth))
+            return true;
+        const childSuites = Array.isArray(suite?.suites) ? suite.suites : [];
+        if (walkSuites(childSuites, visitor, depth + 1))
+            return true;
+    }
+    return false;
+}
+function cloneSelectedSuites(suites, selected, file, modeName) {
+    const out = [];
+    for (const suite of suites) {
+        const childSuites = Array.isArray(suite.suites) ? suite.suites : [];
+        const selectedChildren = cloneSelectedSuites(childSuites, selected, file, modeName);
+        const keep = selected.has(String(suite.path ?? "")) || selectedChildren.length > 0;
+        if (!keep)
+            continue;
+        out.push({
+            ...suite,
+            file,
+            modeName,
+            suites: selectedChildren,
+        });
+    }
+    return out;
+}
+function slugifySelectorSegment(value) {
+    return value
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+}
+function buildSuiteReproCommand(file, suitePath, modeName) {
+    const modeArg = modeName && modeName != "default" ? ` --mode ${modeName}` : "";
+    return `ast run ${file}${modeArg} --suite ${suitePath}`;
+}
 function collectReadableFailures(suites, file, pathParts) {
     const out = [];
     for (const suite of suites) {
@@ -372,6 +508,7 @@ function collectReadableFailures(suites, file, pathParts) {
                 message: String(test.message ?? ""),
                 left: JSON.stringify(test.left ?? ""),
                 right: JSON.stringify(test.right ?? ""),
+                suitePath: String(suiteAny.path ?? ""),
             });
         }
         const childSuites = Array.isArray(suiteAny.suites)
@@ -492,6 +629,9 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
             throw new Error(`Failed to run ${path.basename(file)} in mode ${modeLabel} with ${details}`);
         }
         const normalized = normalizeReport(report);
+        const selectedSuites = options.suiteSelectors?.length
+            ? filterSelectedSuites(normalized.suites, options.suiteSelectors, file, options.modeName ?? "default")
+            : normalized.suites;
         snapshotStore.flush();
         snapshotSummary.matched += snapshotStore.matched;
         snapshotSummary.created += snapshotStore.created;
@@ -500,7 +640,7 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
         reports.push({
             file,
             modeName: options.modeName ?? "default",
-            suites: normalized.suites,
+            suites: selectedSuites,
             coverage: normalized.coverage,
             runCommand: runCommandForLog,
             snapshotSummary: {

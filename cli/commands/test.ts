@@ -4,6 +4,8 @@ import { FuzzOverrides } from "./fuzz-core.js";
 
 type TestCommandDeps = {
   resolveCommandArgs(rawArgs: string[], command: string): string[];
+  resolveSuiteSelectors(rawArgs: string[], command: "run" | "test"): string[];
+  resolveFuzzerSelectors(rawArgs: string[], command: "fuzz" | "test"): string[];
   resolveListFlags(rawArgs: string[], command: string): CliListFlags;
   resolveFeatureToggles(rawArgs: string[], command: string): CliFeatureToggles;
   resolveParallelJobs(
@@ -42,6 +44,8 @@ type TestCommandDeps = {
     runFlags: RunFlags,
     configPath: string | undefined,
     selectors: string[],
+    suiteSelectors: string[],
+    fuzzerSelectors: string[],
     modes: (string | undefined)[],
     buildFeatureToggles: BuildFeatureToggles,
     fuzzEnabled: boolean,
@@ -57,6 +61,8 @@ export async function executeTestCommand(
   deps: TestCommandDeps,
 ): Promise<void> {
   const commandArgs = deps.resolveCommandArgs(rawArgs, "test");
+  const suiteSelectors = deps.resolveSuiteSelectors(rawArgs, "test");
+  const fuzzerSelectors = deps.resolveFuzzerSelectors(rawArgs, "test");
   const listFlags = deps.resolveListFlags(rawArgs, "test");
   const featureToggles = deps.resolveFeatureToggles(rawArgs, "test");
   const buildFeatureToggles: BuildFeatureToggles = {
@@ -93,6 +99,8 @@ export async function executeTestCommand(
     runFlags,
     configPath,
     commandArgs,
+    suiteSelectors,
+    fuzzerSelectors,
     modeTargets,
     buildFeatureToggles,
     fuzzEnabled,

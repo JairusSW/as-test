@@ -25,6 +25,7 @@ export type FuzzOverrides = {
 
 export type FuzzerRunResult = {
   name: string;
+  selector?: string;
   runs: number;
   passed: number;
   failed: number;
@@ -79,6 +80,7 @@ export async function fuzz(
   selectors: string[] = [],
   modeName?: string,
   overrides: FuzzOverrides = {},
+  fuzzerSelectors: string[] = [],
 ): Promise<FuzzResult[]> {
   const loadedConfig = loadConfig(configPath, false);
   const mode = applyMode(loadedConfig, modeName);
@@ -113,6 +115,7 @@ export async function fuzz(
         mode.config.outDir,
         duplicateBasenames,
         config,
+        fuzzerSelectors,
         buildStartedAt,
         buildFinishedAt,
         buildTime,
@@ -175,6 +178,7 @@ async function runFuzzTarget(
   outDir: string,
   duplicateBasenames: Set<string>,
   config: FuzzConfig,
+  fuzzerSelectors: string[],
   buildStartedAt: number,
   buildFinishedAt: number,
   buildTime: number,
@@ -323,7 +327,10 @@ async function runFuzzTarget(
   }
 
   const crashFiles: string[] = [];
-  for (const fuzzer of report.fuzzers) {
+  const selectedFuzzers = fuzzerSelectors.length
+    ? filterSelectedFuzzers(report.fuzzers, fuzzerSelectors, file)
+    : report.fuzzers;
+  for (const fuzzer of selectedFuzzers) {
     if (fuzzer.failed <= 0 && fuzzer.crashed <= 0) continue;
     const firstFailureSeed =
       typeof fuzzer.failures?.[0]?.seed == "number"
@@ -339,6 +346,7 @@ async function runFuzzTarget(
         file,
         firstFailureSeed,
         modeName ?? "default",
+        fuzzer.selector,
         1,
       ),
       error:
@@ -357,27 +365,63 @@ async function runFuzzTarget(
     file,
     target: path.basename(file),
     modeName: modeName ?? "default",
-    runs: report.fuzzers.reduce((sum, item) => sum + item.runs, 0),
-    crashes: report.fuzzers.reduce((sum, item) => sum + item.crashed, 0),
+    runs: selectedFuzzers.reduce((sum, item) => sum + item.runs, 0),
+    crashes: selectedFuzzers.reduce((sum, item) => sum + item.crashed, 0),
     crashFiles,
     seed: config.seed,
     time: Date.now() - startedAt,
     buildTime,
     buildStartedAt,
     buildFinishedAt,
-    fuzzers: report.fuzzers,
+    fuzzers: selectedFuzzers,
   };
+}
+
+function filterSelectedFuzzers(
+  fuzzers: FuzzerRunResult[],
+  selectors: string[],
+  file: string,
+): FuzzerRunResult[] {
+  const annotated = fuzzers.map((fuzzer) => ({
+    ...fuzzer,
+    selector: slugifyFuzzerSelector(fuzzer.name),
+  }));
+  const selected = new Set<string>();
+  for (const selector of selectors) {
+    const slug = slugifyFuzzerSelector(selector);
+    if (!slug.length) continue;
+    const matches = annotated.filter((fuzzer) => fuzzer.selector == slug);
+    if (!matches.length) {
+      throw new Error(
+        `No fuzz targets matched "${selector}" in ${path.basename(file)}.`,
+      );
+    }
+    for (const match of matches) {
+      selected.add(match.selector);
+    }
+  }
+  return annotated.filter((fuzzer) => selected.has(fuzzer.selector ?? ""));
+}
+
+function slugifyFuzzerSelector(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 function buildFuzzReproCommand(
   file: string,
   seed: number,
   modeName: string,
+  fuzzer?: string,
   runs?: number,
 ): string {
   const modeArg = modeName != "default" ? ` --mode ${modeName}` : "";
+  const fuzzerArg = fuzzer?.length ? ` --fuzzer ${fuzzer}` : "";
   const runsArg = typeof runs == "number" ? ` --runs ${runs}` : "";
-  return `ast fuzz ${file}${modeArg} --seed ${seed}${runsArg}`;
+  return `ast fuzz ${file}${modeArg}${fuzzerArg} --seed ${seed}${runsArg}`;
 }
 
 function buildFuzzFailureEntryKey(

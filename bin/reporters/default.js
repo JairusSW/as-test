@@ -329,7 +329,7 @@ function renderFailedFuzzers(results) {
     for (const result of results) {
         for (const modeResult of result.modes) {
             const relativeFile = toRelativeResultPath(modeResult.file);
-            const repro = buildFuzzReproCommand(relativeFile, modeResult.seed, modeResult.modeName);
+            const repro = buildFuzzReproCommand(relativeFile, modeResult.seed, modeResult.modeName, modeResult.fuzzers[0]?.selector);
             if (modeResult.crashes > 0 && !modeResult.fuzzers.length) {
                 if (!rendered) {
                     console.log("");
@@ -353,18 +353,19 @@ function renderFailedFuzzers(results) {
                     console.log("");
                     rendered = true;
                 }
+                const fuzzerRepro = buildFuzzReproCommand(relativeFile, modeResult.seed, modeResult.modeName, fuzzer.selector);
                 console.log(`${chalk.bgRed(" FAIL ")} ${formatFuzzFailureTitle(modeResult.file, fuzzer.name)}`);
                 if (fuzzer.failure) {
                     renderAssertionFailureDetails(fuzzer.failure.left, fuzzer.failure.right, fuzzer.failure.message);
                 }
                 console.log(chalk.dim(`Mode: ${modeResult.modeName}`));
                 console.log(chalk.dim(`Runs: ${fuzzer.passed + fuzzer.failed + fuzzer.crashed} completed (${fuzzer.passed} passed, ${fuzzer.failed} failed, ${fuzzer.crashed} crashed)`));
-                console.log(chalk.dim(`Repro: ${repro}`));
+                console.log(chalk.dim(`Repro: ${fuzzerRepro}`));
                 console.log(chalk.dim(`Seed: ${modeResult.seed}`));
                 if (fuzzer.failures?.length) {
                     console.log(chalk.dim(`Failing seeds: ${formatFailingSeeds(fuzzer)}`));
                     for (const failure of fuzzer.failures) {
-                        console.log(chalk.dim(`Repro ${failure.run + 1}: ${buildFuzzReproCommand(relativeFile, failure.seed, modeResult.modeName, 1)}`));
+                        console.log(chalk.dim(`Repro ${failure.run + 1}: ${buildFuzzReproCommand(relativeFile, failure.seed, modeResult.modeName, fuzzer.selector, 1)}`));
                         if (failure.input) {
                             console.log(chalk.dim(`Input ${failure.run + 1}: ${JSON.stringify(failure.input)}`));
                         }
@@ -405,10 +406,11 @@ function averageFuzzModeTime(results) {
         return 0;
     return results.reduce((sum, result) => sum + result.time, 0) / results.length;
 }
-function buildFuzzReproCommand(file, seed, modeName, runs) {
+function buildFuzzReproCommand(file, seed, modeName, fuzzer, runs) {
     const modeArg = modeName != "default" ? ` --mode ${modeName}` : "";
+    const fuzzerArg = fuzzer?.length ? ` --fuzzer ${fuzzer}` : "";
     const runsArg = typeof runs == "number" ? ` --runs ${runs}` : "";
-    return `ast fuzz ${file}${modeArg} --seed ${seed}${runsArg}`;
+    return `ast fuzz ${file}${modeArg}${fuzzerArg} --seed ${seed}${runsArg}`;
 }
 function formatFailingSeeds(fuzzer) {
     return (fuzzer.failures ?? []).map((failure) => String(failure.seed)).join(", ");
@@ -467,9 +469,10 @@ function renderFailedSuites(failedEntries) {
         collectSuiteFailures(failed, file, [], printed);
     }
 }
-function collectSuiteFailures(suite, file, path, printed) {
+function collectSuiteFailures(suite, file, path, printed, inheritedModeName = "") {
     const suiteAny = suite;
     const nextPath = [...path, String(suiteAny.description ?? "unknown")];
+    const modeName = String(suiteAny.modeName ?? inheritedModeName);
     const tests = Array.isArray(suiteAny.tests)
         ? suiteAny.tests
         : [];
@@ -481,7 +484,7 @@ function collectSuiteFailures(suite, file, path, printed) {
         const title = `${nextPath.join(" > ")}#${assertionIndex}`;
         const loc = String(test.location ?? "");
         const where = loc.length ? `${file}:${loc}` : file;
-        const modeName = String(suiteAny.modeName ?? "");
+        const suitePath = String(suiteAny.path ?? "");
         const message = String(test.message ?? "");
         const dedupeKey = `${file}::${modeName}::${title}::${String(test.left)}::${String(test.right)}::${message}`;
         if (printed.has(dedupeKey))
@@ -491,14 +494,21 @@ function collectSuiteFailures(suite, file, path, printed) {
         if (modeName.length) {
             console.log(chalk.dim(`Mode: ${modeName}`));
         }
+        if (suitePath.length) {
+            console.log(chalk.dim(`Repro: ${buildSuiteReproCommand(toRelativeResultPath(file), suitePath, modeName)}`));
+        }
         renderAssertionFailureDetails(test.left, test.right, message);
     }
     const suites = Array.isArray(suiteAny.suites)
         ? suiteAny.suites
         : [];
     for (const sub of suites) {
-        collectSuiteFailures(sub, file, nextPath, printed);
+        collectSuiteFailures(sub, file, nextPath, printed, modeName);
     }
+}
+function buildSuiteReproCommand(file, suitePath, modeName) {
+    const modeArg = modeName && modeName != "default" ? ` --mode ${modeName}` : "";
+    return `ast run ${file}${modeArg} --suite ${suitePath}`;
 }
 function normalizeFailureMessage(message) {
     return message.replace(/\r\n/g, "\n").trim();

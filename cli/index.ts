@@ -91,6 +91,7 @@ if (!args.length) {
     } else if (command === "run") {
       executeRunCommand(_args, flags, configPath, selectedModes, {
         resolveCommandArgs,
+        resolveSuiteSelectors,
         resolveListFlags,
         resolveFeatureToggles,
         resolveParallelJobs,
@@ -106,6 +107,8 @@ if (!args.length) {
     } else if (command === "test") {
       executeTestCommand(_args, flags, configPath, selectedModes, {
         resolveCommandArgs,
+        resolveSuiteSelectors,
+        resolveFuzzerSelectors,
         resolveListFlags,
         resolveFeatureToggles,
         resolveParallelJobs,
@@ -122,6 +125,7 @@ if (!args.length) {
     } else if (command === "fuzz") {
       executeFuzzCommand(_args, configPath, selectedModes, {
         resolveCommandArgs,
+        resolveFuzzerSelectors,
         resolveListFlags,
         resolveJobs,
         resolveExecutionModes,
@@ -358,6 +362,12 @@ function printCommandHelp(command: string): void {
       "  --show-coverage          Print uncovered coverage point details\n",
     );
     process.stdout.write(
+      "  --suite <name[,name...]> Filter results to matching suite names or suite slug paths\n",
+    );
+    process.stdout.write(
+      "  --suites <name[,name...]> Alias for --suite\n",
+    );
+    process.stdout.write(
       "  --enable <feature>       Enable feature (coverage|try-as)\n",
     );
     process.stdout.write(
@@ -427,6 +437,12 @@ function printCommandHelp(command: string): void {
       "  --show-coverage          Print uncovered coverage point details\n",
     );
     process.stdout.write(
+      "  --suite <name[,name...]> Filter results to matching suite names or suite slug paths\n",
+    );
+    process.stdout.write(
+      "  --suites <name[,name...]> Alias for --suite\n",
+    );
+    process.stdout.write(
       "  --enable <feature>       Enable feature (coverage|try-as)\n",
     );
     process.stdout.write(
@@ -494,6 +510,18 @@ function printCommandHelp(command: string): void {
     );
     process.stdout.write(
       "  --seed <n>               Pin fuzz seed (default uses random seed)\n",
+    );
+    process.stdout.write(
+      "  --fuzzer <name[,name...]> Filter results to matching fuzz target names\n",
+    );
+    process.stdout.write(
+      "  --fuzzers <name[,name...]> Alias for --fuzzer\n",
+    );
+    process.stdout.write(
+      "  --suite <name[,name...]> Alias for --fuzzer\n",
+    );
+    process.stdout.write(
+      "  --suites <name[,name...]> Alias for --fuzzer\n",
     );
     process.stdout.write(
       "  --jobs <n>               Run files through an ordered worker pool\n",
@@ -612,7 +640,24 @@ function resolveCommandArgs(rawArgs: string[], command: string): string[] {
       i++;
       continue;
     }
+    if (
+      arg == "--suite" ||
+      arg == "--suites" ||
+      arg == "--fuzzer" ||
+      arg == "--fuzzers"
+    ) {
+      i++;
+      continue;
+    }
     if (arg.startsWith("--reporter=")) {
+      continue;
+    }
+    if (
+      arg.startsWith("--suite=") ||
+      arg.startsWith("--suites=") ||
+      arg.startsWith("--fuzzer=") ||
+      arg.startsWith("--fuzzers=")
+    ) {
       continue;
     }
     if (arg == "--tap") {
@@ -741,6 +786,66 @@ function resolveFuzzOverrides(
   }
 
   return out;
+}
+
+function resolveSuiteSelectors(
+  rawArgs: string[],
+  command: "run" | "test",
+): string[] {
+  return resolveNamedSelectors(rawArgs, command, ["--suite", "--suites"]);
+}
+
+function resolveFuzzerSelectors(
+  rawArgs: string[],
+  command: "fuzz" | "test",
+): string[] {
+  const flags =
+    command == "fuzz"
+      ? ["--fuzzer", "--fuzzers", "--suite", "--suites"]
+      : ["--fuzzer", "--fuzzers"];
+  return resolveNamedSelectors(rawArgs, command, flags);
+}
+
+function resolveNamedSelectors(
+  rawArgs: string[],
+  command: string,
+  flags: string[],
+): string[] {
+  const out: string[] = [];
+  let seenCommand = false;
+
+  for (let i = 0; i < rawArgs.length; i++) {
+    const arg = rawArgs[i]!;
+    if (!seenCommand) {
+      if (arg == command) seenCommand = true;
+      continue;
+    }
+
+    let parsed:
+      | {
+          key: string;
+          value: string;
+          consumeNext: boolean;
+        }
+      | null = null;
+    for (const flag of flags) {
+      parsed = parseStringFlag(rawArgs, i, flag);
+      if (parsed) break;
+    }
+    if (!parsed) continue;
+    appendNamedSelectorTokens(out, parsed.value);
+    if (parsed.consumeNext) i++;
+  }
+
+  return [...new Set(out)];
+}
+
+function appendNamedSelectorTokens(out: string[], value: string): void {
+  for (const token of value.split(",")) {
+    const normalized = token.trim();
+    if (!normalized.length) continue;
+    out.push(normalized);
+  }
 }
 
 function parseFuzzRunsFlag(
@@ -1370,6 +1475,7 @@ async function runTestSequential(
   },
   configPath: string | undefined,
   selectors: string[],
+  suiteSelectors: string[],
   buildFeatureToggles: BuildFeatureToggles,
   modeSummaryTotal: number,
   fileSummaryTotal: number,
@@ -1431,6 +1537,7 @@ async function runTestSequential(
     const artifactKey = resolvePerFileArtifactKey(file, duplicateSpecBasenames);
     const result = await run(runFlags, configPath, [file], false, {
       reporter,
+      suiteSelectors,
       emitRunStart: false,
       emitRunComplete: false,
       logFileName: `test.${artifactKey}.log.json`,
@@ -1560,6 +1667,7 @@ async function runRuntimeModes(
   },
   configPath: string | undefined,
   selectors: string[],
+  suiteSelectors: string[],
   modes: (string | undefined)[],
 ): Promise<void> {
   await ensureWebBrowsersReady(configPath, modes, runFlags.browser);
@@ -1575,6 +1683,7 @@ async function runRuntimeModes(
         effectiveRunFlags,
         configPath,
         selectors,
+        suiteSelectors,
         modes,
         modeSummaryTotal,
         fileSummaryTotal,
@@ -1588,6 +1697,7 @@ async function runRuntimeModes(
         effectiveRunFlags,
         configPath,
         selectors,
+        suiteSelectors,
         modeName,
         modeSummaryTotal,
         fileSummaryTotal,
@@ -1602,6 +1712,7 @@ async function runRuntimeModes(
       effectiveRunFlags,
       configPath,
       selectors,
+      suiteSelectors,
       modes,
       modeSummaryTotal,
       fileSummaryTotal,
@@ -1621,6 +1732,7 @@ async function runRuntimeModes(
     const result = await run(effectiveRunFlags, configPath, selectors, false, {
       reporterPath: effectiveRunFlags.reporterPath,
       modeName,
+      suiteSelectors,
       modeSummaryTotal,
       modeSummaryExecuted: 1,
       fileSummaryTotal,
@@ -1647,6 +1759,7 @@ async function runRuntimeMatrix(
   },
   configPath: string | undefined,
   selectors: string[],
+  suiteSelectors: string[],
   modes: (string | undefined)[],
   modeSummaryTotal: number,
   fileSummaryTotal: number,
@@ -1710,6 +1823,7 @@ async function runRuntimeMatrix(
         const result = await run(runFlags, configPath, [file], false, {
           reporter: silentReporter,
           reporterKind: "default",
+          suiteSelectors,
           emitRunStart: false,
           emitRunComplete: false,
           logFileName: `run.${artifactKey}.log.json`,
@@ -1793,6 +1907,8 @@ async function runTestModes(
   },
   configPath: string | undefined,
   selectors: string[],
+  suiteSelectors: string[],
+  fuzzerSelectors: string[],
   modes: (string | undefined)[],
   buildFeatureToggles: BuildFeatureToggles,
   fuzzEnabled: boolean,
@@ -1814,6 +1930,8 @@ async function runTestModes(
         effectiveRunFlags,
         configPath,
         selectors,
+        suiteSelectors,
+        fuzzerSelectors,
         modes,
         buildFeatureToggles,
         modeSummaryTotal,
@@ -1830,6 +1948,8 @@ async function runTestModes(
         effectiveRunFlags,
         configPath,
         selectors,
+        suiteSelectors,
+        fuzzerSelectors,
         buildFeatureToggles,
         modeSummaryTotal,
         fileSummaryTotal,
@@ -1847,6 +1967,8 @@ async function runTestModes(
       effectiveRunFlags,
       configPath,
       selectors,
+      suiteSelectors,
+      fuzzerSelectors,
       modes,
       buildFeatureToggles,
       modeSummaryTotal,
@@ -1869,6 +1991,7 @@ async function runTestModes(
       effectiveRunFlags,
       configPath,
       selectors,
+      suiteSelectors,
       buildFeatureToggles,
       modeSummaryTotal,
       fileSummaryTotal,
@@ -1885,6 +2008,7 @@ async function runTestModes(
       const fuzzResults = await runFuzzMatrixResults(
         configPath,
         selectors,
+        fuzzerSelectors,
         [modeName],
         fuzzOverrides,
         reporterSession.reporter,
@@ -1930,6 +2054,8 @@ async function runTestMatrix(
   },
   configPath: string | undefined,
   selectors: string[],
+  suiteSelectors: string[],
+  fuzzerSelectors: string[],
   modes: (string | undefined)[],
   buildFeatureToggles: BuildFeatureToggles,
   modeSummaryTotal: number,
@@ -2076,6 +2202,7 @@ async function runTestMatrix(
     const fuzzResults = await runFuzzMatrixResults(
       configPath,
       selectors,
+      fuzzerSelectors,
       modes,
       fuzzOverrides,
       reporter,
@@ -2103,6 +2230,7 @@ async function runTestMatrix(
 async function runFuzzModes(
   configPath: string | undefined,
   selectors: string[],
+  fuzzerSelectors: string[],
   modes: (string | undefined)[],
   rawArgs: string[],
 ): Promise<void> {
@@ -2118,6 +2246,7 @@ async function runFuzzModes(
     const results = await runFuzzMatrixResultsParallel(
       configPath,
       selectors,
+      fuzzerSelectors,
       modes,
       overrides,
       jobs,
@@ -2137,6 +2266,7 @@ async function runFuzzModes(
   const results = await runFuzzMatrixResults(
     configPath,
     selectors,
+    fuzzerSelectors,
     modes,
     overrides,
     reporterSession.reporter,
@@ -2165,6 +2295,7 @@ async function runRuntimeSingleParallel(
   },
   configPath: string | undefined,
   selectors: string[],
+  suiteSelectors: string[],
   modeName: string | undefined,
   modeSummaryTotal: number,
   fileSummaryTotal: number,
@@ -2216,6 +2347,7 @@ async function runRuntimeSingleParallel(
         reporter: buffered?.reporter,
         reporterKind: buffered?.reporterKind,
         modeName,
+        suiteSelectors,
         emitRunComplete: false,
         fileSummaryTotal: 1,
         modeSummaryTotal,
@@ -2270,6 +2402,7 @@ async function runRuntimeMatrixParallel(
   },
   configPath: string | undefined,
   selectors: string[],
+  suiteSelectors: string[],
   modes: (string | undefined)[],
   modeSummaryTotal: number,
   fileSummaryTotal: number,
@@ -2344,6 +2477,7 @@ async function runRuntimeMatrixParallel(
         const result = await run(runFlags, configPath, [file], false, {
           reporter: silentReporter,
           reporterKind: "default",
+          suiteSelectors,
           emitRunStart: false,
           emitRunComplete: false,
           logFileName: `run.${artifactKey}.log.json`,
@@ -2425,6 +2559,8 @@ async function runTestSingleParallel(
   },
   configPath: string | undefined,
   selectors: string[],
+  suiteSelectors: string[],
+  fuzzerSelectors: string[],
   buildFeatureToggles: BuildFeatureToggles,
   modeSummaryTotal: number,
   fileSummaryTotal: number,
@@ -2503,6 +2639,7 @@ async function runTestSingleParallel(
           {
             reporter: buffered?.reporter,
             reporterKind: buffered?.reporterKind,
+            suiteSelectors,
             emitRunComplete: false,
             logFileName: `test.${artifactKey}.log.json`,
             coverageFileName: `coverage.${artifactKey}.log.json`,
@@ -2542,6 +2679,7 @@ async function runTestSingleParallel(
     const fuzzResults = await runFuzzMatrixResultsParallel(
       configPath,
       selectors,
+      fuzzerSelectors,
       [modeName],
       fuzzOverrides,
       runFlags.jobs,
@@ -2589,6 +2727,8 @@ async function runTestMatrixParallel(
   },
   configPath: string | undefined,
   selectors: string[],
+  suiteSelectors: string[],
+  fuzzerSelectors: string[],
   modes: (string | undefined)[],
   buildFeatureToggles: BuildFeatureToggles,
   modeSummaryTotal: number,
@@ -2672,6 +2812,7 @@ async function runTestMatrixParallel(
         const result = await run(runFlags, configPath, [file], false, {
           reporter: silentReporter,
           reporterKind: "default",
+          suiteSelectors,
           emitRunStart: false,
           emitRunComplete: false,
           logFileName: `test.${artifactKey}.log.json`,
@@ -2736,6 +2877,7 @@ async function runTestMatrixParallel(
     const fuzzResults = await runFuzzMatrixResultsParallel(
       configPath,
       selectors,
+      fuzzerSelectors,
       modes,
       fuzzOverrides,
       runFlags.jobs,
@@ -2766,6 +2908,7 @@ async function runTestMatrixParallel(
 async function runFuzzMatrixResultsParallel(
   configPath: string | undefined,
   selectors: string[],
+  fuzzerSelectors: string[],
   modes: (string | undefined)[],
   overrides: FuzzOverrides,
   jobs: number,
@@ -2786,7 +2929,13 @@ async function runFuzzMatrixResultsParallel(
     const token = renderQueuedFileStart(queueDisplay, path.basename(file));
     const fileResults: FuzzResult[] = [];
     for (const modeName of modes) {
-      const modeResults = await fuzz(configPath, [file], modeName, overrides);
+      const modeResults = await fuzz(
+        configPath,
+        [file],
+        modeName,
+        overrides,
+        fuzzerSelectors,
+      );
       fileResults.push(...modeResults);
     }
     ordered[index] = fileResults;
@@ -2802,6 +2951,7 @@ async function runFuzzMatrixResultsParallel(
 async function runFuzzMatrixResults(
   configPath: string | undefined,
   selectors: string[],
+  fuzzerSelectors: string[],
   modes: (string | undefined)[],
   overrides: FuzzOverrides,
   reporter?: TestReporter,
@@ -2816,7 +2966,13 @@ async function runFuzzMatrixResults(
   for (const file of files) {
     const fileResults: FuzzResult[] = [];
     for (const modeName of modes) {
-      const modeResults = await fuzz(configPath, [file], modeName, overrides);
+      const modeResults = await fuzz(
+        configPath,
+        [file],
+        modeName,
+        overrides,
+        fuzzerSelectors,
+      );
       fileResults.push(...modeResults);
       results.push(...modeResults);
     }

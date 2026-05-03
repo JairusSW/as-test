@@ -134,6 +134,13 @@ Run one matching file:
 npx ast test math
 ```
 
+Re-run one suite inside a matching file:
+
+```bash
+npx ast run math --suite array-check
+npx ast run math --suite array-manipulation/array-check
+```
+
 You do not need to learn every CLI flag to get started. Most projects can begin with `npx ast test`, then add more configuration only when they need it.
 
 ## Mocking
@@ -284,6 +291,12 @@ Run only fuzzers:
 
 ```bash
 npx ast fuzz
+```
+
+Run one matching fuzz target:
+
+```bash
+npx ast fuzz string --fuzzer ascii-strings-survive-concatenation-boundaries
 ```
 
 Run tests and fuzzers together:

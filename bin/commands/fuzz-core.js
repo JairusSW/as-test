@@ -9,7 +9,7 @@ const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 const MAGIC = Buffer.from("WIPC");
 const HEADER_SIZE = 9;
 const MAX_DEFAULT_SEED = 0x7fffffff;
-export async function fuzz(configPath = DEFAULT_CONFIG_PATH, selectors = [], modeName, overrides = {}) {
+export async function fuzz(configPath = DEFAULT_CONFIG_PATH, selectors = [], modeName, overrides = {}, fuzzerSelectors = []) {
     const loadedConfig = loadConfig(configPath, false);
     const mode = applyMode(loadedConfig, modeName);
     const config = resolveFuzzConfig(loadedConfig.fuzz, overrides);
@@ -25,7 +25,7 @@ export async function fuzz(configPath = DEFAULT_CONFIG_PATH, selectors = [], mod
         await build(configPath, [file], modeName, { coverage: false }, { target: "bindings", args: ["--use", "AS_TEST_FUZZ=1"], kind: "fuzz" });
         const buildFinishedAt = Date.now();
         const buildTime = buildFinishedAt - buildStartedAt;
-        results.push(await runFuzzTarget(file, mode.config.outDir, duplicateBasenames, config, buildStartedAt, buildFinishedAt, buildTime, modeName));
+        results.push(await runFuzzTarget(file, mode.config.outDir, duplicateBasenames, config, fuzzerSelectors, buildStartedAt, buildFinishedAt, buildTime, modeName));
     }
     return results;
 }
@@ -69,7 +69,7 @@ function encodeRunsOverrideKind(kind) {
             return 4;
     }
 }
-async function runFuzzTarget(file, outDir, duplicateBasenames, config, buildStartedAt, buildFinishedAt, buildTime, modeName) {
+async function runFuzzTarget(file, outDir, duplicateBasenames, config, fuzzerSelectors, buildStartedAt, buildFinishedAt, buildTime, modeName) {
     const startedAt = Date.now();
     const artifact = resolveArtifactFileName(file, duplicateBasenames, modeName);
     const wasmPath = path.resolve(process.cwd(), outDir, artifact);
@@ -210,7 +210,10 @@ async function runFuzzTarget(file, outDir, duplicateBasenames, config, buildStar
         };
     }
     const crashFiles = [];
-    for (const fuzzer of report.fuzzers) {
+    const selectedFuzzers = fuzzerSelectors.length
+        ? filterSelectedFuzzers(report.fuzzers, fuzzerSelectors, file)
+        : report.fuzzers;
+    for (const fuzzer of selectedFuzzers) {
         if (fuzzer.failed <= 0 && fuzzer.crashed <= 0)
             continue;
         const firstFailureSeed = typeof fuzzer.failures?.[0]?.seed == "number"
@@ -222,7 +225,7 @@ async function runFuzzTarget(file, outDir, duplicateBasenames, config, buildStar
             entryKey: buildFuzzFailureEntryKey(file, fuzzer.name, modeName ?? "default"),
             mode: modeName ?? "default",
             seed: firstFailureSeed,
-            reproCommand: buildFuzzReproCommand(file, firstFailureSeed, modeName ?? "default", 1),
+            reproCommand: buildFuzzReproCommand(file, firstFailureSeed, modeName ?? "default", fuzzer.selector, 1),
             error: fuzzer.failure?.message ||
                 `fuzz failure in ${fuzzer.name} after ${fuzzer.runs} runs`,
             stdout: passthrough.stdout,
@@ -237,21 +240,49 @@ async function runFuzzTarget(file, outDir, duplicateBasenames, config, buildStar
         file,
         target: path.basename(file),
         modeName: modeName ?? "default",
-        runs: report.fuzzers.reduce((sum, item) => sum + item.runs, 0),
-        crashes: report.fuzzers.reduce((sum, item) => sum + item.crashed, 0),
+        runs: selectedFuzzers.reduce((sum, item) => sum + item.runs, 0),
+        crashes: selectedFuzzers.reduce((sum, item) => sum + item.crashed, 0),
         crashFiles,
         seed: config.seed,
         time: Date.now() - startedAt,
         buildTime,
         buildStartedAt,
         buildFinishedAt,
-        fuzzers: report.fuzzers,
+        fuzzers: selectedFuzzers,
     };
 }
-function buildFuzzReproCommand(file, seed, modeName, runs) {
+function filterSelectedFuzzers(fuzzers, selectors, file) {
+    const annotated = fuzzers.map((fuzzer) => ({
+        ...fuzzer,
+        selector: slugifyFuzzerSelector(fuzzer.name),
+    }));
+    const selected = new Set();
+    for (const selector of selectors) {
+        const slug = slugifyFuzzerSelector(selector);
+        if (!slug.length)
+            continue;
+        const matches = annotated.filter((fuzzer) => fuzzer.selector == slug);
+        if (!matches.length) {
+            throw new Error(`No fuzz targets matched "${selector}" in ${path.basename(file)}.`);
+        }
+        for (const match of matches) {
+            selected.add(match.selector);
+        }
+    }
+    return annotated.filter((fuzzer) => selected.has(fuzzer.selector ?? ""));
+}
+function slugifyFuzzerSelector(value) {
+    return value
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+}
+function buildFuzzReproCommand(file, seed, modeName, fuzzer, runs) {
     const modeArg = modeName != "default" ? ` --mode ${modeName}` : "";
+    const fuzzerArg = fuzzer?.length ? ` --fuzzer ${fuzzer}` : "";
     const runsArg = typeof runs == "number" ? ` --runs ${runs}` : "";
-    return `ast fuzz ${file}${modeArg} --seed ${seed}${runsArg}`;
+    return `ast fuzz ${file}${modeArg}${fuzzerArg} --seed ${seed}${runsArg}`;
 }
 function buildFuzzFailureEntryKey(file, name, modeName) {
     return `${path.basename(file).replace(/\.ts$/, "")}.${sanitizeEntryName(modeName)}.${sanitizeEntryName(name)}`;

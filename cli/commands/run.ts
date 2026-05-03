@@ -5,6 +5,7 @@ export type { RunResult } from "./run-core.js";
 
 type RunCommandDeps = {
   resolveCommandArgs(rawArgs: string[], command: string): string[];
+  resolveSuiteSelectors(rawArgs: string[], command: "run" | "test"): string[];
   resolveListFlags(rawArgs: string[], command: string): CliListFlags;
   resolveFeatureToggles(rawArgs: string[], command: string): CliFeatureToggles;
   resolveParallelJobs(
@@ -35,6 +36,7 @@ type RunCommandDeps = {
     runFlags: RunFlags,
     configPath: string | undefined,
     selectors: string[],
+    suiteSelectors: string[],
     modes: (string | undefined)[],
   ): Promise<void>;
 };
@@ -47,6 +49,7 @@ export async function executeRunCommand(
   deps: RunCommandDeps,
 ): Promise<void> {
   const commandArgs = deps.resolveCommandArgs(rawArgs, "run");
+  const suiteSelectors = deps.resolveSuiteSelectors(rawArgs, "run");
   const listFlags = deps.resolveListFlags(rawArgs, "run");
   const featureToggles = deps.resolveFeatureToggles(rawArgs, "run");
   const runFlags: RunFlags = {
@@ -72,5 +75,11 @@ export async function executeRunCommand(
     );
     return;
   }
-  await deps.runRuntimeModes(runFlags, configPath, commandArgs, modeTargets);
+  await deps.runRuntimeModes(
+    runFlags,
+    configPath,
+    commandArgs,
+    suiteSelectors,
+    modeTargets,
+  );
 }

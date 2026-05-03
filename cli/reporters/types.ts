@@ -105,6 +105,7 @@ export type RunCompleteEvent = {
 
 export type FuzzerRunResult = {
   name: string;
+  selector?: string;
   runs: number;
   passed: number;
   failed: number;
