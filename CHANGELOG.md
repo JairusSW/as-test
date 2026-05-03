@@ -1,11 +1,14 @@
 # Change Log
 
+## 2025-05-03 - v1.0.13
+
+- feat: add `--fuzzer` / `--fuzzers` filtering for `ast fuzz` and `ast test --fuzz`, accept `--suite` / `--suites` as fuzz aliases, and include target-specific repro commands in fuzz failure output.
+- feat: add `--suite` / `--suites` filtering for `ast run` and `ast test`, and print suite-specific repro commands on failing test assertions.
+
 ## 2026-04-28 - v1.0.12
 
 - perf: faster seed generation
 - feat: make fuzz campaigns use a random base seed by default when `fuzz.seed` and CLI seed overrides are not set, while keeping deterministic replay via `--seed` / `--fuzz-seed`.
-- feat: add `--fuzzer` / `--fuzzers` filtering for `ast fuzz` and `ast test --fuzz`, accept `--suite` / `--suites` as fuzz aliases, and include target-specific repro commands in fuzz failure output.
-- feat: add `--suite` / `--suites` filtering for `ast run` and `ast test`, and print suite-specific repro commands on failing test assertions.
 
 ## 2026-04-18 - v1.0.11
 
