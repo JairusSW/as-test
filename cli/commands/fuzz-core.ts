@@ -515,12 +515,12 @@ function captureFrames(
     }
   }) as typeof process.stdout.write;
   process.stdin.read = ((size?: number | null) => {
-    const max = Number(size ?? 0);
+    const max = size == null ? 0 : Number(size);
     if (max > 0 && replies.length) {
       return dequeueReply(max);
     }
     if (originalRead) {
-      return originalRead(size);
+      return originalRead(size === null ? undefined : size);
     }
     return null;
   }) as typeof process.stdin.read;

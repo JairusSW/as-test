@@ -256,7 +256,7 @@ async function runInteractiveOnboarding(
     printSelectionLine(resolvedRoot);
   }
 
-  const target =
+  const target: Target =
     options.target ??
     (onboardingMode == "quick"
       ? "wasi"
@@ -286,7 +286,7 @@ async function runInteractiveOnboarding(
     printPromptAndSelectionLine("Build target", target);
   }
 
-  const example =
+  const example: ExampleMode =
     options.example ??
     (onboardingMode == "quick"
       ? "minimal"

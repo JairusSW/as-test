@@ -78,4 +78,3 @@ function looksLikeAsTestImport(specifiers, modulePath) {
 function stripComments(sourceText) {
     return sourceText.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 }
-//# sourceMappingURL=log.js.map

@@ -23,4 +23,3 @@ export class Schema {
     byteSize = 0;
     deps = [];
 }
-//# sourceMappingURL=types.js.map

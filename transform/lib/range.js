@@ -10,4 +10,3 @@ export class RangeTransform extends Visitor {
         return super._visit(node, ref);
     }
 }
-//# sourceMappingURL=range.js.map

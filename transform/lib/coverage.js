@@ -63,7 +63,7 @@ export class CoverageTransform extends Visitor {
             this.visit(node.expression, node);
             this.visit(node.typeArguments, node);
             for (const arg of node.args) {
-                if (arg.kind == 14)
+                if (arg.kind == 15)
                     continue;
                 this.visit(arg, node);
             }
@@ -178,7 +178,7 @@ export class CoverageTransform extends Visitor {
             const registerStmt = createRegisterStatement(point);
             replacer.visit(registerStmt);
             this.globalStatements.push(registerStmt);
-            if (node.body.kind === 35) {
+            if (node.body.kind === 36) {
                 const coverStmt = SimpleParser.parseStatement(`{
                 __COVER("${point.hash}")
                 return $$REPLACE_ME
@@ -214,7 +214,7 @@ export class CoverageTransform extends Visitor {
         const ifTrue = node.ifTrue;
         const ifFalse = node.ifFalse;
         const path = node.range.source.normalizedPath;
-        if (ifTrue.kind !== 30 && !isBuiltinStatement(ifTrue)) {
+        if (ifTrue.kind !== 31 && !isBuiltinStatement(ifTrue)) {
             const trueLc = getLineCol(ifTrue);
             const point = new CoverPoint();
             point.line = trueLc?.line;
@@ -234,7 +234,7 @@ export class CoverageTransform extends Visitor {
             visitIfFalse = !!ifFalse;
         }
         if (ifFalse &&
-            ifFalse.kind !== 30 &&
+            ifFalse.kind !== 31 &&
             !isBuiltinStatement(ifFalse)) {
             const falseLc = getLineCol(ifFalse);
             const point = new CoverPoint();
@@ -377,35 +377,35 @@ function getCallName(node) {
     return getExpressionName(node.expression);
 }
 function isBuiltinStatement(node) {
-    if (node.kind !== 38)
+    if (node.kind !== 39)
         return false;
     return isBuiltinCallExpression(node.expression);
 }
 function isBuiltinCallExpression(node) {
     const unwrapped = unwrapParenthesized(node);
-    if (unwrapped.kind !== 9)
+    if (unwrapped.kind !== 10)
         return false;
     const call = unwrapped;
     const expression = unwrapParenthesized(call.expression);
-    if (expression.kind !== 6)
+    if (expression.kind !== 7)
         return false;
     const name = expression.text;
     return COVERAGE_IGNORED_BUILTINS.has(name);
 }
 function unwrapParenthesized(node) {
     let current = node;
-    while (current.kind === 20) {
+    while (current.kind === 21) {
         current = current.expression;
     }
     return current;
 }
 function getExpressionName(node) {
     switch (node.kind) {
-        case 6:
+        case 7:
             return node.text;
-        case 21:
+        case 22:
             return node.property.text;
-        case 20:
+        case 21:
             return getExpressionName(node.expression);
         default:
             return null;
@@ -473,4 +473,3 @@ function isConcreteSourceBlock(node) {
         return false;
     return source.text.charCodeAt(start) == 123;
 }
-//# sourceMappingURL=coverage.js.map

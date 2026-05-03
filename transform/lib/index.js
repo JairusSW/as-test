@@ -146,4 +146,3 @@ function escapeRegex(value) {
 function isCoverageEnabled() {
     return process.env.AS_TEST_COVERAGE_ENABLED !== "0";
 }
-//# sourceMappingURL=index.js.map

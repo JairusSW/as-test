@@ -66,7 +66,9 @@ export class MockTransform extends Visitor {
       cb.range,
     );
 
-    const stmts = this.srcCurrent.statements;
+    const currentSource = this.srcCurrent;
+    if (!currentSource) return;
+    const stmts = currentSource.statements;
     let index = -1;
     for (let i = 0; i < stmts.length; i++) {
       const stmt = stmts[i];
@@ -93,22 +95,25 @@ export class MockTransform extends Visitor {
 
     for (const node of this.importFns) {
       let path: string;
+      const currentSource = this.srcCurrent;
+      if (!currentSource) continue;
       const dec = node.decorators?.find(
         (v) => (v.name as IdentifierExpression).text == "external",
       );
+      const decArgs = dec?.args ?? [];
       if (!dec) {
         path = "env." + node.name.text;
-      } else if (dec.args[0] && dec.args[1])
-        path = dec.args
+      } else if (decArgs[0] && decArgs[1])
+        path = decArgs
           .map((v) => (v as StringLiteralExpression).value)
           .join(".");
-      else if (dec.args[0])
+      else if (decArgs[0])
         path =
-          this.srcCurrent.simplePath +
+          currentSource.simplePath +
           "." +
-          (dec.args[0] as StringLiteralExpression).value;
-      else path = this.srcCurrent.simplePath + "." + node.name.text;
-      const stmts = this.srcCurrent.statements;
+          (decArgs[0] as StringLiteralExpression).value;
+      else path = currentSource.simplePath + "." + node.name.text;
+      const stmts = currentSource.statements;
       let index = -1;
       for (let i = 0; i < stmts.length; i++) {
         const stmt = stmts[i];

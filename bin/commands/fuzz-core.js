@@ -355,12 +355,12 @@ function captureFrames(onFrame) {
         }
     });
     process.stdin.read = ((size) => {
-        const max = Number(size ?? 0);
+        const max = size == null ? 0 : Number(size);
         if (max > 0 && replies.length) {
             return dequeueReply(max);
         }
         if (originalRead) {
-            return originalRead(size);
+            return originalRead(size === null ? undefined : size);
         }
         return null;
     });

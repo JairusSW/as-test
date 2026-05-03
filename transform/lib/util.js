@@ -44,4 +44,3 @@ export function isStdlib(s) {
 export function toString(node) {
     return ASTBuilder.build(node);
 }
-//# sourceMappingURL=util.js.map

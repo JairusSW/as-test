@@ -1354,7 +1354,7 @@ export function getPkgRunner(): string {
 }
 
 export function getExec(exec: string): string | null {
-  const PATH = process.env.PATH.split(delimiter);
+  const PATH = (process.env.PATH ?? "").split(delimiter);
 
   for (const pathDir of PATH) {
     const fullPath = join(

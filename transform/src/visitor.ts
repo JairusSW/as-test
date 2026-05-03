@@ -85,7 +85,7 @@ import {
 
 export class Visitor {
   public currentSource: Source | null = null;
-  visit(node: Node | Node[], ref: Node | null = null): void {
+  visit(node: Node | Node[] | null, ref: Node | null = null): void {
     if (node == null) return;
     if (node instanceof Array) {
       for (const n of node) {

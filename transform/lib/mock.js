@@ -37,7 +37,10 @@ export class MockTransform extends Visitor {
         const cb = node.args[1];
         const newName = normalizeName(ov);
         const newFn = Node.createFunctionDeclaration(Node.createIdentifierExpression(newName + "_mock", cb.range), cb.declaration.decorators, 0, cb.declaration.typeParameters, cb.declaration.signature, cb.declaration.body, cb.declaration.arrowKind, cb.range);
-        const stmts = this.srcCurrent.statements;
+        const currentSource = this.srcCurrent;
+        if (!currentSource)
+            return;
+        const stmts = currentSource.statements;
         let index = -1;
         for (let i = 0; i < stmts.length; i++) {
             const stmt = stmts[i];
@@ -63,22 +66,26 @@ export class MockTransform extends Visitor {
         super.visitSource(node);
         for (const node of this.importFns) {
             let path;
+            const currentSource = this.srcCurrent;
+            if (!currentSource)
+                continue;
             const dec = node.decorators?.find((v) => v.name.text == "external");
+            const decArgs = dec?.args ?? [];
             if (!dec) {
                 path = "env." + node.name.text;
             }
-            else if (dec.args[0] && dec.args[1])
-                path = dec.args
+            else if (decArgs[0] && decArgs[1])
+                path = decArgs
                     .map((v) => v.value)
                     .join(".");
-            else if (dec.args[0])
+            else if (decArgs[0])
                 path =
-                    this.srcCurrent.simplePath +
+                    currentSource.simplePath +
                         "." +
-                        dec.args[0].value;
+                        decArgs[0].value;
             else
-                path = this.srcCurrent.simplePath + "." + node.name.text;
-            const stmts = this.srcCurrent.statements;
+                path = currentSource.simplePath + "." + node.name.text;
+            const stmts = currentSource.statements;
             let index = -1;
             for (let i = 0; i < stmts.length; i++) {
                 const stmt = stmts[i];
@@ -118,4 +125,3 @@ function normalizeName(value) {
         .replaceAll("]", "_")
         .replace(/[^A-Za-z0-9_]/g, "_");
 }
-//# sourceMappingURL=mock.js.map

@@ -1111,7 +1111,7 @@ export function getPkgRunner() {
     return "npx";
 }
 export function getExec(exec) {
-    const PATH = process.env.PATH.split(delimiter);
+    const PATH = (process.env.PATH ?? "").split(delimiter);
     for (const pathDir of PATH) {
         const fullPath = join(pathDir, exec + (process.platform === "win32" ? ".exe" : ""));
         if (existsSync(fullPath)) {

@@ -1805,8 +1805,9 @@ async function runProcess(invocation, specFile, crashDir, modeName, snapshots, s
     if (stderrPendingLine.length && !shouldSuppressWasiWarningLine(stderrPendingLine)) {
         stderrBuffer += stderrPendingLine;
     }
-    if (spawnError) {
-        const errorText = spawnError.stack ?? spawnError.message;
+    const processSpawnError = spawnError;
+    if (processSpawnError) {
+        const errorText = processSpawnError.stack ?? processSpawnError.message;
         persistCrashRecord(crashDir, {
             kind: "test",
             file: specFile,

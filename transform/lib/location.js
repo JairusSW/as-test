@@ -17,4 +17,3 @@ export class LocationTransform extends Visitor {
         node.args.push(Node.createStringLiteralExpression(location, node.range));
     }
 }
-//# sourceMappingURL=location.js.map
