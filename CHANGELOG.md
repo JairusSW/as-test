@@ -1,5 +1,13 @@
 # Change Log
 
+## 2026-05-04 - v1.0.14
+
+### Fuzzing
+
+- feat: add `FuzzSeed` helpers for `i8`, `u8`, `i16`, `u16`, `i64`, `u64`, and `bool()`.
+- feat: make integer `FuzzSeed` helpers default to the full range of their target type when no options are provided, instead of collapsing to `0`.
+- perf: add unchecked full-range fast paths for default integer seed generation while keeping explicit user-provided ranges validated.
+
 ## 2025-05-03 - v1.0.13
 
 - feat: add `--fuzzer` / `--fuzzers` filtering for `ast fuzz` and `ast test --fuzz`, accept `--suite` / `--suites` as fuzz aliases, and include target-specific repro commands in fuzz failure output.
