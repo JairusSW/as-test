@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-05-04 - v1.0.15
+
+- fix: path resolving
+- 
 ## 2026-05-04 - v1.0.14
 
 ### Fuzzing
