@@ -1,9 +1,10 @@
 import { existsSync, readFileSync } from "fs";
-import { BuildOptions, Config, CoverageOptions, FuzzConfig, ModeConfig, ReporterConfig, RunOptions, Runtime, } from "./types.js";
+import { BuildOptions, Config, CoverageOptions, CoverageIgnoreOptions, FuzzConfig, ModeConfig, ReporterConfig, RunOptions, Runtime, } from "./types.js";
 import chalk from "chalk";
 import { createRequire } from "module";
 import { delimiter, dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
+const CONFIG_META = new WeakMap();
 export function formatTime(ms) {
     if (ms < 0) {
         throw new Error("Time should be a non-negative number.");
@@ -28,110 +29,121 @@ export function formatTime(ms) {
     return `${us}us`;
 }
 export function loadConfig(CONFIG_PATH, warn = false) {
-    if (!existsSync(CONFIG_PATH)) {
-        if (warn)
+    const resolvedPath = resolve(CONFIG_PATH);
+    const raw = readConfigRaw(resolvedPath, warn);
+    return parseConfigRaw(raw, resolvedPath);
+}
+function readConfigRaw(configPath, warn) {
+    if (!existsSync(configPath)) {
+        if (warn) {
             console.log(`${chalk.bgMagentaBright(" WARN ")}${chalk.dim(":")} Could not locate config file in the current directory! Continuing with default config.`);
-        return new Config();
+        }
+        return {};
+    }
+    const rawText = readFileSync(configPath, "utf8");
+    let parsed;
+    try {
+        parsed = JSON.parse(rawText);
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`invalid config JSON at ${configPath}\n${message}\nfix JSON syntax and rerun.`);
+    }
+    if (!parsed || typeof parsed != "object" || Array.isArray(parsed)) {
+        throw new Error(`invalid config at ${configPath}\nroot value must be an object. Example: { "input": ["./assembly/__tests__/*.spec.ts"] }`);
+    }
+    const raw = parsed;
+    validateConfig(raw, configPath);
+    return raw;
+}
+function parseConfigRaw(raw, configPath) {
+    const configDir = dirname(configPath);
+    const config = Object.assign(new Config(), raw);
+    applyOutputConfig(raw.output, raw, config);
+    config.env = parseEnvValue(raw.env, configDir, "$.env");
+    const runOptionsRaw = raw.runOptions ?? {};
+    config.buildOptions = Object.assign(new BuildOptions(), raw.buildOptions ?? {});
+    config.buildOptions.cmd =
+        typeof config.buildOptions.cmd == "string" ? config.buildOptions.cmd : "";
+    config.buildOptions.args = Array.isArray(config.buildOptions.args)
+        ? config.buildOptions.args.filter((item) => typeof item == "string")
+        : [];
+    config.buildOptions.env = parseEnvValue(raw.buildOptions?.env, configDir, "$.buildOptions.env");
+    config.buildOptions.target =
+        typeof config.buildOptions.target == "string" &&
+            config.buildOptions.target.length
+            ? config.buildOptions.target
+            : "wasi";
+    config.runOptions = Object.assign(new RunOptions(), runOptionsRaw);
+    const reporterRaw = runOptionsRaw.reporter;
+    if (typeof reporterRaw == "string") {
+        config.runOptions.reporter = reporterRaw;
+    }
+    else if (reporterRaw && typeof reporterRaw == "object") {
+        const reporterConfig = Object.assign(new ReporterConfig(), reporterRaw);
+        reporterConfig.name =
+            typeof reporterConfig.name == "string" ? reporterConfig.name : "";
+        reporterConfig.options = Array.isArray(reporterConfig.options)
+            ? reporterConfig.options.filter((value) => typeof value == "string")
+            : [];
+        reporterConfig.outDir =
+            typeof reporterConfig.outDir == "string" ? reporterConfig.outDir : "";
+        reporterConfig.outFile =
+            typeof reporterConfig.outFile == "string" ? reporterConfig.outFile : "";
+        config.runOptions.reporter = reporterConfig;
     }
     else {
-        const rawText = readFileSync(CONFIG_PATH, "utf8");
-        let parsed;
-        try {
-            parsed = JSON.parse(rawText);
-        }
-        catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            throw new Error(`invalid config JSON at ${CONFIG_PATH}\n${message}\nfix JSON syntax and rerun.`);
-        }
-        if (!parsed || typeof parsed != "object" || Array.isArray(parsed)) {
-            throw new Error(`invalid config at ${CONFIG_PATH}\nroot value must be an object. Example: { "input": ["./assembly/__tests__/*.spec.ts"] }`);
-        }
-        const raw = parsed;
-        validateConfig(raw, CONFIG_PATH);
-        const configDir = dirname(CONFIG_PATH);
-        const config = Object.assign(new Config(), raw);
-        applyOutputConfig(raw.output, raw, config);
-        config.env = parseEnvValue(raw.env, configDir, "$.env");
-        const runOptionsRaw = raw.runOptions ?? {};
-        config.buildOptions = Object.assign(new BuildOptions(), raw.buildOptions ?? {});
-        config.buildOptions.cmd =
-            typeof config.buildOptions.cmd == "string" ? config.buildOptions.cmd : "";
-        config.buildOptions.args = Array.isArray(config.buildOptions.args)
-            ? config.buildOptions.args.filter((item) => typeof item == "string")
-            : [];
-        config.buildOptions.env = parseEnvValue(raw.buildOptions?.env, configDir, "$.buildOptions.env");
-        config.buildOptions.target =
-            typeof config.buildOptions.target == "string" &&
-                config.buildOptions.target.length
-                ? config.buildOptions.target
-                : "wasi";
-        config.runOptions = Object.assign(new RunOptions(), runOptionsRaw);
-        const reporterRaw = runOptionsRaw.reporter;
-        if (typeof reporterRaw == "string") {
-            config.runOptions.reporter = reporterRaw;
-        }
-        else if (reporterRaw && typeof reporterRaw == "object") {
-            const reporterConfig = Object.assign(new ReporterConfig(), reporterRaw);
-            reporterConfig.name =
-                typeof reporterConfig.name == "string" ? reporterConfig.name : "";
-            reporterConfig.options = Array.isArray(reporterConfig.options)
-                ? reporterConfig.options.filter((value) => typeof value == "string")
-                : [];
-            reporterConfig.outDir =
-                typeof reporterConfig.outDir == "string" ? reporterConfig.outDir : "";
-            reporterConfig.outFile =
-                typeof reporterConfig.outFile == "string" ? reporterConfig.outFile : "";
-            config.runOptions.reporter = reporterConfig;
-        }
-        else {
-            config.runOptions.reporter = "";
-        }
-        const runtimeRaw = runOptionsRaw.runtime;
-        const runtime = new Runtime();
-        const legacyRun = typeof runOptionsRaw.run == "string" && runOptionsRaw.run.length
-            ? runOptionsRaw.run
-            : "";
-        const cmd = runtimeRaw && typeof runtimeRaw.cmd == "string" && runtimeRaw.cmd.length
-            ? runtimeRaw.cmd
-            : runtimeRaw &&
-                typeof runtimeRaw.run == "string" &&
-                runtimeRaw.run.length
-                ? runtimeRaw.run
-                : legacyRun
-                    ? legacyRun
-                    : runtime.cmd;
-        runtime.cmd = cmd;
-        runtime.browser =
-            runtimeRaw && typeof runtimeRaw.browser == "string"
-                ? runtimeRaw.browser
-                : "";
-        config.runOptions.runtime = runtime;
-        config.runOptions.env = parseEnvValue(runOptionsRaw.env, configDir, "$.runOptions.env");
-        const fuzzRaw = raw.fuzz ?? {};
-        config.fuzz = Object.assign(new FuzzConfig(), fuzzRaw);
-        config.fuzz.input = Array.isArray(config.fuzz.input)
-            ? config.fuzz.input.filter((item) => typeof item == "string")
-            : typeof fuzzRaw.input == "string"
-                ? [fuzzRaw.input]
-                : new FuzzConfig().input;
-        config.fuzz.runs = normalizePositiveNumber(config.fuzz.runs, 1000);
-        config.fuzz.seed = normalizeNonNegativeNumber(config.fuzz.seed, -1);
-        config.fuzz.maxInputBytes = normalizePositiveNumber(config.fuzz.maxInputBytes, 4096);
-        config.fuzz.target =
-            typeof config.fuzz.target == "string" && config.fuzz.target.length
-                ? config.fuzz.target
-                : "bindings";
-        config.fuzz.corpusDir =
-            typeof config.fuzz.corpusDir == "string" && config.fuzz.corpusDir.length
-                ? config.fuzz.corpusDir
-                : "./.as-test/fuzz/corpus";
-        config.fuzz.crashDir =
-            typeof config.fuzz.crashDir == "string" && config.fuzz.crashDir.length
-                ? config.fuzz.crashDir
-                : "./.as-test/crashes";
-        config.modes = parseModes(raw.modes, configDir);
-        return config;
+        config.runOptions.reporter = "";
     }
+    const runtimeRaw = runOptionsRaw.runtime;
+    const runtime = new Runtime();
+    const legacyRun = typeof runOptionsRaw.run == "string" && runOptionsRaw.run.length
+        ? runOptionsRaw.run
+        : "";
+    const cmd = runtimeRaw && typeof runtimeRaw.cmd == "string" && runtimeRaw.cmd.length
+        ? runtimeRaw.cmd
+        : runtimeRaw &&
+            typeof runtimeRaw.run == "string" &&
+            runtimeRaw.run.length
+            ? runtimeRaw.run
+            : legacyRun
+                ? legacyRun
+                : runtime.cmd;
+    runtime.cmd = cmd;
+    runtime.browser =
+        runtimeRaw && typeof runtimeRaw.browser == "string"
+            ? runtimeRaw.browser
+            : "";
+    config.runOptions.runtime = runtime;
+    config.runOptions.env = parseEnvValue(runOptionsRaw.env, configDir, "$.runOptions.env");
+    const fuzzRaw = raw.fuzz ?? {};
+    config.fuzz = Object.assign(new FuzzConfig(), fuzzRaw);
+    config.fuzz.input = Array.isArray(config.fuzz.input)
+        ? config.fuzz.input.filter((item) => typeof item == "string")
+        : typeof fuzzRaw.input == "string"
+            ? [fuzzRaw.input]
+            : new FuzzConfig().input;
+    config.fuzz.runs = normalizePositiveNumber(config.fuzz.runs, 1000);
+    config.fuzz.seed = normalizeNonNegativeNumber(config.fuzz.seed, -1);
+    config.fuzz.maxInputBytes = normalizePositiveNumber(config.fuzz.maxInputBytes, 4096);
+    config.fuzz.target =
+        typeof config.fuzz.target == "string" && config.fuzz.target.length
+            ? config.fuzz.target
+            : "bindings";
+    config.fuzz.corpusDir =
+        typeof config.fuzz.corpusDir == "string" && config.fuzz.corpusDir.length
+            ? config.fuzz.corpusDir
+            : "./.as-test/fuzz/corpus";
+    config.fuzz.crashDir =
+        typeof config.fuzz.crashDir == "string" && config.fuzz.crashDir.length
+            ? config.fuzz.crashDir
+            : "./.as-test/crashes";
+    config.modes = parseModes(raw.modes, configDir);
+    CONFIG_META.set(config, {
+        sourcePath: configPath,
+        raw,
+    });
+    return config;
 }
 const TOP_LEVEL_KEYS = new Set([
     "$schema",
@@ -163,17 +175,7 @@ const FUZZ_OPTION_KEYS = new Set([
     "corpusDir",
     "crashDir",
 ]);
-const MODE_KEYS = new Set([
-    "outDir",
-    "logs",
-    "coverageDir",
-    "snapshotDir",
-    "config",
-    "coverage",
-    "buildOptions",
-    "runOptions",
-    "env",
-]);
+const MODE_KEYS = new Set([...TOP_LEVEL_KEYS].filter((key) => key != "modes"));
 function validateConfig(raw, configPath) {
     const issues = [];
     validateUnknownKeys(raw, TOP_LEVEL_KEYS, "$", issues);
@@ -629,22 +631,36 @@ function validateModesField(raw, key, pathPrefix, issues) {
         return;
     }
     for (const [modeName, modeRaw] of Object.entries(value)) {
+        if (typeof modeRaw == "string") {
+            if (!modeRaw.length) {
+                issues.push({
+                    path: `${pathPrefix}.${key}.${modeName}`,
+                    message: "must not be an empty string",
+                    fix: 'set to a config file path like "./as-test.config.simd.json"',
+                });
+            }
+            continue;
+        }
         if (!modeRaw || typeof modeRaw != "object" || Array.isArray(modeRaw)) {
             issues.push({
                 path: `${pathPrefix}.${key}.${modeName}`,
-                message: "must be an object",
+                message: "must be a config object or config file path string",
             });
             continue;
         }
         const modeObj = modeRaw;
         const modePath = `${pathPrefix}.${key}.${modeName}`;
         validateUnknownKeys(modeObj, MODE_KEYS, modePath, issues);
+        validateStringField(modeObj, "$schema", modePath, issues);
+        validateInputField(modeObj, "input", modePath, issues);
+        validateOutputField(modeObj, "output", modePath, issues);
         validateStringField(modeObj, "outDir", modePath, issues);
         validateStringField(modeObj, "logs", modePath, issues);
         validateStringField(modeObj, "coverageDir", modePath, issues);
         validateStringField(modeObj, "snapshotDir", modePath, issues);
         validateStringField(modeObj, "config", modePath, issues);
         validateCoverageField(modeObj, "coverage", modePath, issues);
+        validateFuzzField(modeObj, "fuzz", modePath, issues);
         validateEnvField(modeObj, "env", modePath, issues);
         validateBuildOptionsField(modeObj, "buildOptions", modePath, issues);
         validateRunOptionsField(modeObj, "runOptions", modePath, issues);
@@ -774,84 +790,16 @@ function parseModes(raw, configDir) {
     const out = {};
     const entries = Object.entries(raw);
     for (const [name, value] of entries) {
+        const mode = new ModeConfig();
+        if (typeof value == "string") {
+            mode.path = resolve(configDir, value);
+            mode.config = parseConfigRaw({}, join(configDir, `__mode__.${name}.json`));
+            out[name] = mode;
+            continue;
+        }
         if (!value || typeof value != "object" || Array.isArray(value))
             continue;
-        const modeRaw = value;
-        const mode = new ModeConfig();
-        if (typeof modeRaw.outDir == "string" && modeRaw.outDir.length) {
-            mode.outDir = modeRaw.outDir;
-        }
-        if (typeof modeRaw.logs == "string" && modeRaw.logs.length) {
-            mode.logs = modeRaw.logs;
-        }
-        if (typeof modeRaw.coverageDir == "string" && modeRaw.coverageDir.length) {
-            mode.coverageDir = modeRaw.coverageDir;
-        }
-        if (typeof modeRaw.snapshotDir == "string" && modeRaw.snapshotDir.length) {
-            mode.snapshotDir = modeRaw.snapshotDir;
-        }
-        if (typeof modeRaw.config == "string" && modeRaw.config.length) {
-            mode.config = modeRaw.config;
-        }
-        if (typeof modeRaw.coverage == "boolean") {
-            mode.coverage = modeRaw.coverage;
-        }
-        else if (modeRaw.coverage && typeof modeRaw.coverage == "object") {
-            mode.coverage = Object.assign(new CoverageOptions(), modeRaw.coverage);
-        }
-        if (modeRaw.buildOptions && typeof modeRaw.buildOptions == "object") {
-            const buildRaw = modeRaw.buildOptions;
-            const build = {};
-            if (typeof buildRaw.cmd == "string") {
-                build.cmd = buildRaw.cmd;
-            }
-            if (Array.isArray(buildRaw.args)) {
-                build.args = buildRaw.args.filter((item) => typeof item == "string");
-            }
-            build.env = parseEnvValue(buildRaw.env, configDir, `$.modes.${name}.buildOptions.env`);
-            if (typeof buildRaw.target == "string" && buildRaw.target.length) {
-                build.target = buildRaw.target;
-            }
-            mode.buildOptions = build;
-        }
-        if (modeRaw.runOptions && typeof modeRaw.runOptions == "object") {
-            const runRaw = modeRaw.runOptions;
-            const run = {};
-            if (runRaw.runtime && typeof runRaw.runtime == "object") {
-                const runtimeRaw = runRaw.runtime;
-                const runtime = new Runtime();
-                if (typeof runtimeRaw.cmd == "string" && runtimeRaw.cmd.length) {
-                    runtime.cmd = runtimeRaw.cmd;
-                }
-                else if (typeof runtimeRaw.run == "string" && runtimeRaw.run.length) {
-                    runtime.cmd = runtimeRaw.run;
-                }
-                else {
-                    runtime.cmd = "";
-                }
-                runtime.browser =
-                    typeof runtimeRaw.browser == "string" ? runtimeRaw.browser : "";
-                run.runtime = runtime;
-            }
-            if (typeof runRaw.reporter == "string") {
-                run.reporter = runRaw.reporter;
-            }
-            else if (runRaw.reporter && typeof runRaw.reporter == "object") {
-                const reporter = Object.assign(new ReporterConfig(), runRaw.reporter);
-                reporter.name = typeof reporter.name == "string" ? reporter.name : "";
-                reporter.options = Array.isArray(reporter.options)
-                    ? reporter.options.filter((item) => typeof item == "string")
-                    : [];
-                reporter.outDir =
-                    typeof reporter.outDir == "string" ? reporter.outDir : "";
-                reporter.outFile =
-                    typeof reporter.outFile == "string" ? reporter.outFile : "";
-                run.reporter = reporter;
-            }
-            run.env = parseEnvValue(runRaw.env, configDir, `$.modes.${name}.runOptions.env`);
-            mode.runOptions = run;
-        }
-        mode.env = parseEnvValue(modeRaw.env, configDir, `$.modes.${name}.env`);
+        mode.config = parseConfigRaw(value, join(configDir, `__mode__.${name}.json`));
         out[name] = mode;
     }
     return out;
@@ -947,6 +895,209 @@ function normalizeNonNegativeNumber(value, fallback) {
     }
     return Math.floor(value);
 }
+function getConfigMeta(config) {
+    const meta = CONFIG_META.get(config);
+    if (!meta) {
+        throw new Error("missing config metadata");
+    }
+    return meta;
+}
+function cloneCoverageOptions(coverage) {
+    if (typeof coverage == "boolean")
+        return coverage;
+    const cloned = Object.assign(new CoverageOptions(), coverage);
+    cloned.include = [...(coverage.include ?? [])];
+    cloned.exclude = [...(coverage.exclude ?? [])];
+    cloned.ignore = Object.assign(new CoverageIgnoreOptions(), coverage.ignore);
+    cloned.ignore.labels = [...(coverage.ignore.labels ?? [])];
+    cloned.ignore.names = [...(coverage.ignore.names ?? [])];
+    cloned.ignore.locations = [...(coverage.ignore.locations ?? [])];
+    cloned.ignore.snippets = [...(coverage.ignore.snippets ?? [])];
+    return cloned;
+}
+function cloneBuildOptions(options) {
+    const cloned = Object.assign(new BuildOptions(), options);
+    cloned.args = [...options.args];
+    cloned.env = { ...options.env };
+    return cloned;
+}
+function cloneRuntime(runtime) {
+    return Object.assign(new Runtime(), runtime);
+}
+function cloneReporterConfig(reporter) {
+    if (typeof reporter == "string")
+        return reporter;
+    const cloned = Object.assign(new ReporterConfig(), reporter);
+    cloned.options = [...(reporter.options ?? [])];
+    return cloned;
+}
+function cloneRunOptions(options) {
+    const cloned = Object.assign(new RunOptions(), options);
+    cloned.runtime = cloneRuntime(options.runtime);
+    cloned.reporter = cloneReporterConfig(options.reporter);
+    cloned.env = { ...options.env };
+    return cloned;
+}
+function cloneFuzzConfig(config) {
+    const cloned = Object.assign(new FuzzConfig(), config);
+    cloned.input = [...config.input];
+    return cloned;
+}
+function cloneModeConfig(config) {
+    const cloned = new ModeConfig();
+    cloned.path = config.path;
+    cloned.config = cloneConfig(config.config);
+    return cloned;
+}
+function cloneConfig(config) {
+    const cloned = Object.assign(new Config(), config);
+    cloned.input = [...config.input];
+    cloned.env = { ...config.env };
+    cloned.buildOptions = cloneBuildOptions(config.buildOptions);
+    cloned.runOptions = cloneRunOptions(config.runOptions);
+    cloned.fuzz = cloneFuzzConfig(config.fuzz);
+    cloned.coverage = cloneCoverageOptions(config.coverage);
+    cloned.modes = Object.fromEntries(Object.entries(config.modes).map(([name, mode]) => [name, cloneModeConfig(mode)]));
+    CONFIG_META.set(cloned, getConfigMeta(config));
+    return cloned;
+}
+function outputOverridesField(raw, field) {
+    if (field in raw)
+        return true;
+    if (!raw.output || typeof raw.output != "object" || Array.isArray(raw.output)) {
+        return false;
+    }
+    const output = raw.output;
+    if (field == "outDir")
+        return typeof output.build == "string" && output.build.length > 0;
+    if (field == "logs")
+        return typeof output.logs == "string" && output.logs.length > 0;
+    if (field == "coverageDir") {
+        return typeof output.coverage == "string" && output.coverage.length > 0;
+    }
+    return typeof output.snapshots == "string" && output.snapshots.length > 0;
+}
+function mergeBuildOptions(base, override, raw) {
+    const merged = cloneBuildOptions(base);
+    if ("cmd" in raw)
+        merged.cmd = override.cmd;
+    if ("args" in raw)
+        merged.args = [...override.args];
+    if ("target" in raw)
+        merged.target = override.target;
+    if ("env" in raw) {
+        merged.env = {
+            ...merged.env,
+            ...override.env,
+        };
+    }
+    return merged;
+}
+function mergeRunOptions(base, override, raw) {
+    const merged = cloneRunOptions(base);
+    if ("runtime" in raw || "run" in raw) {
+        const runtimeRaw = raw.runtime;
+        if ("run" in raw || (runtimeRaw && ("cmd" in runtimeRaw || "run" in runtimeRaw))) {
+            merged.runtime.cmd = override.runtime.cmd;
+        }
+        if (runtimeRaw && "browser" in runtimeRaw) {
+            merged.runtime.browser = override.runtime.browser;
+        }
+    }
+    if ("reporter" in raw) {
+        merged.reporter = cloneReporterConfig(override.reporter);
+    }
+    if ("env" in raw) {
+        merged.env = {
+            ...merged.env,
+            ...override.env,
+        };
+    }
+    return merged;
+}
+function mergeFuzzConfig(base, override, raw) {
+    const merged = cloneFuzzConfig(base);
+    if ("input" in raw)
+        merged.input = [...override.input];
+    if ("runs" in raw)
+        merged.runs = override.runs;
+    if ("seed" in raw)
+        merged.seed = override.seed;
+    if ("maxInputBytes" in raw)
+        merged.maxInputBytes = override.maxInputBytes;
+    if ("target" in raw)
+        merged.target = override.target;
+    if ("corpusDir" in raw)
+        merged.corpusDir = override.corpusDir;
+    if ("crashDir" in raw)
+        merged.crashDir = override.crashDir;
+    return merged;
+}
+function mergeRootConfig(base, override) {
+    const merged = cloneConfig(base);
+    const raw = getConfigMeta(override).raw;
+    if ("$schema" in raw)
+        merged.$schema = override.$schema;
+    if ("input" in raw)
+        merged.input = [...override.input];
+    if (outputOverridesField(raw, "outDir"))
+        merged.outDir = override.outDir;
+    if (outputOverridesField(raw, "logs"))
+        merged.logs = override.logs;
+    if (outputOverridesField(raw, "coverageDir")) {
+        merged.coverageDir = override.coverageDir;
+    }
+    if (outputOverridesField(raw, "snapshotDir")) {
+        merged.snapshotDir = override.snapshotDir;
+    }
+    if ("config" in raw)
+        merged.config = override.config;
+    if ("coverage" in raw)
+        merged.coverage = cloneCoverageOptions(override.coverage);
+    if ("env" in raw) {
+        merged.env = {
+            ...merged.env,
+            ...override.env,
+        };
+    }
+    if (raw.buildOptions && typeof raw.buildOptions == "object" && !Array.isArray(raw.buildOptions)) {
+        merged.buildOptions = mergeBuildOptions(merged.buildOptions, override.buildOptions, raw.buildOptions);
+    }
+    if (raw.runOptions && typeof raw.runOptions == "object" && !Array.isArray(raw.runOptions)) {
+        merged.runOptions = mergeRunOptions(merged.runOptions, override.runOptions, raw.runOptions);
+    }
+    if (raw.fuzz && typeof raw.fuzz == "object" && !Array.isArray(raw.fuzz)) {
+        merged.fuzz = mergeFuzzConfig(merged.fuzz, override.fuzz, raw.fuzz);
+    }
+    CONFIG_META.set(merged, getConfigMeta(override));
+    return merged;
+}
+function applyPerModeOutputDefaults(base, merged, override, modeName) {
+    const raw = getConfigMeta(override).raw;
+    if (!outputOverridesField(raw, "outDir")) {
+        merged.outDir = appendPathSegment(base.outDir, modeName);
+    }
+    if (!outputOverridesField(raw, "logs") && base.logs != "none") {
+        merged.logs = appendPathSegment(base.logs, modeName);
+    }
+    if (!outputOverridesField(raw, "coverageDir") && base.coverageDir != "none") {
+        merged.coverageDir = appendPathSegment(base.coverageDir, modeName);
+    }
+}
+function resolveModeOverrideConfig(root, modeName) {
+    const mode = root.modes[modeName];
+    if (!mode) {
+        throw new Error(`unknown mode "${modeName}"`);
+    }
+    if (mode.path) {
+        const override = loadConfig(mode.path, false);
+        if (Object.keys(override.modes).length) {
+            throw new Error(`mode "${modeName}" config file cannot declare nested modes`);
+        }
+        return override;
+    }
+    return cloneConfig(mode.config);
+}
 export function resolveModeNames(rawArgs) {
     const names = [];
     for (let i = 0; i < rawArgs.length; i++) {
@@ -975,12 +1126,7 @@ function appendModeTokens(out, value) {
 }
 export function applyMode(config, modeName) {
     if (!modeName) {
-        const merged = Object.assign(new Config(), config);
-        merged.buildOptions = Object.assign(new BuildOptions(), config.buildOptions);
-        merged.runOptions = Object.assign(new RunOptions(), config.runOptions);
-        merged.runOptions.runtime = Object.assign(new Runtime(), config.runOptions.runtime);
-        merged.buildOptions.env = { ...config.buildOptions.env };
-        merged.runOptions.env = { ...config.runOptions.env };
+        const merged = cloneConfig(config);
         merged.outDir = appendPathSegment(config.outDir, "default");
         if (config.logs != "none") {
             merged.logs = appendPathSegment(config.logs, "default");
@@ -988,7 +1134,6 @@ export function applyMode(config, modeName) {
         if (config.coverageDir != "none") {
             merged.coverageDir = appendPathSegment(config.coverageDir, "default");
         }
-        merged.fuzz = Object.assign(new FuzzConfig(), config.fuzz);
         merged.fuzz.crashDir = appendPathSegment(config.fuzz.crashDir, "default");
         merged.fuzz.corpusDir = appendPathSegment(config.fuzz.corpusDir, "default");
         const env = {
@@ -1003,71 +1148,17 @@ export function applyMode(config, modeName) {
             env,
         };
     }
-    const mode = config.modes[modeName];
-    if (!mode) {
+    if (!config.modes[modeName]) {
         const known = Object.keys(config.modes);
         const available = known.length ? known.join(", ") : "(none)";
         throw new Error(`unknown mode "${modeName}". Available modes: ${available}`);
     }
-    const merged = Object.assign(new Config(), config);
-    merged.buildOptions = Object.assign(new BuildOptions(), config.buildOptions);
-    merged.runOptions = Object.assign(new RunOptions(), config.runOptions);
-    merged.runOptions.runtime = Object.assign(new Runtime(), config.runOptions.runtime);
-    merged.buildOptions.env = { ...config.buildOptions.env };
-    merged.runOptions.env = { ...config.runOptions.env };
-    if (mode.outDir)
-        merged.outDir = mode.outDir;
-    else
-        merged.outDir = appendPathSegment(config.outDir, modeName);
-    if (mode.logs)
-        merged.logs = mode.logs;
-    else if (config.logs != "none")
-        merged.logs = appendPathSegment(config.logs, modeName);
-    if (mode.coverageDir)
-        merged.coverageDir = mode.coverageDir;
-    else if (config.coverageDir != "none")
-        merged.coverageDir = appendPathSegment(config.coverageDir, modeName);
-    if (mode.snapshotDir)
-        merged.snapshotDir = mode.snapshotDir;
-    if (mode.config)
-        merged.config = mode.config;
-    if (mode.coverage != undefined)
-        merged.coverage = mode.coverage;
-    if (mode.buildOptions.target)
-        merged.buildOptions.target = mode.buildOptions.target;
-    if (mode.buildOptions.cmd != undefined)
-        merged.buildOptions.cmd = mode.buildOptions.cmd;
-    if (mode.buildOptions.args) {
-        merged.buildOptions.args = [
-            ...merged.buildOptions.args,
-            ...mode.buildOptions.args,
-        ];
-    }
-    if (mode.buildOptions.env) {
-        merged.buildOptions.env = {
-            ...merged.buildOptions.env,
-            ...mode.buildOptions.env,
-        };
-    }
-    if (mode.runOptions.runtime?.cmd) {
-        merged.runOptions.runtime.cmd = mode.runOptions.runtime.cmd;
-    }
-    if (mode.runOptions.runtime?.browser != undefined) {
-        merged.runOptions.runtime.browser = mode.runOptions.runtime.browser;
-    }
-    if (mode.runOptions.reporter != undefined) {
-        merged.runOptions.reporter = mode.runOptions.reporter;
-    }
-    if (mode.runOptions.env) {
-        merged.runOptions.env = {
-            ...merged.runOptions.env,
-            ...mode.runOptions.env,
-        };
-    }
+    const modeOverride = resolveModeOverrideConfig(config, modeName);
+    const merged = mergeRootConfig(config, modeOverride);
+    applyPerModeOutputDefaults(config, merged, modeOverride, modeName);
     const env = {
         ...process.env,
-        ...config.env,
-        ...mode.env,
+        ...merged.env,
     };
     if (merged.runOptions.runtime.browser.length) {
         env.BROWSER = merged.runOptions.runtime.browser;

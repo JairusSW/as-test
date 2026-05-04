@@ -60,9 +60,7 @@ export class Runtime {
 }
 export class ModeConfig {
     constructor() {
-        this.buildOptions = {};
-        this.runOptions = {};
-        this.env = {};
+        this.config = new Config();
     }
 }
 export class ReporterConfig {

@@ -45,8 +45,16 @@ declare module "as-test" {
   }
 
   export interface FuzzSeed {
+    boolean(): boolean;
+    bool(): boolean;
+    i8(options?: IntellisenseIntegerOptions): number;
+    u8(options?: IntellisenseIntegerOptions): number;
+    i16(options?: IntellisenseIntegerOptions): number;
+    u16(options?: IntellisenseIntegerOptions): number;
     i32(options?: IntellisenseIntegerOptions): number;
     u32(options?: IntellisenseIntegerOptions): number;
+    i64(options?: IntellisenseIntegerOptions): number;
+    u64(options?: IntellisenseIntegerOptions): number;
     f32(options?: IntellisenseFloatOptions): number;
     f64(options?: IntellisenseFloatOptions): number;
     bytes(options?: IntellisenseBytesOptions): Uint8Array;

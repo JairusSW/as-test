@@ -20,8 +20,8 @@ class BuildFailureError extends Error {
         this.kind = args.kind;
     }
 }
-export async function build(configPath = DEFAULT_CONFIG_PATH, selectors = [], modeName, featureToggles = {}, overrides = {}) {
-    const loadedConfig = loadConfig(configPath, false);
+export async function build(configPath = DEFAULT_CONFIG_PATH, selectors = [], modeName, featureToggles = {}, overrides = {}, resolvedConfig) {
+    const loadedConfig = resolvedConfig ?? loadConfig(configPath, false);
     const mode = applyMode(loadedConfig, modeName);
     const config = Object.assign(Object.create(Object.getPrototypeOf(mode.config)), mode.config);
     config.buildOptions = Object.assign(Object.create(Object.getPrototypeOf(mode.config.buildOptions)), mode.config.buildOptions);
@@ -44,7 +44,9 @@ export async function build(configPath = DEFAULT_CONFIG_PATH, selectors = [], mo
         ...config.buildOptions.env,
         AS_TEST_COVERAGE_ENABLED: coverageEnabled ? "1" : "0",
     };
-    if (!process.env.AS_TEST_BUILD_API && !hasCustomBuildCommand(config)) {
+    if (!resolvedConfig &&
+        !process.env.AS_TEST_BUILD_API &&
+        !hasCustomBuildCommand(config)) {
         const pool = getSerialBuildWorkerPool();
         for (const file of inputFiles) {
             await pool.buildFileMode({

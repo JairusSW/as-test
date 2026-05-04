@@ -1390,7 +1390,7 @@ async function runTestMatrix(runFlags, configPath, selectors, suiteSelectors, fu
         if (!fuzzEnabled) {
             throw await buildNoTestFilesMatchedError(configPath, selectors);
         }
-        const fuzzFiles = await resolveSelectedFuzzFiles(configPath, selectors);
+        const fuzzFiles = await resolveSelectedFuzzFiles(configPath, selectors, modes);
         if (!fuzzFiles.length) {
             throw await buildNoTestFilesMatchedError(configPath, selectors, true);
         }
@@ -1514,7 +1514,7 @@ async function runFuzzModes(configPath, selectors, fuzzerSelectors, modes, rawAr
     const overrides = resolveFuzzOverrides(rawArgs, "fuzz");
     const parallelSettings = resolveFuzzParallelJobs(rawArgs);
     const clean = rawArgs.includes("--clean");
-    const fuzzFiles = await resolveSelectedFuzzFiles(configPath, selectors);
+    const fuzzFiles = await resolveSelectedFuzzFiles(configPath, selectors, modes);
     const { jobs, buildJobs, runJobs } = resolveEffectiveParallelJobs(parallelSettings, fuzzFiles.length);
     if (jobs > 1) {
         const results = await runFuzzMatrixResultsParallel(configPath, selectors, fuzzerSelectors, modes, overrides, jobs, buildJobs, runJobs, clean);
@@ -1798,7 +1798,7 @@ async function runTestMatrixParallel(runFlags, configPath, selectors, suiteSelec
         if (!fuzzEnabled) {
             throw await buildNoTestFilesMatchedError(configPath, selectors);
         }
-        const fuzzFiles = await resolveSelectedFuzzFiles(configPath, selectors);
+        const fuzzFiles = await resolveSelectedFuzzFiles(configPath, selectors, modes);
         if (!fuzzFiles.length) {
             throw await buildNoTestFilesMatchedError(configPath, selectors, true);
         }
@@ -1918,7 +1918,11 @@ async function runTestMatrixParallel(runFlags, configPath, selectors, suiteSelec
     return failed;
 }
 async function runFuzzMatrixResultsParallel(configPath, selectors, fuzzerSelectors, modes, overrides, jobs, buildJobs, runJobs, clean) {
-    const files = await resolveSelectedFuzzFiles(configPath, selectors);
+    const filesByMode = new Map();
+    for (const modeName of modes) {
+        filesByMode.set(modeName, await resolveSelectedFuzzFiles(configPath, selectors, [modeName]));
+    }
+    const files = [...new Set([...filesByMode.values()].flat())].sort((a, b) => a.localeCompare(b));
     if (!files.length) {
         throw new Error(`No fuzz files matched: ${selectors.length ? selectors.join(", ") : "configured input patterns"}`);
     }
@@ -1929,6 +1933,8 @@ async function runFuzzMatrixResultsParallel(configPath, selectors, fuzzerSelecto
         const token = renderQueuedFileStart(queueDisplay, path.basename(file));
         const fileResults = [];
         for (const modeName of modes) {
+            if (!(filesByMode.get(modeName)?.includes(file) ?? false))
+                continue;
             const modeResults = await fuzz(configPath, [file], modeName, overrides, fuzzerSelectors);
             fileResults.push(...modeResults);
         }
@@ -1942,19 +1948,22 @@ async function runFuzzMatrixResultsParallel(configPath, selectors, fuzzerSelecto
     return ordered.flat();
 }
 async function runFuzzMatrixResults(configPath, selectors, fuzzerSelectors, modes, overrides, reporter) {
-    const files = await resolveSelectedFuzzFiles(configPath, selectors);
-    if (!files.length) {
-        throw new Error(`No fuzz files matched: ${selectors.length ? selectors.join(", ") : "configured input patterns"}`);
-    }
     const results = [];
-    for (const file of files) {
-        const fileResults = [];
-        for (const modeName of modes) {
+    for (const modeName of modes) {
+        const files = await resolveSelectedFuzzFiles(configPath, selectors, [modeName]);
+        if (!files.length) {
+            continue;
+        }
+        for (const file of files) {
+            const fileResults = [];
             const modeResults = await fuzz(configPath, [file], modeName, overrides, fuzzerSelectors);
             fileResults.push(...modeResults);
             results.push(...modeResults);
+            reporter?.onFuzzFileComplete?.({ file, results: fileResults });
         }
-        reporter?.onFuzzFileComplete?.({ file, results: fileResults });
+    }
+    if (!results.length) {
+        throw new Error(`No fuzz files matched: ${selectors.length ? selectors.join(", ") : "configured input patterns"}`);
     }
     return results;
 }
@@ -2214,13 +2223,21 @@ async function resolveSelectedFiles(configPath, selectors, warn = true) {
     const specs = matches.filter((file) => file.endsWith(".spec.ts"));
     return [...new Set(specs)].sort((a, b) => a.localeCompare(b));
 }
-async function resolveSelectedFuzzFiles(configPath, selectors) {
+async function resolveSelectedFuzzFiles(configPath, selectors, modes = [undefined]) {
     const resolvedConfigPath = configPath ?? path.join(process.cwd(), "./as-test.config.json");
-    const config = loadConfig(resolvedConfigPath, false);
-    const patterns = resolveFuzzPatterns(config.fuzz.input, selectors);
-    const matches = await glob(patterns);
-    const fuzzFiles = matches.filter((file) => file.endsWith(".fuzz.ts"));
-    return [...new Set(fuzzFiles)].sort((a, b) => a.localeCompare(b));
+    const files = new Set();
+    for (const modeName of modes) {
+        const loaded = loadConfig(resolvedConfigPath, false);
+        const applied = applyMode(loaded, modeName);
+        const config = applied.config;
+        const patterns = resolveFuzzPatterns(config.fuzz.input, selectors);
+        const matches = await glob(patterns);
+        for (const file of matches) {
+            if (file.endsWith(".fuzz.ts"))
+                files.add(file);
+        }
+    }
+    return [...files].sort((a, b) => a.localeCompare(b));
 }
 async function resolveSelectedTestInputs(configPath, selectors) {
     const [specs, fuzz] = await Promise.all([
@@ -2662,9 +2679,9 @@ async function listExecutionPlan(command, configPath, selectors, modes, listFlag
         return;
     const specFiles = command == "fuzz" ? [] : await resolveSelectedFiles(configPath, selectors);
     const fuzzFiles = command == "fuzz"
-        ? await resolveSelectedFuzzFiles(configPath, selectors)
+        ? await resolveSelectedFuzzFiles(configPath, selectors, modes)
         : command == "test" && fuzzEnabled
-            ? await resolveSelectedFuzzFiles(configPath, selectors)
+            ? await resolveSelectedFuzzFiles(configPath, selectors, modes)
             : [];
     const files = command == "fuzz" ? fuzzFiles : specFiles;
     if (!specFiles.length && !fuzzFiles.length) {
@@ -2710,8 +2727,7 @@ async function listExecutionPlan(command, configPath, selectors, modes, listFlag
             }
         }
         const envOverrides = {
-            ...config.env,
-            ...(modeName ? (config.modes[modeName]?.env ?? {}) : {}),
+            ...active.env,
             ...(command == "build"
                 ? active.buildOptions.env
                 : command == "run" || command == "test"

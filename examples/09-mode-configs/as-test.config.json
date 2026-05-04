@@ -1,0 +1,43 @@
+{
+  "$schema": "./node_modules/as-test/as-test.config.schema.json",
+  "input": ["./assembly/__tests__/shared/*.spec.ts"],
+  "output": ".as-test/",
+  "config": "./asconfig.json",
+  "coverage": true,
+  "fuzz": {
+    "input": ["./assembly/__fuzz__/shared/*.fuzz.ts"],
+    "runs": 100,
+    "target": "bindings",
+    "corpusDir": "./.as-test/corpus",
+    "crashDir": "./.as-test/crashes"
+  },
+  "buildOptions": {
+    "cmd": "",
+    "args": [],
+    "target": "wasi"
+  },
+  "runOptions": {
+    "runtime": {
+      "cmd": "node ./.as-test/runners/default.wasi.js <file>"
+    }
+  },
+  "modes": {
+    "bindings-inline": {
+      "output": "./.as-test/bindings-inline",
+      "fuzz": {
+        "input": ["./assembly/__fuzz__/bindings-inline/*.fuzz.ts"],
+        "runs": 25,
+        "target": "bindings"
+      },
+      "buildOptions": {
+        "target": "bindings"
+      },
+      "runOptions": {
+        "runtime": {
+          "cmd": "node ./.as-test/runners/default.bindings.js <file>"
+        }
+      }
+    },
+    "bindings-file": "./as-test.config.bindings-file.json"
+  }
+}

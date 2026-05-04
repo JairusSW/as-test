@@ -12,7 +12,8 @@ const MAX_DEFAULT_SEED = 0x7fffffff;
 export async function fuzz(configPath = DEFAULT_CONFIG_PATH, selectors = [], modeName, overrides = {}, fuzzerSelectors = []) {
     const loadedConfig = loadConfig(configPath, false);
     const mode = applyMode(loadedConfig, modeName);
-    const config = resolveFuzzConfig(loadedConfig.fuzz, overrides);
+    const activeConfig = mode.config;
+    const config = resolveFuzzConfig(activeConfig.fuzz, overrides);
     const inputPatterns = resolveFuzzInputPatterns(config.input, selectors);
     const inputFiles = (await glob(inputPatterns)).sort((a, b) => a.localeCompare(b));
     if (!inputFiles.length) {
@@ -22,10 +23,10 @@ export async function fuzz(configPath = DEFAULT_CONFIG_PATH, selectors = [], mod
     const results = [];
     for (const file of inputFiles) {
         const buildStartedAt = Date.now();
-        await build(configPath, [file], modeName, { coverage: false }, { target: "bindings", args: ["--use", "AS_TEST_FUZZ=1"], kind: "fuzz" });
+        await build(configPath, [file], modeName, { coverage: false }, { target: "bindings", args: ["--use", "AS_TEST_FUZZ=1"], kind: "fuzz" }, activeConfig);
         const buildFinishedAt = Date.now();
         const buildTime = buildFinishedAt - buildStartedAt;
-        results.push(await runFuzzTarget(file, mode.config.outDir, duplicateBasenames, config, fuzzerSelectors, buildStartedAt, buildFinishedAt, buildTime, modeName));
+        results.push(await runFuzzTarget(file, activeConfig.outDir, duplicateBasenames, config, fuzzerSelectors, buildStartedAt, buildFinishedAt, buildTime, modeName));
     }
     return results;
 }

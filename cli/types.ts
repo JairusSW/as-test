@@ -52,15 +52,8 @@ export class Runtime {
 }
 
 export class ModeConfig {
-  outDir?: string;
-  logs?: string;
-  coverageDir?: string;
-  snapshotDir?: string;
-  config?: string;
-  coverage?: boolean | CoverageOptions;
-  buildOptions: Partial<BuildOptions> = {};
-  runOptions: Partial<RunOptions> = {};
-  env: Record<string, string> = {};
+  path?: string;
+  config: Config = new Config();
 }
 
 export class ReporterConfig {

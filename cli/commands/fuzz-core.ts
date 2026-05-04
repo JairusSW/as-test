@@ -84,7 +84,8 @@ export async function fuzz(
 ): Promise<FuzzResult[]> {
   const loadedConfig = loadConfig(configPath, false);
   const mode = applyMode(loadedConfig, modeName);
-  const config = resolveFuzzConfig(loadedConfig.fuzz, overrides);
+  const activeConfig = mode.config;
+  const config = resolveFuzzConfig(activeConfig.fuzz, overrides);
   const inputPatterns = resolveFuzzInputPatterns(config.input, selectors);
   const inputFiles = (await glob(inputPatterns)).sort((a, b) =>
     a.localeCompare(b),
@@ -106,13 +107,14 @@ export async function fuzz(
       modeName,
       { coverage: false },
       { target: "bindings", args: ["--use", "AS_TEST_FUZZ=1"], kind: "fuzz" },
+      activeConfig,
     );
     const buildFinishedAt = Date.now();
     const buildTime = buildFinishedAt - buildStartedAt;
     results.push(
       await runFuzzTarget(
         file,
-        mode.config.outDir,
+        activeConfig.outDir,
         duplicateBasenames,
         config,
         fuzzerSelectors,

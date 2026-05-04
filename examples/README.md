@@ -13,6 +13,7 @@ Each example is now a standalone project initialized with `ast init`.
 - `07-fuzzing`: `fuzz(...)`, custom generators, `ast fuzz`, and `ast test --fuzz`.
 - `07-web`: browser-runner example using `default.web.js` and a `web-headless` mode.
 - `08-json-as-runner-compare`: compares `as-test` and `as-pect` against the `json-as` test suite in `naive`, `swar`, and `simd` modes.
+- `09-mode-configs`: inline mode config objects, file-backed mode configs, and mode-local fuzz inputs.
 
 ## Run One Example
 
@@ -34,4 +35,5 @@ npm test
 - `01` through `06` run both `wasi` and `bindings` modes.
 - `07` focuses on the fuzzing workflow and runs `ast test --fuzz`.
 - `07-web` needs a runnable browser. Use `npm test` there with `BROWSER` set, or install Chromium / Firefox locally.
+- `09` shows how `--mode` can swap the active spec set, fuzz set, and runtime/build settings together.
 - Artifacts are isolated under each example's local `.as-test/` directory.

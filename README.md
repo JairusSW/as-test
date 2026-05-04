@@ -365,6 +365,36 @@ If you want to keep more than one runtime around, use modes:
 }
 ```
 
+Modes can also be full config objects. That means a mode can override fuzzing, input globs, output aliases, runtime, build flags, and the rest of the normal config surface:
+
+```json
+{
+  "modes": {
+    "web": {
+      "fuzz": {
+        "input": ["./assembly/__fuzz__/web/*.fuzz.ts"],
+        "runs": 200
+      },
+      "runOptions": {
+        "runtime": {
+          "browser": "chromium"
+        }
+      }
+    }
+  }
+}
+```
+
+If you prefer to keep one mode in a separate file, point the mode directly at that config file:
+
+```json
+{
+  "modes": {
+    "simd": "./as-test.config.simd.json"
+  }
+}
+```
+
 Run a specific mode with:
 
 ```bash

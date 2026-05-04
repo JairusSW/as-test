@@ -78,8 +78,9 @@ export async function build(
   modeName?: string,
   featureToggles: BuildFeatureToggles = {},
   overrides: BuildConfigOverrides = {},
+  resolvedConfig?: Config,
 ) {
-  const loadedConfig = loadConfig(configPath, false);
+  const loadedConfig = resolvedConfig ?? loadConfig(configPath, false);
   const mode = applyMode(loadedConfig, modeName);
   const config = Object.assign(
     Object.create(Object.getPrototypeOf(mode.config)),
@@ -117,7 +118,11 @@ export async function build(
     AS_TEST_COVERAGE_ENABLED: coverageEnabled ? "1" : "0",
   };
 
-  if (!process.env.AS_TEST_BUILD_API && !hasCustomBuildCommand(config)) {
+  if (
+    !resolvedConfig &&
+    !process.env.AS_TEST_BUILD_API &&
+    !hasCustomBuildCommand(config)
+  ) {
     const pool = getSerialBuildWorkerPool();
     for (const file of inputFiles) {
       await pool.buildFileMode({

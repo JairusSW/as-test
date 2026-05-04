@@ -1,0 +1,23 @@
+{
+  "$schema": "./node_modules/as-test/as-test.config.schema.json",
+  "output": "./.as-test/bindings-file",
+  "config": "./asconfig.json",
+  "coverage": true,
+  "fuzz": {
+    "input": ["./assembly/__fuzz__/bindings-file/*.fuzz.ts"],
+    "runs": 40,
+    "target": "bindings",
+    "corpusDir": "./.as-test/corpus",
+    "crashDir": "./.as-test/crashes"
+  },
+  "buildOptions": {
+    "cmd": "",
+    "args": [],
+    "target": "bindings"
+  },
+  "runOptions": {
+    "runtime": {
+      "cmd": "node ./.as-test/runners/default.bindings.js <file>"
+    }
+  }
+}

@@ -294,11 +294,43 @@
     },
     "modes": {
       "type": "object",
-      "description": "Named build/run modes. Each mode can override target/args/runtime/env and artifact directories.",
+      "description": "Named build/run modes. Each mode can be a config object or a path to another as-test config file.",
       "additionalProperties": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "Path to another as-test config file used as the selected mode's override config."
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "$schema": {
+                "type": "string"
+              },
+              "input": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "output": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "build": { "type": "string" },
+                      "logs": { "type": "string" },
+                      "coverage": { "type": "string" },
+                      "snapshots": { "type": "string" }
+                    }
+                  }
+                ]
+              },
           "outDir": {
             "type": "string",
             "description": "Mode-specific build output directory. If omitted, defaults to <outDir>/<mode-name>."
@@ -338,6 +370,38 @@
                 }
               }
             ]
+          },
+          "fuzz": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Mode-specific fuzz overrides applied before running `ast fuzz` or `ast test --fuzz` in this mode.",
+            "properties": {
+              "input": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "runs": {
+                "type": "number"
+              },
+              "seed": {
+                "type": "number"
+              },
+              "maxInputBytes": {
+                "type": "number"
+              },
+              "target": {
+                "type": "string",
+                "enum": ["bindings"]
+              },
+              "corpusDir": {
+                "type": "string"
+              },
+              "crashDir": {
+                "type": "string"
+              }
+            }
           },
           "buildOptions": {
             "type": "object",
@@ -469,7 +533,9 @@
               }
             ]
           }
-        }
+            }
+          }
+        ]
       },
       "default": {}
     },

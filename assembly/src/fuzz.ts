@@ -34,13 +34,20 @@ export class ArrayOptions {
   max: i32 = 16;
 }
 
-const DEFAULT_I32_OPTIONS = new IntegerOptions<i32>();
-const DEFAULT_U32_OPTIONS = new IntegerOptions<u32>();
 const DEFAULT_F32_OPTIONS = new FloatOptions<f32>();
 const DEFAULT_F64_OPTIONS = new FloatOptions<f64>();
 const DEFAULT_STRING_OPTIONS = new StringOptions();
 const DEFAULT_BYTES_OPTIONS = new BytesOptions();
 const DEFAULT_ARRAY_OPTIONS = new ArrayOptions();
+const I64_SIGN_MASK: u64 = 0x8000000000000000;
+const EMPTY_I8_EXCLUDE: i8[] = [];
+const EMPTY_U8_EXCLUDE: u8[] = [];
+const EMPTY_I16_EXCLUDE: i16[] = [];
+const EMPTY_U16_EXCLUDE: u16[] = [];
+const EMPTY_I32_EXCLUDE: i32[] = [];
+const EMPTY_U32_EXCLUDE: u32[] = [];
+const EMPTY_I64_EXCLUDE: i64[] = [];
+const EMPTY_U64_EXCLUDE: u64[] = [];
 
 export class FuzzSeed {
   private state: u32;
@@ -61,19 +68,99 @@ export class FuzzSeed {
     return (this.nextU32() & 1) == 1;
   }
 
+  bool(): bool {
+    return this.boolean();
+  }
+
   pick<T>(values: T[]): T {
     if (!values.length) panic();
     return unchecked(values[this.nextRange(0, values.length - 1)]);
   }
 
+  i8(options: IntegerOptions<i8> | null = null): i8 {
+    if (options == null) {
+      return this.nextI8InRange(i8.MIN_VALUE, i8.MAX_VALUE, EMPTY_I8_EXCLUDE, false);
+    }
+    return this.nextI8InRange(options.min, options.max, options.exclude, true);
+  }
+
+  u8(options: IntegerOptions<u8> | null = null): u8 {
+    if (options == null) {
+      return this.nextU8InRange(u8.MIN_VALUE, u8.MAX_VALUE, EMPTY_U8_EXCLUDE, false);
+    }
+    return this.nextU8InRange(options.min, options.max, options.exclude, true);
+  }
+
+  i16(options: IntegerOptions<i16> | null = null): i16 {
+    if (options == null) {
+      return this.nextI16InRange(
+        i16.MIN_VALUE,
+        i16.MAX_VALUE,
+        EMPTY_I16_EXCLUDE,
+        false,
+      );
+    }
+    return this.nextI16InRange(options.min, options.max, options.exclude, true);
+  }
+
+  u16(options: IntegerOptions<u16> | null = null): u16 {
+    if (options == null) {
+      return this.nextU16InRange(
+        u16.MIN_VALUE,
+        u16.MAX_VALUE,
+        EMPTY_U16_EXCLUDE,
+        false,
+      );
+    }
+    return this.nextU16InRange(options.min, options.max, options.exclude, true);
+  }
+
   i32(options: IntegerOptions<i32> | null = null): i32 {
-    const config = options != null ? options : DEFAULT_I32_OPTIONS;
-    return this.nextI32InRange(config.min, config.max, config.exclude);
+    if (options == null) {
+      return this.nextI32InRange(
+        i32.MIN_VALUE,
+        i32.MAX_VALUE,
+        EMPTY_I32_EXCLUDE,
+        false,
+      );
+    }
+    return this.nextI32InRange(options.min, options.max, options.exclude, true);
   }
 
   u32(options: IntegerOptions<u32> | null = null): u32 {
-    const config = options != null ? options : DEFAULT_U32_OPTIONS;
-    return this.nextU32InRange(config.min, config.max, config.exclude);
+    if (options == null) {
+      return this.nextU32InRange(
+        u32.MIN_VALUE,
+        u32.MAX_VALUE,
+        EMPTY_U32_EXCLUDE,
+        false,
+      );
+    }
+    return this.nextU32InRange(options.min, options.max, options.exclude, true);
+  }
+
+  i64(options: IntegerOptions<i64> | null = null): i64 {
+    if (options == null) {
+      return this.nextI64InRange(
+        i64.MIN_VALUE,
+        i64.MAX_VALUE,
+        EMPTY_I64_EXCLUDE,
+        false,
+      );
+    }
+    return this.nextI64InRange(options.min, options.max, options.exclude, true);
+  }
+
+  u64(options: IntegerOptions<u64> | null = null): u64 {
+    if (options == null) {
+      return this.nextU64InRange(
+        u64.MIN_VALUE,
+        u64.MAX_VALUE,
+        EMPTY_U64_EXCLUDE,
+        false,
+      );
+    }
+    return this.nextU64InRange(options.min, options.max, options.exclude, true);
   }
 
   f32(options: FloatOptions<f32> | null = null): f32 {
@@ -201,8 +288,16 @@ export class FuzzSeed {
     return 0;
   }
 
-  private nextI32InRange(min: i32, max: i32, exclude: i32[]): i32 {
-    if (max < min) panic();
+  private nextI32InRange(
+    min: i32,
+    max: i32,
+    exclude: i32[],
+    validateRange: bool = true,
+  ): i32 {
+    if (validateRange && max < min) panic();
+    if (!validateRange && min == i32.MIN_VALUE && max == i32.MAX_VALUE) {
+      return <i32>this.nextU32();
+    }
     if (!exclude.length) {
       return max <= min ? min : min + <i32>(this.nextU32() % <u32>(max - min + 1));
     }
@@ -215,14 +310,172 @@ export class FuzzSeed {
     return min;
   }
 
-  private nextU32InRange(min: u32, max: u32, exclude: u32[]): u32 {
-    if (max < min) panic();
+  private nextI8InRange(
+    min: i8,
+    max: i8,
+    exclude: i8[],
+    validateRange: bool = true,
+  ): i8 {
+    if (validateRange && max < min) panic();
+    if (!validateRange && min == i8.MIN_VALUE && max == i8.MAX_VALUE) {
+      return <i8>this.nextU32();
+    }
+    const left = <i32>min;
+    const right = <i32>max;
+    if (!exclude.length) {
+      return <i8>(
+        right <= left ? left : left + <i32>(this.nextU32() % <u32>(right - left + 1))
+      );
+    }
+    for (let attempts = 0; attempts < 1024; attempts++) {
+      const value = <i8>(
+        right <= left ? left : left + <i32>(this.nextU32() % <u32>(right - left + 1))
+      );
+      if (!containsValue<i8>(exclude, value)) return value;
+    }
+    panic();
+    return min;
+  }
+
+  private nextU8InRange(
+    min: u8,
+    max: u8,
+    exclude: u8[],
+    validateRange: bool = true,
+  ): u8 {
+    if (validateRange && max < min) panic();
+    if (!validateRange && min == u8.MIN_VALUE && max == u8.MAX_VALUE) {
+      return <u8>this.nextU32();
+    }
+    const left = <u32>min;
+    const right = <u32>max;
+    if (!exclude.length) {
+      return <u8>(right <= left ? left : left + (this.nextU32() % (right - left + 1)));
+    }
+    for (let attempts = 0; attempts < 1024; attempts++) {
+      const value = <u8>(
+        right <= left ? left : left + (this.nextU32() % (right - left + 1))
+      );
+      if (!containsValue<u8>(exclude, value)) return value;
+    }
+    panic();
+    return min;
+  }
+
+  private nextI16InRange(
+    min: i16,
+    max: i16,
+    exclude: i16[],
+    validateRange: bool = true,
+  ): i16 {
+    if (validateRange && max < min) panic();
+    if (!validateRange && min == i16.MIN_VALUE && max == i16.MAX_VALUE) {
+      return <i16>this.nextU32();
+    }
+    const left = <i32>min;
+    const right = <i32>max;
+    if (!exclude.length) {
+      return <i16>(
+        right <= left ? left : left + <i32>(this.nextU32() % <u32>(right - left + 1))
+      );
+    }
+    for (let attempts = 0; attempts < 1024; attempts++) {
+      const value = <i16>(
+        right <= left ? left : left + <i32>(this.nextU32() % <u32>(right - left + 1))
+      );
+      if (!containsValue<i16>(exclude, value)) return value;
+    }
+    panic();
+    return min;
+  }
+
+  private nextU16InRange(
+    min: u16,
+    max: u16,
+    exclude: u16[],
+    validateRange: bool = true,
+  ): u16 {
+    if (validateRange && max < min) panic();
+    if (!validateRange && min == u16.MIN_VALUE && max == u16.MAX_VALUE) {
+      return <u16>this.nextU32();
+    }
+    const left = <u32>min;
+    const right = <u32>max;
+    if (!exclude.length) {
+      return <u16>(right <= left ? left : left + (this.nextU32() % (right - left + 1)));
+    }
+    for (let attempts = 0; attempts < 1024; attempts++) {
+      const value = <u16>(
+        right <= left ? left : left + (this.nextU32() % (right - left + 1))
+      );
+      if (!containsValue<u16>(exclude, value)) return value;
+    }
+    panic();
+    return min;
+  }
+
+  private nextU32InRange(
+    min: u32,
+    max: u32,
+    exclude: u32[],
+    validateRange: bool = true,
+  ): u32 {
+    if (validateRange && max < min) panic();
+    if (!validateRange && min == u32.MIN_VALUE && max == u32.MAX_VALUE) {
+      return this.nextU32();
+    }
     if (!exclude.length) {
       return max <= min ? min : min + (this.nextU32() % (max - min + 1));
     }
     for (let attempts = 0; attempts < 1024; attempts++) {
       const value = max <= min ? min : min + (this.nextU32() % (max - min + 1));
       if (!containsValue<u32>(exclude, value)) return value;
+    }
+    panic();
+    return min;
+  }
+
+  private nextI64InRange(
+    min: i64,
+    max: i64,
+    exclude: i64[],
+    validateRange: bool = true,
+  ): i64 {
+    if (validateRange && max < min) panic();
+    if (!validateRange && min == i64.MIN_VALUE && max == i64.MAX_VALUE) {
+      return <i64>this.nextU64();
+    }
+    const left = this.toOrderedU64(min);
+    const right = this.toOrderedU64(max);
+    if (!exclude.length) {
+      return this.fromOrderedU64(
+        left + this.nextU64Offset(left, right),
+      );
+    }
+    for (let attempts = 0; attempts < 1024; attempts++) {
+      const value = this.fromOrderedU64(left + this.nextU64Offset(left, right));
+      if (!containsValue<i64>(exclude, value)) return value;
+    }
+    panic();
+    return min;
+  }
+
+  private nextU64InRange(
+    min: u64,
+    max: u64,
+    exclude: u64[],
+    validateRange: bool = true,
+  ): u64 {
+    if (validateRange && max < min) panic();
+    if (!validateRange && min == u64.MIN_VALUE && max == u64.MAX_VALUE) {
+      return this.nextU64();
+    }
+    if (!exclude.length) {
+      return min + this.nextU64Offset(min, max);
+    }
+    for (let attempts = 0; attempts < 1024; attempts++) {
+      const value = min + this.nextU64Offset(min, max);
+      if (!containsValue<u64>(exclude, value)) return value;
     }
     panic();
     return min;
@@ -267,6 +520,20 @@ export class FuzzSeed {
     const hi = <u64>this.nextU32();
     const lo = <u64>this.nextU32();
     return (hi << 32) | lo;
+  }
+
+  private nextU64Offset(min: u64, max: u64): u64 {
+    if (max <= min) return 0;
+    if (min == 0 && max == u64.MAX_VALUE) return this.nextU64();
+    return this.nextU64() % (max - min + 1);
+  }
+
+  private toOrderedU64(value: i64): u64 {
+    return <u64>value ^ I64_SIGN_MASK;
+  }
+
+  private fromOrderedU64(value: u64): i64 {
+    return <i64>(value ^ I64_SIGN_MASK);
   }
 }
 
