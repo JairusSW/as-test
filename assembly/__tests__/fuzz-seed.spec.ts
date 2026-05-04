@@ -108,46 +108,74 @@ describe("FuzzSeed primitive generators", () => {
     const u8Options = createOptionsU8();
     const i16Options = createOptionsI16();
     const u16Options = createOptionsU16();
+    let i8InRange = true;
+    let i8Excluded = false;
+    let u8InRange = true;
+    let u8Excluded = false;
+    let i16InRange = true;
+    let i16Excluded = false;
+    let u16InRange = true;
+    let u16Excluded = false;
 
     for (let i = 0; i < 64; i++) {
       const i8Value = seed.i8(i8Options);
-      expect(i8Value >= i8Options.min).toBe(true);
-      expect(i8Value <= i8Options.max).toBe(true);
-      expect(i8Value == -1 || i8Value == 0 || i8Value == 1).toBe(false);
+      if (i8Value < i8Options.min || i8Value > i8Options.max) i8InRange = false;
+      if (i8Value == -1 || i8Value == 0 || i8Value == 1) i8Excluded = true;
 
       const u8Value = seed.u8(u8Options);
-      expect(u8Value >= u8Options.min).toBe(true);
-      expect(u8Value <= u8Options.max).toBe(true);
-      expect(u8Value == 4 || u8Value == 8).toBe(false);
+      if (u8Value < u8Options.min || u8Value > u8Options.max) u8InRange = false;
+      if (u8Value == 4 || u8Value == 8) u8Excluded = true;
 
       const i16Value = seed.i16(i16Options);
-      expect(i16Value >= i16Options.min).toBe(true);
-      expect(i16Value <= i16Options.max).toBe(true);
-      expect(i16Value == -10 || i16Value == 10).toBe(false);
+      if (i16Value < i16Options.min || i16Value > i16Options.max) {
+        i16InRange = false;
+      }
+      if (i16Value == -10 || i16Value == 10) i16Excluded = true;
 
       const u16Value = seed.u16(u16Options);
-      expect(u16Value >= u16Options.min).toBe(true);
-      expect(u16Value <= u16Options.max).toBe(true);
-      expect(u16Value == 12 || u16Value == 256).toBe(false);
+      if (u16Value < u16Options.min || u16Value > u16Options.max) {
+        u16InRange = false;
+      }
+      if (u16Value == 12 || u16Value == 256) u16Excluded = true;
     }
+
+    expect(i8InRange).toBe(true);
+    expect(i8Excluded).toBe(false);
+    expect(u8InRange).toBe(true);
+    expect(u8Excluded).toBe(false);
+    expect(i16InRange).toBe(true);
+    expect(i16Excluded).toBe(false);
+    expect(u16InRange).toBe(true);
+    expect(u16Excluded).toBe(false);
   });
 
   test("supports i64/u64 ranges and exclusions", () => {
     const seed = new FuzzSeed(1337);
     const i64Options = createOptionsI64();
     const u64Options = createOptionsU64();
+    let i64InRange = true;
+    let i64Excluded = false;
+    let u64InRange = true;
+    let u64Excluded = false;
 
     for (let i = 0; i < 64; i++) {
       const i64Value = seed.i64(i64Options);
-      expect(i64Value >= i64Options.min).toBe(true);
-      expect(i64Value <= i64Options.max).toBe(true);
-      expect(i64Value == -7 || i64Value == 0 || i64Value == 7).toBe(false);
+      if (i64Value < i64Options.min || i64Value > i64Options.max) {
+        i64InRange = false;
+      }
+      if (i64Value == -7 || i64Value == 0 || i64Value == 7) i64Excluded = true;
 
       const u64Value = seed.u64(u64Options);
-      expect(u64Value >= u64Options.min).toBe(true);
-      expect(u64Value <= u64Options.max).toBe(true);
-      expect(u64Value == 8 || u64Value == 16).toBe(false);
+      if (u64Value < u64Options.min || u64Value > u64Options.max) {
+        u64InRange = false;
+      }
+      if (u64Value == 8 || u64Value == 16) u64Excluded = true;
     }
+
+    expect(i64InRange).toBe(true);
+    expect(i64Excluded).toBe(false);
+    expect(u64InRange).toBe(true);
+    expect(u64Excluded).toBe(false);
   });
 
   test("supports bool as an alias of boolean", () => {
