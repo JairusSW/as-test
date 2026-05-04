@@ -1,0 +1,9 @@
+{
+  "timestamp": "2026-05-04T07:02:22.917Z",
+  "kind": "test",
+  "file": "assembly/__tests__/shared/shared.spec.ts",
+  "mode": "bindings-file",
+  "error": "missing report payload from test runtime\nruntime diagnostics: exitCode=1, channelClose=no\nreport stream: dataFrames=0, dataBytes=0, chunked=no, chunkStart=no, chunkEnd=no, chunkFrames=0, expectedChunkFrames=0, chunkBytes=0, expectedChunkBytes=0\nruntime events: fileStart=no, fileEnd=no, fileVerdict=none, suiteStarts=0, suiteEnds=0, assertionFails=0, warnings=0, logs=0",
+  "stdout": "",
+  "stderr": ""
+}

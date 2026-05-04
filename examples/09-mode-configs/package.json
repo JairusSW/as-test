@@ -3,11 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "npm run test:default && npm run test:inline && npm run test:file && npm run test:fuzz && npm run test:fuzz:inline && npm run test:fuzz:file",
-    "test:default": "as-test test",
+    "test": "npm run test:default && npm run test:inline && npm run test:file",
+    "test:default": "as-test test --config ./as-test.config.root.json",
     "test:inline": "as-test test --mode bindings-inline",
     "test:file": "as-test test --mode bindings-file",
-    "test:fuzz": "as-test fuzz --runs 10",
+    "test:fuzz": "as-test fuzz --config ./as-test.config.root-fuzz.json --mode root-fuzz --runs 10",
     "test:fuzz:inline": "as-test fuzz --mode bindings-inline --runs 10",
     "test:fuzz:file": "as-test fuzz --mode bindings-file --runs 10"
   },

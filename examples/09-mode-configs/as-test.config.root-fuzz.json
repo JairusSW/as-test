@@ -1,0 +1,22 @@
+{
+  "$schema": "./node_modules/as-test/as-test.config.schema.json",
+  "modes": {
+    "root-fuzz": {
+      "output": ".as-test/",
+      "config": "./asconfig.json",
+      "coverage": true,
+      "fuzz": {
+        "input": ["./assembly/__fuzz__/shared/*.fuzz.ts"],
+        "runs": 100,
+        "target": "bindings",
+        "corpusDir": "./.as-test/corpus",
+        "crashDir": "./.as-test/crashes"
+      },
+      "buildOptions": {
+        "cmd": "",
+        "args": [],
+        "target": "bindings"
+      }
+    }
+  }
+}

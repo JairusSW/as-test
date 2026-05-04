@@ -23,7 +23,7 @@ export async function fuzz(configPath = DEFAULT_CONFIG_PATH, selectors = [], mod
     const results = [];
     for (const file of inputFiles) {
         const buildStartedAt = Date.now();
-        await build(configPath, [file], modeName, { coverage: false }, { target: "bindings", args: ["--use", "AS_TEST_FUZZ=1"], kind: "fuzz" }, activeConfig);
+        await build(configPath, [file], modeName, { coverage: false }, { target: "bindings", args: ["--use", "AS_TEST_FUZZ=1"], kind: "fuzz" }, loadedConfig);
         const buildFinishedAt = Date.now();
         const buildTime = buildFinishedAt - buildStartedAt;
         results.push(await runFuzzTarget(file, activeConfig.outDir, duplicateBasenames, config, fuzzerSelectors, buildStartedAt, buildFinishedAt, buildTime, modeName));

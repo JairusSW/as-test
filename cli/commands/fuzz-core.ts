@@ -107,7 +107,7 @@ export async function fuzz(
       modeName,
       { coverage: false },
       { target: "bindings", args: ["--use", "AS_TEST_FUZZ=1"], kind: "fuzz" },
-      activeConfig,
+      loadedConfig,
     );
     const buildFinishedAt = Date.now();
     const buildTime = buildFinishedAt - buildStartedAt;
