@@ -1,9 +1,13 @@
 # Change Log
 
+## 2026-05-08 - v1.0.16
+
+- feat: modes inherit pre-declared properties if not explicitly overriden
+
 ## 2026-05-04 - v1.0.15
 
 - fix: path resolving
-- 
+
 ## 2026-05-04 - v1.0.14
 
 ### Fuzzing
