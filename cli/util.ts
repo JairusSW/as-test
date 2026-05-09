@@ -1218,6 +1218,78 @@ function outputOverridesField(
   return typeof output.snapshots == "string" && output.snapshots.length > 0;
 }
 
+function mergeCoverageIgnoreOptions(
+  base: CoverageIgnoreOptions,
+  override: CoverageIgnoreOptions,
+  raw: Record<string, unknown>,
+): CoverageIgnoreOptions {
+  const merged = Object.assign(new CoverageIgnoreOptions(), base);
+  merged.labels = [...base.labels];
+  merged.names = [...base.names];
+  merged.locations = [...base.locations];
+  merged.snippets = [...base.snippets];
+  if ("labels" in raw) merged.labels = [...override.labels];
+  if ("names" in raw) merged.names = [...override.names];
+  if ("locations" in raw) merged.locations = [...override.locations];
+  if ("snippets" in raw) merged.snippets = [...override.snippets];
+  return merged;
+}
+
+function mergeCoverageConfig(
+  base: boolean | CoverageOptions,
+  override: boolean | CoverageOptions,
+  raw: unknown,
+): boolean | CoverageOptions {
+  if (typeof raw == "boolean") return override;
+  if (!raw || typeof raw != "object" || Array.isArray(raw)) return cloneCoverageOptions(base);
+
+  const mergedBase: CoverageOptions = typeof base == "boolean"
+    ? Object.assign(new CoverageOptions(), { enabled: base })
+    : cloneCoverageOptions(base) as CoverageOptions;
+  const overrideOptions: CoverageOptions = typeof override == "boolean"
+    ? Object.assign(new CoverageOptions(), { enabled: override })
+    : cloneCoverageOptions(override) as CoverageOptions;
+  const rawObject = raw as Record<string, unknown>;
+
+  if ("enabled" in rawObject) mergedBase.enabled = overrideOptions.enabled;
+  if ("includeSpecs" in rawObject) mergedBase.includeSpecs = overrideOptions.includeSpecs;
+  if ("include" in rawObject) mergedBase.include = [...overrideOptions.include];
+  if ("exclude" in rawObject) mergedBase.exclude = [...overrideOptions.exclude];
+  if (rawObject.ignore && typeof rawObject.ignore == "object" && !Array.isArray(rawObject.ignore)) {
+    mergedBase.ignore = mergeCoverageIgnoreOptions(
+      mergedBase.ignore,
+      overrideOptions.ignore,
+      rawObject.ignore as Record<string, unknown>,
+    );
+  }
+  return mergedBase;
+}
+
+function mergeReporterConfigByRaw(
+  base: string | ReporterConfig,
+  override: string | ReporterConfig,
+  raw: unknown,
+): string | ReporterConfig {
+  if (typeof raw == "string") return override;
+  if (!raw || typeof raw != "object" || Array.isArray(raw)) {
+    return cloneReporterConfig(base);
+  }
+
+  const mergedBase: ReporterConfig = typeof base == "string"
+    ? new ReporterConfig()
+    : cloneReporterConfig(base) as ReporterConfig;
+  const overrideConfig: ReporterConfig = typeof override == "string"
+    ? new ReporterConfig()
+    : cloneReporterConfig(override) as ReporterConfig;
+  const rawObject = raw as Record<string, unknown>;
+
+  if ("name" in rawObject) mergedBase.name = overrideConfig.name;
+  if ("options" in rawObject) mergedBase.options = [...overrideConfig.options];
+  if ("outDir" in rawObject) mergedBase.outDir = overrideConfig.outDir;
+  if ("outFile" in rawObject) mergedBase.outFile = overrideConfig.outFile;
+  return mergedBase;
+}
+
 function mergeBuildOptions(
   base: BuildOptions,
   override: BuildOptions,
@@ -1228,10 +1300,7 @@ function mergeBuildOptions(
   if ("args" in raw) merged.args = [...override.args];
   if ("target" in raw) merged.target = override.target;
   if ("env" in raw) {
-    merged.env = {
-      ...merged.env,
-      ...override.env,
-    };
+    merged.env = { ...override.env };
   }
   return merged;
 }
@@ -1252,13 +1321,14 @@ function mergeRunOptions(
     }
   }
   if ("reporter" in raw) {
-    merged.reporter = cloneReporterConfig(override.reporter);
+    merged.reporter = mergeReporterConfigByRaw(
+      merged.reporter,
+      override.reporter,
+      raw.reporter,
+    );
   }
   if ("env" in raw) {
-    merged.env = {
-      ...merged.env,
-      ...override.env,
-    };
+    merged.env = { ...override.env };
   }
   return merged;
 }
@@ -1294,12 +1364,15 @@ function mergeRootConfig(base: Config, override: Config): Config {
     merged.snapshotDir = override.snapshotDir;
   }
   if ("config" in raw) merged.config = override.config;
-  if ("coverage" in raw) merged.coverage = cloneCoverageOptions(override.coverage);
+  if ("coverage" in raw) {
+    merged.coverage = mergeCoverageConfig(
+      merged.coverage,
+      override.coverage,
+      raw.coverage,
+    );
+  }
   if ("env" in raw) {
-    merged.env = {
-      ...merged.env,
-      ...override.env,
-    };
+    merged.env = { ...override.env };
   }
   if (raw.buildOptions && typeof raw.buildOptions == "object" && !Array.isArray(raw.buildOptions)) {
     merged.buildOptions = mergeBuildOptions(
