@@ -53,6 +53,7 @@ export class Runtime {
 
 export class ModeConfig {
   path?: string;
+  default: boolean = true;
   config: Config = new Config();
 }
 

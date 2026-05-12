@@ -305,6 +305,11 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+              "default": {
+                "type": "boolean",
+                "description": "Include this mode when --mode is omitted. Defaults to true.",
+                "default": true
+              },
               "$schema": {
                 "type": "string"
               },

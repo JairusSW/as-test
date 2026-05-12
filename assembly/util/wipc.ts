@@ -34,6 +34,8 @@ const HEADER_SIZE: i32 = 9;
 const IOV_SIZE: usize = sizeof<usize>() * 2;
 const U32_SIZE: usize = sizeof<u32>();
 const REPORT_CHUNK_BYTES: i32 = 65536;
+const WASI_ERRNO_AGAIN: i32 = 6;
+const WASI_ERRNO_INTR: i32 = 27;
 
 // @ts-ignore
 const IS_BINDINGS: bool = isDefined(AS_TEST_BINDINGS);
@@ -319,10 +321,15 @@ function wasiRead(max: i32): ArrayBuffer {
 
   store<usize>(iovPtr, changetype<usize>(out), 0);
   store<usize>(iovPtr, <usize>max, sizeof<usize>());
-  store<u32>(readPtr, 0, 0);
-
-  const errno = wasi_fd_read(0, iovPtr, 1, readPtr);
-  if (errno != 0) return new ArrayBuffer(0);
+  while (true) {
+    store<u32>(readPtr, 0, 0);
+    const errno = wasi_fd_read(0, iovPtr, 1, readPtr);
+    if (errno == WASI_ERRNO_AGAIN || errno == WASI_ERRNO_INTR) {
+      continue;
+    }
+    if (errno != 0) return new ArrayBuffer(0);
+    break;
+  }
 
   const size = <i32>load<u32>(readPtr, 0);
   if (size <= 0) return new ArrayBuffer(0);

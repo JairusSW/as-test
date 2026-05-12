@@ -77,7 +77,7 @@ Minimal `as-test.config.json`:
   },
   "runOptions": {
     "runtime": {
-      "cmd": "node .as-test/runners/default.wasi.js <file>"
+      "cmd": "node .as-test/runners/default.wasi.js"
     }
   }
 }
@@ -323,7 +323,7 @@ For example, a simple WASI setup in `as-test.config.json` can look like this:
   },
   "runOptions": {
     "runtime": {
-      "cmd": "node ./.as-test/runners/default.wasi.js <file>"
+      "cmd": "node ./.as-test/runners/default.wasi.js"
     }
   }
 }
@@ -342,28 +342,61 @@ If you want to keep more than one runtime around, use modes:
   "input": ["./assembly/__tests__/*.spec.ts"],
   "modes": {
     "wasi": {
+      "default": true,
       "buildOptions": {
         "target": "wasi"
       },
       "runOptions": {
         "runtime": {
-          "cmd": "node ./.as-test/runners/default.wasi.js <file>"
+          "cmd": "node ./.as-test/runners/default.wasi.js"
         }
       }
     },
     "bindings": {
+      "default": true,
       "buildOptions": {
         "target": "bindings"
       },
       "runOptions": {
         "runtime": {
-          "cmd": "node ./.as-test/runners/default.bindings.js <file>"
+          "cmd": "node ./.as-test/runners/default.bindings.js"
         }
       }
     }
   }
 }
 ```
+
+Set `"default": false` on a mode when you want to keep it available for explicit `--mode ...` runs without including it in normal runs:
+
+```json
+{
+  "modes": {
+    "web": {
+      "default": false,
+      "runOptions": {
+        "runtime": {
+          "browser": "chromium"
+        }
+      }
+    }
+  }
+}
+```
+
+With that setup:
+
+```bash
+npx ast test
+```
+
+runs the root/default config plus any modes whose `"default"` flag is not `false`, while:
+
+```bash
+npx ast test --mode web
+```
+
+still runs the `web` mode explicitly.
 
 Modes can also be full config objects. That means a mode can override fuzzing, input globs, output aliases, runtime, build flags, and the rest of the normal config surface:
 

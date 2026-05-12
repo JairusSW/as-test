@@ -276,7 +276,7 @@ async function runInteractiveOnboarding(
             {
               value: "web",
               label:
-                "web (default runner: node .as-test/runners/default.web.js <file>)",
+                "web (default runner: node .as-test/runners/default.web.js)",
             },
           ],
           face,
@@ -547,19 +547,11 @@ function printPlan(
       isDir: false,
     });
     fileEntries.push({
-      path: ".as-test/runners/default.bindings.hooks.js",
-      isDir: false,
-    });
-    fileEntries.push({
       path: ".as-test/runners/default.wasi.js",
       isDir: false,
     });
     fileEntries.push({
       path: ".as-test/runners/default.web.js",
-      isDir: false,
-    });
-    fileEntries.push({
-      path: ".as-test/runners/default.web.hooks.js",
       isDir: false,
     });
   }
@@ -656,20 +648,29 @@ function applyInit(
       runtime: {
         cmd:
           target == "wasi"
-            ? "node .as-test/runners/default.wasi.js <file>"
+            ? "node .as-test/runners/default.wasi.js"
             : target == "bindings"
-              ? "node .as-test/runners/default.bindings.js <file>"
-              : "node .as-test/runners/default.web.js <file>",
+              ? "node .as-test/runners/default.bindings.js"
+              : "node .as-test/runners/default.web.js",
       },
       reporter: "default",
     },
     modes:
       target == "web"
         ? {
-            "web-headless": {
+            web: {
+              default: false,
               runOptions: {
                 runtime: {
-                  cmd: "node .as-test/runners/default.web.js --headless <file>",
+                  cmd: "node .as-test/runners/default.web.js",
+                },
+              },
+            },
+            "web-headless": {
+              default: false,
+              runOptions: {
+                runtime: {
+                  cmd: "node .as-test/runners/default.web.js --headless",
                 },
               },
             },
@@ -725,17 +726,6 @@ function applyInit(
   }
 
   if (target == "wasi" || target == "bindings" || target == "web") {
-    const hooksPath = path.join(root, ".as-test/runners/default.bindings.hooks.js");
-    writeManagedFile(
-      hooksPath,
-      buildBindingsRunnerHooks(),
-      force,
-      summary,
-      ".as-test/runners/default.bindings.hooks.js",
-    );
-  }
-
-  if (target == "wasi" || target == "bindings" || target == "web") {
     const runnerPath = path.join(root, ".as-test/runners/default.web.js");
     writeManagedFile(
       runnerPath,
@@ -743,17 +733,6 @@ function applyInit(
       force,
       summary,
       ".as-test/runners/default.web.js",
-    );
-  }
-
-  if (target == "wasi" || target == "bindings" || target == "web") {
-    const hooksPath = path.join(root, ".as-test/runners/default.web.hooks.js");
-    writeManagedFile(
-      hooksPath,
-      buildWebRunnerHooks(),
-      force,
-      summary,
-      ".as-test/runners/default.web.hooks.js",
     );
   }
 
@@ -1302,220 +1281,33 @@ fuzz("basic string fuzzer", (value: string): bool => {
 }
 
 function buildWasiRunner(): string {
-  return `import { readFileSync } from "fs";
-import { WASI } from "wasi";
+  return `import { instantiate } from "as-test/lib";
 
-const originalEmitWarning = process.emitWarning.bind(process);
-process.emitWarning = ((warning, ...args) => {
-  const type = typeof args[0] == "string" ? args[0] : "";
-  const name = typeof warning?.name == "string" ? warning.name : type;
-  const message =
-    typeof warning == "string" ? warning : String(warning?.message ?? "");
-  if (
-    name == "ExperimentalWarning" &&
-    message.includes("WASI is an experimental feature")
-  ) {
-    return;
-  }
-  return originalEmitWarning(warning, ...args);
-});
+const imports = {};
 
-const wasmPath = process.argv[2];
-if (!wasmPath) {
-  process.stderr.write("usage: node ./.as-test/runners/default.wasi.js <file.wasm>\\n");
-  process.exit(1);
-}
-
-try {
-  const wasi = new WASI({
-    version: "preview1",
-    args: [wasmPath],
-    env: process.env,
-    preopens: {},
+instantiate(imports)
+  .then((instance) => {
+    instance.exports.start?.();
+    // Add extra startup logic here when needed.
+  })
+  .catch((error) => {
+    throw new Error("Failed to run WASI module: " + String(error));
   });
-
-  const binary = readFileSync(wasmPath);
-  const module = new WebAssembly.Module(binary);
-  const instance = new WebAssembly.Instance(module, {
-    env: {
-      __as_test_request_fuzz_config() {
-        return 0;
-      },
-    },
-    wasi_snapshot_preview1: wasi.wasiImport,
-  });
-  wasi.start(instance);
-} catch (error) {
-  process.stderr.write("failed to run WASI module: " + String(error) + "\\n");
-  process.exit(1);
-}
 `;
 }
 
 function buildBindingsRunner(): string {
-  return `import fs from "fs";
-import path from "path";
-import { pathToFileURL } from "url";
+  return `import { instantiate } from "as-test/lib";
 
-const HOOKS_PATH = path.resolve(
-  path.dirname(new URL(import.meta.url).pathname),
-  "./default.bindings.hooks.js",
-);
+const imports = {};
 
-function readExact(length) {
-  const out = Buffer.alloc(length);
-  let offset = 0;
-  while (offset < length) {
-    let read = 0;
-    try {
-      read = fs.readSync(0, out, offset, length - offset, null);
-    } catch (error) {
-      if (error && error.code === "EAGAIN") {
-        continue;
-      }
-      throw error;
-    }
-    if (!read) break;
-    offset += read;
-  }
-  const view = out.subarray(0, offset);
-  return view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength);
-}
-
-function writeRaw(data) {
-  const view = Buffer.from(data);
-  fs.writeSync(1, view);
-}
-
-function createRunnerContext({ wasmPath, module, helperPath }) {
-  return {
-    wasmPath,
-    helperPath,
-    module,
-    argv: process.argv.slice(2),
-    env: process.env,
-    readFrame(size) {
-      return readExact(Number(size ?? 0));
-    },
-    writeFrame(data) {
-      writeRaw(data);
-      return true;
-    },
-  };
-}
-
-function createAsTestImports(ctx) {
-  const originalWrite = process.stdout.write.bind(process.stdout);
-  process.stdout.write = (chunk, ...args) => {
-    if (chunk instanceof ArrayBuffer) {
-      return ctx.writeFrame(chunk);
-    }
-    return originalWrite(chunk, ...args);
-  };
-  process.stdin.read = (size) => ctx.readFrame(size);
-  return {};
-}
-
-function mergeImports(...groups) {
-  const out = {};
-  for (const group of groups) {
-    if (!group || typeof group != "object") continue;
-    for (const moduleName of Object.keys(group)) {
-      out[moduleName] = Object.assign(out[moduleName] || {}, group[moduleName]);
-    }
-  }
-  return out;
-}
-
-async function loadRunnerHooks() {
-  if (!fs.existsSync(HOOKS_PATH)) {
-    return {
-      createUserImports() {
-        return {};
-      },
-      async runModule(_exports, _ctx) {},
-    };
-  }
-  const mod = await import(pathToFileURL(HOOKS_PATH).href + "?t=" + Date.now());
-  return {
-    createUserImports:
-      typeof mod.createUserImports == "function"
-        ? mod.createUserImports
-        : () => ({}),
-    runModule:
-      typeof mod.runModule == "function" ? mod.runModule : async () => {},
-  };
-}
-
-async function instantiateModule(ctx, hooks) {
-  const helper = await import(pathToFileURL(ctx.helperPath).href);
-  if (typeof helper.instantiate !== "function") {
-    throw new Error("bindings helper missing instantiate export");
-  }
-  const imports = mergeImports(
-    createAsTestImports(ctx),
-    await hooks.createUserImports(ctx),
-  );
-  return helper.instantiate(ctx.module, imports);
-}
-
-const wasmPathArg = process.argv[2];
-if (!wasmPathArg) {
-  process.stderr.write("usage: node ./.as-test/runners/default.bindings.js <file.wasm>\\n");
-  process.exit(1);
-}
-
-const wasmPath = path.resolve(process.cwd(), wasmPathArg);
-const jsPath = wasmPath.replace(/\\.wasm$/, ".js");
-
-try {
-  const binary = fs.readFileSync(wasmPath);
-  const module = new WebAssembly.Module(binary);
-  const ctx = createRunnerContext({ wasmPath, module, helperPath: jsPath });
-  const hooks = await loadRunnerHooks();
-  const exports = await instantiateModule(ctx, hooks);
-  await hooks.runModule(exports, ctx);
-} catch (error) {
-  process.stderr.write("failed to run bindings module: " + String(error) + "\\n");
-  process.exit(1);
-}
-`;
-}
-
-function buildBindingsRunnerHooks(): string {
-  return `export function createUserImports(_ctx) {
-  return {
-    // env: {
-    //   now_ms: () => Date.now(),
-    // },
-  };
-}
-
-export async function runModule(_exports, _ctx) {
-  // The generated bindings helper already calls exports._start().
-  // Add extra startup calls here when your module exposes them.
-  //
-  // Example:
-  // _exports.run?.();
-}
-`;
-}
-
-function buildWebRunnerHooks(): string {
-  return `export function createUserImports(_ctx) {
-  return {
-    // env: {
-    //   now_ms: () => performance.now(),
-    // },
-  };
-}
-
-export async function runModule(_exports, _ctx) {
-  // The generated bindings helper already calls exports._start().
-  // Add extra startup calls here when your module exposes them.
-  //
-  // Example:
-  // _exports.run?.();
-}
+instantiate(imports)
+  .then((instance) => {
+    instance.exports.start?.();
+    // Add extra startup logic here when needed.
+  })
+  .catch((error) => {
+    throw new Error("Failed to run bindings module: " + String(error));
+  });
 `;
 }

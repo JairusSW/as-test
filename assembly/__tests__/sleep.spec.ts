@@ -16,7 +16,7 @@ describe("Should sleep", () => {
     sleep(100);
     expect(Date.now() - start).toBeGreaterOrEqualTo(100);
   });
-  xit("1s", () => {
+  it("1s", () => {
     const start = Date.now();
     log("Sleeping...");
     sleep(1000);

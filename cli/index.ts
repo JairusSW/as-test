@@ -6,7 +6,6 @@ import {
   BuildFeatureToggles,
   formatInvocation as formatBuildInvocation,
   getBuildInvocationPreview,
-  getBuildReuseInfo,
 } from "./commands/build.js";
 import { createRunReporter, run, RunResult } from "./commands/run.js";
 import { executeBuildCommand } from "./commands/build.js";
@@ -15,9 +14,11 @@ import { executeTestCommand } from "./commands/test.js";
 import { executeFuzzCommand } from "./commands/fuzz.js";
 import { executeInitCommand } from "./commands/init.js";
 import { executeDoctorCommand } from "./commands/doctor.js";
+import { executeCleanCommand } from "./commands/clean.js";
 import { fuzz, FuzzOverrides } from "./commands/fuzz-core.js";
 import {
   applyMode,
+  getDefaultModeNames,
   formatTime,
   getCliVersion,
   loadConfig,
@@ -28,7 +29,7 @@ import * as path from "path";
 import { spawnSync } from "child_process";
 import { glob } from "glob";
 import { createInterface } from "readline";
-import { copyFileSync, existsSync, mkdirSync } from "fs";
+import { existsSync } from "fs";
 import { availableParallelism, cpus } from "os";
 import {
   CoverageSummary,
@@ -38,12 +39,21 @@ import {
   TestReporter,
 } from "./reporters/types.js";
 import { BuildWorkerPool } from "./build-worker-pool.js";
+import { PersistentWebSessionHost } from "./commands/web-session.js";
 
 const _args = process.argv.slice(2);
 const flags: string[] = [];
 const args: string[] = [];
 
-const COMMANDS: string[] = ["run", "build", "test", "fuzz", "init", "doctor"];
+const COMMANDS: string[] = [
+  "run",
+  "build",
+  "test",
+  "fuzz",
+  "init",
+  "doctor",
+  "clean",
+];
 type CliFeatureToggles = {
   coverage?: boolean;
   tryAs?: boolean;
@@ -52,8 +62,6 @@ type CliListFlags = {
   list: boolean;
   listModes: boolean;
 };
-type BuildReuseCache = Map<string, string>;
-
 const version = getCliVersion();
 const configPath = resolveConfigPath(_args);
 const selectedModes = resolveModeNames(_args);
@@ -147,6 +155,13 @@ if (!args.length) {
         printCliError(error);
         process.exit(1);
       });
+    } else if (command === "clean") {
+      executeCleanCommand(configPath, selectedModes, resolveExecutionModes).catch(
+        (error) => {
+          printCliError(error);
+          process.exit(1);
+        },
+      );
     }
   } catch (error) {
     printCliError(error);
@@ -234,6 +249,14 @@ function info(): void {
       chalk.dim("<--mode x>") +
       "             " +
       "Validate environment/config/runtime setup",
+  );
+  console.log(
+    "  " +
+      chalk.bold.magentaBright("clean") +
+      "   " +
+      chalk.dim("<--mode x>") +
+      "             " +
+      "Remove build, crash, and log outputs",
   );
   console.log("");
 
@@ -583,6 +606,22 @@ function printCommandHelp(command: string): void {
     );
     process.stdout.write(
       "  --mode <name[,name...]>  Run checks for one or multiple named modes\n",
+    );
+    process.stdout.write("  --help, -h               Show this help\n");
+    return;
+  }
+
+  if (command == "clean") {
+    process.stdout.write(chalk.bold("Usage: ast clean [flags]\n\n"));
+    process.stdout.write(
+      "Remove configured build outputs, crash reports, and logs for the selected modes.\n\n",
+    );
+    process.stdout.write(chalk.bold("Flags:\n"));
+    process.stdout.write(
+      "  --config <path>          Use a specific config file\n",
+    );
+    process.stdout.write(
+      "  --mode <name[,name...]>  Clean one or multiple named modes\n",
     );
     process.stdout.write("  --help, -h               Show this help\n");
     return;
@@ -1416,7 +1455,6 @@ function resolveCommandTokens(rawArgs: string[], command: string): string[] {
 }
 
 async function buildFileForMode(
-  cache: BuildReuseCache,
   args: {
     configPath: string | undefined;
     file: string;
@@ -1424,22 +1462,7 @@ async function buildFileForMode(
     buildFeatureToggles: BuildFeatureToggles;
     buildPool?: BuildWorkerPool;
   },
-): Promise<boolean> {
-  const reuse = await getBuildReuseInfo(
-    args.configPath,
-    args.file,
-    args.modeName,
-    args.buildFeatureToggles,
-  );
-  if (reuse) {
-    const source = cache.get(reuse.signature);
-    if (source && source != reuse.outFile && existsSync(source)) {
-      mkdirSync(path.dirname(reuse.outFile), { recursive: true });
-      copyFileSync(source, reuse.outFile);
-      return true;
-    }
-  }
-
+): Promise<void> {
   if (args.buildPool) {
     await args.buildPool.buildFileMode({
       configPath: args.configPath,
@@ -1455,11 +1478,6 @@ async function buildFileForMode(
       args.buildFeatureToggles,
     );
   }
-
-  if (reuse) {
-    cache.set(reuse.signature, reuse.outFile);
-  }
-  return false;
 }
 
 async function runTestSequential(
@@ -1482,6 +1500,7 @@ async function runTestSequential(
   allowNoSpecFiles: boolean = false,
   modeName?: string,
   reporterOverride?: TestReporter,
+  webSession: PersistentWebSessionHost | null = null,
   emitRunComplete: boolean = true,
 ): Promise<{
   failed: boolean;
@@ -1537,6 +1556,7 @@ async function runTestSequential(
     const artifactKey = resolvePerFileArtifactKey(file, duplicateSpecBasenames);
     const result = await run(runFlags, configPath, [file], false, {
       reporter,
+      webSession,
       suiteSelectors,
       emitRunStart: false,
       emitRunComplete: false,
@@ -1611,14 +1631,13 @@ async function runBuildModes(
   const loadedConfig = loadConfig(resolvedConfigPath, true);
   const allStartedAt = Date.now();
   let builtCount = 0;
-  const buildReuseCache: BuildReuseCache = new Map();
   for (const modeName of modes) {
     const startedAt = Date.now();
     if (effective.buildJobs > 1) {
       const pool = new BuildWorkerPool(effective.buildJobs);
       try {
         await runOrderedPool(files, effective.buildJobs, async (file) => {
-          await buildFileForMode(buildReuseCache, {
+          await buildFileForMode({
             configPath,
             file,
             modeName,
@@ -1631,7 +1650,7 @@ async function runBuildModes(
       }
     } else {
       for (const file of files) {
-        await buildFileForMode(buildReuseCache, {
+        await buildFileForMode({
           configPath,
           file,
           modeName,
@@ -1673,10 +1692,17 @@ async function runRuntimeModes(
   await ensureWebBrowsersReady(configPath, modes, runFlags.browser);
   const modeSummaryTotal = Math.max(modes.length, 1);
   const fileSummaryTotal = await resolveConfiguredFileTotal(configPath);
-  const effectiveRunFlags = {
+  let effectiveRunFlags = {
     ...runFlags,
     ...resolveEffectiveParallelJobs(runFlags, fileSummaryTotal),
   };
+  if (await usesHeadfulWebMode(configPath, modes)) {
+    effectiveRunFlags = {
+      ...effectiveRunFlags,
+      jobs: 1,
+      runJobs: 1,
+    };
+  }
   if (effectiveRunFlags.jobs > 1) {
     if (modes.length > 1) {
       const failed = await runRuntimeMatrixParallel(
@@ -1743,6 +1769,37 @@ async function runRuntimeModes(
   process.exit(failed ? 1 : 0);
 }
 
+async function usesHeadfulWebMode(
+  configPath: string | undefined,
+  modes: (string | undefined)[],
+): Promise<boolean> {
+  const resolvedConfigPath =
+    configPath ?? path.join(process.cwd(), "./as-test.config.json");
+  const loaded = loadConfig(resolvedConfigPath, true);
+  for (const modeName of modes) {
+    const active = applyMode(loaded, modeName).config;
+    if (!usesWebBrowser(active)) continue;
+    const runtimeCmd =
+      active.runOptions.runtime.cmd?.trim() ||
+      (active.buildOptions.target == "web"
+        ? "node .as-test/runners/default.web.js"
+        : "");
+    if (!runtimeCmd.includes("--headless")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function createSharedHeadfulWebSession(
+  configPath: string | undefined,
+  modes: (string | undefined)[],
+): Promise<PersistentWebSessionHost | null> {
+  return (await usesHeadfulWebMode(configPath, modes))
+    ? await PersistentWebSessionHost.start(false)
+    : null;
+}
+
 async function runRuntimeMatrix(
   runFlags: {
     snapshot: boolean;
@@ -1796,14 +1853,12 @@ async function runRuntimeMatrix(
   }));
   const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
   const buildIntervals: Array<{ start: number; end: number }> = [];
-  const buildReuseCache: BuildReuseCache = new Map();
 
   for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
     const file = files[fileIndex]!;
     const fileName = path.basename(file);
     const fileResults: RunResult[] = [];
     const modeTimes = modes.map(() => "...");
-    const buildReuseCache: BuildReuseCache = new Map();
     if (liveMatrix) {
       renderMatrixLiveLine(fileName, modeLabels, modeTimes, showPerModeTimes);
     }
@@ -1920,10 +1975,17 @@ async function runTestModes(
     configPath,
     selectors,
   );
-  const effectiveRunFlags = {
+  let effectiveRunFlags = {
     ...runFlags,
     ...resolveEffectiveParallelJobs(runFlags, fileSummaryTotal),
   };
+  if (await usesHeadfulWebMode(configPath, modes)) {
+    effectiveRunFlags = {
+      ...effectiveRunFlags,
+      jobs: 1,
+      runJobs: 1,
+    };
+  }
   if (effectiveRunFlags.jobs > 1) {
     if (modes.length > 1) {
       const failed = await runTestMatrixParallel(
@@ -1981,7 +2043,12 @@ async function runTestModes(
   }
 
   let failed = false;
-  for (const modeName of modes) {
+  const sharedWebSession = await createSharedHeadfulWebSession(
+    configPath,
+    modes,
+  );
+  try {
+    for (const modeName of modes) {
     const reporterSession = await createRunReporter(
       configPath,
       effectiveRunFlags.reporterPath,
@@ -1998,6 +2065,7 @@ async function runTestModes(
       fuzzEnabled,
       modeName,
       reporterSession.reporter,
+      sharedWebSession,
       !fuzzEnabled,
     );
     if (modeResult.failed) failed = true;
@@ -2034,6 +2102,9 @@ async function runTestModes(
       });
       reporterSession.reporter.flush?.();
     }
+  }
+  } finally {
+    await sharedWebSession?.close();
   }
   process.exit(failed ? 1 : 0);
 }
@@ -2107,7 +2178,6 @@ async function runTestMatrix(
     const fileName = path.basename(file);
     const fileResults: RunResult[] = [];
     const modeTimes = modes.map(() => "...");
-    const buildReuseCache: BuildReuseCache = new Map();
     if (liveMatrix) {
       renderMatrixLiveLine(fileName, modeLabels, modeTimes, showPerModeTimes);
     }
@@ -2115,7 +2185,7 @@ async function runTestMatrix(
       const modeName = modes[i];
       try {
         const buildStartedAt = Date.now();
-        await buildFileForMode(buildReuseCache, {
+        await buildFileForMode({
           configPath,
           file,
           modeName,
@@ -2452,11 +2522,10 @@ async function runRuntimeMatrixParallel(
         : null;
       const fileResults: RunResult[] = [];
       const modeTimes = modes.map(() => "...");
-      const buildReuseCache: BuildReuseCache = new Map();
       for (let i = 0; i < modes.length; i++) {
         const modeName = modes[i];
         const buildStartedAt = Date.now();
-        await buildFileForMode(buildReuseCache, {
+        await buildFileForMode({
           configPath,
           file,
           modeName,
@@ -2606,7 +2675,7 @@ async function runTestSingleParallel(
           ? renderQueuedFileStart(queueDisplay, path.basename(file))
           : null;
         const buildStartedAt = Date.now();
-        await buildFileForMode(new Map(), {
+        await buildFileForMode({
           configPath,
           file,
           modeName,
@@ -2787,11 +2856,10 @@ async function runTestMatrixParallel(
         : null;
       const fileResults: RunResult[] = [];
       const modeTimes = modes.map(() => "...");
-      const buildReuseCache: BuildReuseCache = new Map();
       for (let i = 0; i < modes.length; i++) {
         const modeName = modes[i];
         const buildStartedAt = Date.now();
-        await buildFileForMode(buildReuseCache, {
+        await buildFileForMode({
           configPath,
           file,
           modeName,
@@ -3361,9 +3429,8 @@ function resolveExecutionModes(
   const resolvedConfigPath =
     configPath ?? path.join(process.cwd(), "./as-test.config.json");
   const config = loadConfig(resolvedConfigPath, false);
-  const configuredModes = Object.keys(config.modes);
-  if (!configuredModes.length) return [undefined];
-  return configuredModes;
+  const defaultModes = getDefaultModeNames(config);
+  return [undefined, ...defaultModes];
 }
 
 async function resolveSelectedFiles(
@@ -3780,6 +3847,11 @@ function resolveNamedBrowser(browser: string): { browser: string } | null {
     }
   }
 
+  const systemFallback = resolveSystemBrowserExecutable(normalized);
+  if (systemFallback) {
+    return { browser: systemFallback };
+  }
+
   const playwrightFallback = resolvePlaywrightBrowserExecutable(normalized);
   if (playwrightFallback) {
     return { browser: playwrightFallback };
@@ -3807,10 +3879,15 @@ async function handleMissingWebBrowsers(
     .join(", ");
   const details =
     "no web-capable browser was found in PATH, BROWSER, or Playwright cache";
+  const selected = choosePreferredBrowserInstall(missing);
+  const installCommand =
+    selected == "webkit"
+      ? 'npx -y playwright install webkit'
+      : `npx -y playwright install ${selected}`;
 
   if (!canPromptForWebInstall()) {
     throw new Error(
-      `web target requires a browser for mode(s) ${scope}; ${details}. Export BROWSER or install one with "npx -y playwright install chromium" or "npx -y playwright install webkit".`,
+      `web target requires a browser for mode(s) ${scope}; ${details}. Export BROWSER or install one with "${installCommand}".`,
     );
   }
 
@@ -3818,22 +3895,22 @@ async function handleMissingWebBrowsers(
     chalk.bold.blue("◇  Browser Setup Needed") +
       "\n" +
       `│  ${details}\n` +
+      `│  requested browser: ${selected}\n` +
       "│\n",
   );
 
   const choice = await promptLine(
-    "Install Chromium with Playwright now? [Y/n] ",
+    `Install ${selected} with Playwright now? [Y/n] `,
   );
   const normalized = choice.trim().toLowerCase();
   if (normalized == "n" || normalized == "no") {
     throw new Error(
-      'browser install skipped. Export BROWSER or install one with "npx -y playwright install chromium" or "npx -y playwright install webkit", then rerun.',
+      `browser install skipped. Export BROWSER or install one with "${installCommand}", then rerun.`,
     );
   }
   if (normalized != "" && normalized != "y" && normalized != "yes") {
     throw new Error(`invalid answer "${choice}". Expected yes or no.`);
   }
-  const selected = "chromium";
   process.stdout.write(chalk.dim(`installing ${selected} via Playwright...\n`));
   const install = spawnSync("npx", ["-y", "playwright", "install", selected], {
     stdio: "inherit",
@@ -3849,6 +3926,36 @@ async function handleMissingWebBrowsers(
     );
   }
   process.env.BROWSER = browserPath;
+}
+
+function choosePreferredBrowserInstall(
+  missing: { modeName?: string; browser?: string }[],
+): "chromium" | "firefox" | "webkit" {
+  for (const entry of missing) {
+    const normalized = normalizeBrowserInstallName(entry.browser);
+    if (normalized) return normalized;
+  }
+  return "chromium";
+}
+
+function normalizeBrowserInstallName(
+  browser: string | undefined,
+): "chromium" | "firefox" | "webkit" | null {
+  const normalized = browser?.trim().toLowerCase() ?? "";
+  if (!normalized.length) return null;
+  if (normalized == "firefox") return "firefox";
+  if (normalized == "webkit") return "webkit";
+  if (
+    normalized == "chromium" ||
+    normalized == "chrome" ||
+    normalized == "google-chrome" ||
+    normalized == "google-chrome-stable" ||
+    normalized == "chromium-browser" ||
+    normalized == "msedge"
+  ) {
+    return "chromium";
+  }
+  return null;
 }
 
 function canPromptForWebInstall(): boolean {
@@ -3869,22 +3976,156 @@ function promptLine(question: string): Promise<string> {
 }
 
 function resolvePlaywrightBrowserExecutable(browser: string): string | null {
-  const cacheRoot = path.join(
-    process.env.HOME ?? "",
-    ".cache",
-    "ms-playwright",
-  );
-  if (!cacheRoot.length || !existsSync(cacheRoot)) return null;
-  const map: Record<string, string[]> = {
-    chromium: ["chromium-*/chrome-linux64/chrome"],
-    chrome: ["chromium-*/chrome-linux64/chrome"],
+  const patterns = getPlaywrightBrowserPatterns(browser);
+  if (!patterns.length) return null;
+  for (const cacheRoot of getPlaywrightCacheRoots()) {
+    if (!existsSync(cacheRoot)) continue;
+    for (const pattern of patterns) {
+      const matches = glob.sync(path.join(cacheRoot, pattern)).sort();
+      if (matches.length) return matches[matches.length - 1]!;
+    }
+  }
+  return null;
+}
+
+function getPlaywrightCacheRoots(): string[] {
+  const roots = new Set<string>();
+  const configured = process.env.PLAYWRIGHT_BROWSERS_PATH?.trim() ?? "";
+  if (configured.length && configured != "0") {
+    roots.add(path.resolve(configured));
+  }
+  const home = process.env.HOME ?? "";
+  if (process.platform == "darwin" && home.length) {
+    roots.add(path.join(home, "Library", "Caches", "ms-playwright"));
+  } else if (process.platform == "win32") {
+    const localAppData = process.env.LOCALAPPDATA?.trim() ?? "";
+    if (localAppData.length) {
+      roots.add(path.join(localAppData, "ms-playwright"));
+    }
+    const userProfile = process.env.USERPROFILE?.trim() ?? "";
+    if (userProfile.length) {
+      roots.add(
+        path.join(userProfile, "AppData", "Local", "ms-playwright"),
+      );
+    }
+  } else if (home.length) {
+    roots.add(path.join(home, ".cache", "ms-playwright"));
+  }
+  return [...roots];
+}
+
+function getPlaywrightBrowserPatterns(browser: string): string[] {
+  if (process.platform == "darwin") {
+    const macMap: Record<string, string[]> = {
+      chromium: [
+        "chromium-*/chrome-mac*/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+        "chromium-*/chrome-mac*/Chromium.app/Contents/MacOS/Chromium",
+        "chromium_headless_shell-*/chrome-headless-shell-mac*/chrome-headless-shell",
+      ],
+      chrome: [
+        "chromium-*/chrome-mac*/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+        "chromium-*/chrome-mac*/Chromium.app/Contents/MacOS/Chromium",
+        "chromium_headless_shell-*/chrome-headless-shell-mac*/chrome-headless-shell",
+      ],
+      firefox: [
+        "firefox-*/firefox/*.app/Contents/MacOS/firefox",
+        "firefox-*/*.app/Contents/MacOS/firefox",
+        "firefox-*/firefox/firefox",
+      ],
+      webkit: ["webkit-*/pw_run.sh"],
+    };
+    return macMap[browser] ?? [];
+  }
+  if (process.platform == "win32") {
+    const winMap: Record<string, string[]> = {
+      chromium: [
+        "chromium-*/chrome-win/chrome.exe",
+        "chromium-*/chrome-win64/chrome.exe",
+        "chromium_headless_shell-*/chrome-headless-shell-win64/chrome-headless-shell.exe",
+      ],
+      chrome: [
+        "chromium-*/chrome-win/chrome.exe",
+        "chromium-*/chrome-win64/chrome.exe",
+        "chromium_headless_shell-*/chrome-headless-shell-win64/chrome-headless-shell.exe",
+      ],
+      firefox: ["firefox-*/firefox/firefox.exe"],
+      webkit: ["webkit-*/Playwright.exe"],
+    };
+    return winMap[browser] ?? [];
+  }
+  const linuxMap: Record<string, string[]> = {
+    chromium: [
+      "chromium-*/chrome-linux/chrome",
+      "chromium-*/chrome-linux64/chrome",
+      "chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell",
+    ],
+    chrome: [
+      "chromium-*/chrome-linux/chrome",
+      "chromium-*/chrome-linux64/chrome",
+      "chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell",
+    ],
     firefox: ["firefox-*/firefox/firefox"],
     webkit: ["webkit-*/pw_run.sh"],
   };
-  const patterns = map[browser] ?? [];
-  for (const pattern of patterns) {
-    const matches = glob.sync(path.join(cacheRoot, pattern)).sort();
-    if (matches.length) return matches[matches.length - 1]!;
+  return linuxMap[browser] ?? [];
+}
+
+function resolveSystemBrowserExecutable(browser: string): string | null {
+  if (process.platform == "darwin") {
+    const home = process.env.HOME ?? "";
+    const macSearchRoots = [
+      "/Applications",
+      home.length ? path.join(home, "Applications") : "",
+    ].filter(Boolean);
+    const macAppPaths: Record<string, string[]> = {
+      chromium: [
+        "Chromium.app/Contents/MacOS/Chromium",
+        "Google Chrome.app/Contents/MacOS/Google Chrome",
+        "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+      ],
+      chrome: [
+        "Google Chrome.app/Contents/MacOS/Google Chrome",
+        "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+        "Chromium.app/Contents/MacOS/Chromium",
+      ],
+      firefox: [
+        "Firefox.app/Contents/MacOS/firefox",
+        "Firefox Developer Edition.app/Contents/MacOS/firefox",
+      ],
+      msedge: [
+        "Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+      ],
+      webkit: [],
+    };
+    for (const root of macSearchRoots) {
+      for (const relativePath of macAppPaths[browser] ?? []) {
+        const fullPath = path.join(root, relativePath);
+        if (existsSync(fullPath)) return fullPath;
+      }
+    }
+    return null;
+  }
+  if (process.platform == "win32") {
+    const programFiles = process.env.ProgramFiles?.trim() ?? "";
+    const programFilesX86 = process.env["ProgramFiles(x86)"]?.trim() ?? "";
+    const localAppData = process.env.LOCALAPPDATA?.trim() ?? "";
+    const roots = [programFiles, programFilesX86, localAppData].filter(Boolean);
+    const winPaths: Record<string, string[]> = {
+      chromium: [
+        "Chromium/Application/chrome.exe",
+        "Google/Chrome/Application/chrome.exe",
+      ],
+      chrome: ["Google/Chrome/Application/chrome.exe"],
+      firefox: ["Mozilla Firefox/firefox.exe"],
+      msedge: ["Microsoft/Edge/Application/msedge.exe"],
+      webkit: [],
+    };
+    for (const root of roots) {
+      for (const relativePath of winPaths[browser] ?? []) {
+        const fullPath = path.join(root, relativePath);
+        if (existsSync(fullPath)) return fullPath;
+      }
+    }
   }
   return null;
 }
@@ -3918,6 +4159,7 @@ async function listExecutionPlan(
     configPath ?? path.join(process.cwd(), "./as-test.config.json");
   const config = loadConfig(resolvedConfigPath, true);
   const configuredModes = Object.keys(config.modes);
+  const defaultModes = getDefaultModeNames(config);
   const configuredModeLabels = configuredModes.length
     ? configuredModes
     : ["default"];
@@ -3943,13 +4185,29 @@ async function listExecutionPlan(
   if (listFlags.listModes) {
     process.stdout.write(chalk.bold("Configured modes:\n"));
     for (const modeName of configuredModeLabels) {
-      process.stdout.write(`  - ${modeName}\n`);
+      if (modeName == "default") {
+        process.stdout.write(`  - ${modeName}\n`);
+        continue;
+      }
+      const mode = config.modes[modeName];
+      const suffix = mode?.default === false ? " (manual)" : " (default)";
+      process.stdout.write(`  - ${modeName}${suffix}\n`);
     }
     process.stdout.write(chalk.bold("\nSelected modes:\n"));
     for (const modeName of selectedModeLabels) {
       process.stdout.write(`  - ${modeName}\n`);
     }
-    process.stdout.write("\n");
+    if (!modes.length && configuredModes.length) {
+      process.stdout.write(chalk.bold("\nDefault-selected modes:\n"));
+      if (defaultModes.length) {
+        for (const modeName of defaultModes) {
+          process.stdout.write(`  - ${modeName}\n`);
+        }
+      } else {
+        process.stdout.write("  - default\n");
+      }
+      process.stdout.write("\n");
+    }
   }
 
   if (!listFlags.list) return;

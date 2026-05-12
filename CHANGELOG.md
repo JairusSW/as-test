@@ -1,5 +1,40 @@
 # Change Log
 
+## Unreleased
+
+### Runtime & Runners
+
+- feat: replace the split bindings/web hooks model with single-file runners that import `instantiate(...)` from `as-test/lib`, keeping bindings, WASI, and web runner syntax aligned.
+- feat: add `as-test/lib` as the shared JS runtime host layer for bindings, WASI, and web targets, with runtime artifact resolution happening out of sight before runner execution.
+- feat: autodetect bindings helper shape at runtime support level (`raw`, `esm`, or `none`) and keep the generated runner surface minimal.
+- fix: make `ast run` rebuild missing artifacts on demand instead of failing when only some selected outputs already exist.
+- fix: report real lazy-build time in `ast run` summaries instead of always printing `0us build`.
+- fix: remove build artifact copy/reuse shortcuts so each selected file/mode compiles directly, avoiding stale output reuse across modes.
+
+### Web Runtime
+
+- feat: move headful web execution to a persistent single-browser-session architecture that opens one page, runs multiple binaries through it, and keeps browser-side runtime details hidden from the runner file.
+- feat: redesign the non-headless browser page into a minimal macOS-inspired loading surface with light/dark mode support and simpler status messaging.
+- feat: make headful web runs wait for the user to open the local session URL, and expose a browser-side exit control.
+- fix: keep all browser bootstrap, asset, and websocket traffic on one local port.
+- fix: improve browser discovery and launch behavior across Chromium, Firefox, and WebKit, including Playwright cache lookup, macOS app bundle resolution, paths with spaces, and owned-process teardown.
+- fix: fail terminal-side runs when the browser side disconnects unexpectedly, and close the browser side when the websocket is lost.
+
+### WASI
+
+- fix: make the WASI stdin transport retry only on retryable WASI read errors (`AGAIN` and `INTR`), which resolves intermittent snapshot reply corruption in `node:wasi` runs.
+
+### Modes & CLI
+
+- feat: add per-mode `default: boolean` selection so modes can be included in implicit runs or kept manual-only.
+- feat: add `ast clean` to remove configured build outputs, crash reports, and logs for the selected modes.
+- fix: restore unnamed root-config execution alongside named default modes when `--mode` is omitted.
+- fix: make `ast clean --mode ...` skip shared output paths that are still owned by unselected modes instead of deleting them.
+
+### Tests
+
+- feat: add integration coverage for bindings (`raw`, `esm`, `none`), WASI, and web runtime paths, including browser-resolution regressions and single-origin web runner behavior.
+
 ## 2026-05-08 - v1.0.16
 
 - feat: modes inherit pre-declared properties if not explicitly overriden

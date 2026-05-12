@@ -18,40 +18,135 @@
     "target": "wasi"
   },
   "modes": {
-    "node-bindings": {
+    "node:bindings": {
       "buildOptions": {
         "target": "bindings"
       },
       "runOptions": {
         "runtime": {
-          "cmd": "node .as-test/runners/default.bindings.js <file>"
+          "cmd": "node .as-test/runners/default.bindings.js"
         }
       }
     },
-    "node-wasi": {
+    "node:wasi": {
       "buildOptions": {
         "target": "wasi"
       },
       "runOptions": {
         "runtime": {
-          "cmd": "node .as-test/runners/default.wasi.js <file>"
+          "cmd": "node .as-test/runners/default.wasi.js"
         }
       }
     },
-    "wasmtime-wasi": {
+    "wasmtime": {
+      "default": false,
       "buildOptions": {
         "target": "wasi"
       },
       "runOptions": {
         "runtime": {
-          "cmd": "wasmtime run --dir . <file>"
+          "cmd": "wasmtime run <file>"
+        }
+      }
+    },
+    "wasmer": {
+      "default": false,
+      "buildOptions": {
+        "target": "wasi"
+      },
+      "runOptions": {
+        "runtime": {
+          "cmd": "wasmer run <file>"
+        }
+      }
+    },
+    "wazero": {
+      "default": false,
+      "buildOptions": {
+        "target": "wasi"
+      },
+      "runOptions": {
+        "runtime": {
+          "cmd": "wazero run <file>"
+        }
+      }
+    },
+    "firefox": {
+      "default": false,
+      "buildOptions": {
+        "target": "web"
+      },
+      "runOptions": {
+        "runtime": {
+          "cmd": "node .as-test/runners/default.web.js <file>",
+          "browser": "firefox"
+        }
+      }
+    },
+    "chromium": {
+      "default": false,
+      "buildOptions": {
+        "target": "web"
+      },
+      "runOptions": {
+        "runtime": {
+          "cmd": "node .as-test/runners/default.web.js <file>",
+          "browser": "chromium"
+        }
+      }
+    },
+    "webkit": {
+      "default": false,
+      "buildOptions": {
+        "target": "web"
+      },
+      "runOptions": {
+        "runtime": {
+          "cmd": "node .as-test/runners/default.web.js <file>",
+          "browser": "webkit"
+        }
+      }
+    },
+    "firefox:headless": {
+      "default": false,
+      "buildOptions": {
+        "target": "web"
+      },
+      "runOptions": {
+        "runtime": {
+          "cmd": "node .as-test/runners/default.web.js --headless <file>",
+          "browser": "firefox"
+        }
+      }
+    },
+    "chromium:headless": {
+      "default": false,
+      "buildOptions": {
+        "target": "web"
+      },
+      "runOptions": {
+        "runtime": {
+          "cmd": "node .as-test/runners/default.web.js --headless <file>",
+          "browser": "chromium"
+        }
+      }
+    },
+    "webkit:headless": {
+      "default": false,
+      "buildOptions": {
+        "target": "web"
+      },
+      "runOptions": {
+        "runtime": {
+          "cmd": "node .as-test/runners/default.web.js --headless <file>",
+          "browser": "webkit"
         }
       }
     }
   },
   "runOptions": {
     "runtime": {
-      "cmd": "node .as-test/runners/default.wasi.js <file>"
+      "cmd": "node .as-test/runners/default.wasi.js"
     },
     "reporter": "default"
   }

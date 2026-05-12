@@ -175,7 +175,7 @@ const FUZZ_OPTION_KEYS = new Set([
     "corpusDir",
     "crashDir",
 ]);
-const MODE_KEYS = new Set([...TOP_LEVEL_KEYS].filter((key) => key != "modes"));
+const MODE_KEYS = new Set([...TOP_LEVEL_KEYS, "default"].filter((key) => key != "modes"));
 function validateConfig(raw, configPath) {
     const issues = [];
     validateUnknownKeys(raw, TOP_LEVEL_KEYS, "$", issues);
@@ -653,6 +653,13 @@ function validateModesField(raw, key, pathPrefix, issues) {
         validateUnknownKeys(modeObj, MODE_KEYS, modePath, issues);
         validateStringField(modeObj, "$schema", modePath, issues);
         validateInputField(modeObj, "input", modePath, issues);
+        if ("default" in modeObj && typeof modeObj.default != "boolean") {
+            issues.push({
+                path: `${modePath}.default`,
+                message: "must be a boolean",
+                fix: 'set "default" to true or false',
+            });
+        }
         validateOutputField(modeObj, "output", modePath, issues);
         validateStringField(modeObj, "outDir", modePath, issues);
         validateStringField(modeObj, "logs", modePath, issues);
@@ -799,6 +806,9 @@ function parseModes(raw, configDir) {
         }
         if (!value || typeof value != "object" || Array.isArray(value))
             continue;
+        mode.default =
+            !("default" in value) ||
+                Boolean(value.default);
         mode.config = parseConfigRaw(value, join(configDir, `__mode__.${name}.json`));
         out[name] = mode;
     }
@@ -1171,6 +1181,11 @@ export function resolveModeNames(rawArgs) {
         }
     }
     return [...new Set(names)];
+}
+export function getDefaultModeNames(config) {
+    return Object.entries(config.modes)
+        .filter(([, mode]) => mode.default !== false)
+        .map(([name]) => name);
 }
 function appendModeTokens(out, value) {
     for (const token of value.split(",")) {

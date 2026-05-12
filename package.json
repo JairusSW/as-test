@@ -32,6 +32,12 @@
     "as-test": "./bin/index.js",
     "ast": "./bin/index.js"
   },
+  "exports": {
+    ".": "./index.ts",
+    "./lib": "./lib/build/index.js",
+    "./transform": "./transform/lib/index.js",
+    "./package.json": "./package.json"
+  },
   "bugs": {
     "url": "https://github.com/JairusSW/as-test/issues"
   },
@@ -43,6 +49,8 @@
     "!assembly/__tests__/**",
     "!assembly/tsconfig.json",
     "bin/**/*.js",
+    "lib/**/*.js",
+    "lib/**/*.d.ts",
     "templates/**/*.js",
     "transform/lib/**/*.js",
     "transform/package.json",
@@ -66,6 +74,7 @@
   },
   "scripts": {
     "test": "node ./bin/index.js test --parallel",
+    "test:integration": "npm run build:cli && npm run build:lib && node --test tests/*.test.mjs",
     "test:ci": "node ./bin/index.js test --parallel --tap --config ./as-test.ci.config.json",
     "fuzz": "node ./bin/index.js fuzz",
     "bench:seed": "node ./bin/index.js fuzz --config ./as-test.bench.config.json --clean",
@@ -75,8 +84,9 @@
     "ci:act:pr": "bash ./tools/act.sh pull_request",
     "ci:act:tests": "act push -W .github/workflows/as-test.yml",
     "ci:act:examples": "act push -W .github/workflows/examples.yml",
-    "typecheck": "tsc -p cli --noEmit && tsc -p transform --noEmit",
+    "typecheck": "tsc -p cli --noEmit && tsc -p tsconfig.lib.json --noEmit && tsc -p transform --noEmit",
     "lint": "eslint transform/src/**/*.ts tools/**/*.js eslint.config.js",
+    "build:lib": "tsc -p ./tsconfig.lib.json",
     "build:transform": "tsc -p ./transform",
     "build:cli": "tsc -p cli",
     "build:run": "npm run build:cli",
@@ -84,8 +94,8 @@
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
     "format": "prettier -w .",
-    "release:check": "npm run build:cli && npm run build:transform && npm run test && npm run test:examples && npm pack --dry-run --cache /tmp/as-test-npm-cache",
-    "prepublishOnly": "npm run build:cli && npm run build:transform && npm run test"
+    "release:check": "npm run build:cli && npm run build:lib && npm run build:transform && npm run test && npm run test:integration && npm run test:examples && npm pack --dry-run --cache /tmp/as-test-npm-cache",
+    "prepublishOnly": "npm run build:cli && npm run build:lib && npm run build:transform && npm run test && npm run test:integration"
   },
   "type": "module"
 }

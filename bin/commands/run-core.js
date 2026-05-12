@@ -6,7 +6,10 @@ import { applyMode, formatTime, getExec, loadConfig, tokenizeCommand, } from "..
 import * as path from "path";
 import { pathToFileURL } from "url";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { buildWebRunnerHooksSource, buildWebRunnerSource, } from "./web-runner-source.js";
+import { PassThrough } from "stream";
+import { buildWebRunnerSource } from "./web-runner-source.js";
+import { PersistentWebSessionHost } from "./web-session.js";
+import { build } from "./build-core.js";
 import { createReporter as createDefaultReporter } from "../reporters/default.js";
 import { createTapReporter } from "../reporters/tap.js";
 import { persistCrashRecord } from "../crash-store.js";
@@ -597,59 +600,82 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
         updated: 0,
         failed: 0,
     };
-    for (let i = 0; i < inputFiles.length; i++) {
-        const file = inputFiles[i];
-        const outFile = path.join(config.outDir, resolveArtifactFileName(file, config.buildOptions.target, options.modeName, duplicateSpecBasenames));
-        const fileBase = file
-            .slice(file.lastIndexOf("/") + 1)
-            .replace(".ts", "")
-            .replace(".spec", "");
-        const fileToken = config.buildOptions.target == "bindings" &&
-            !runtimeTokens.some((token) => token.includes("<file>"))
-            ? resolveBindingsHelperPath(outFile)
-            : outFile;
-        const invocation = {
-            command: execPath,
-            args: runtimeTokens
-                .slice(1)
-                .map((token) => token.replace(/<name>/g, fileBase).replace(/<file>/g, fileToken)),
-        };
-        const runCommandForLog = formatInvocation(invocation);
-        const snapshotStore = new SnapshotStore(file, config.snapshotDir, duplicateSpecBasenames);
-        let report;
-        try {
-            report = await runProcess(invocation, file, config.fuzz.crashDir, options.modeName, snapshotStore, snapshotEnabled, createSnapshots, overwriteSnapshots, reporter, reporterKind == "tap", {
-                ...mode.env,
-                ...config.runOptions.env,
+    let buildTime = 0;
+    const ownedWebSession = options.webSession === undefined &&
+        shouldUsePersistentHeadfulWebSession(config.buildOptions.target, runtimeCommand)
+        ? await PersistentWebSessionHost.start(false)
+        : null;
+    const webSession = options.webSession ?? ownedWebSession;
+    try {
+        for (let i = 0; i < inputFiles.length; i++) {
+            const file = inputFiles[i];
+            const outFile = path.join(config.outDir, resolveArtifactFileName(file, config.buildOptions.target, options.modeName, duplicateSpecBasenames));
+            if (!existsSync(outFile)) {
+                const buildStartedAt = Date.now();
+                await build(resolvedConfigPath, [file], options.modeName, { coverage: flags.coverage }, {}, loadedConfig);
+                buildTime += Date.now() - buildStartedAt;
+            }
+            const fileBase = file
+                .slice(file.lastIndexOf("/") + 1)
+                .replace(".ts", "")
+                .replace(".spec", "");
+            const fileToken = outFile;
+            const runtimeTargetEnv = resolveRuntimeTargetEnv(config.buildOptions.target, outFile);
+            const invocation = {
+                command: execPath,
+                args: runtimeTokens
+                    .slice(1)
+                    .map((token) => token.replace(/<name>/g, fileBase).replace(/<file>/g, fileToken)),
+            };
+            const runCommandForLog = formatInvocation(invocation);
+            const snapshotStore = new SnapshotStore(file, config.snapshotDir, duplicateSpecBasenames);
+            let report;
+            try {
+                const runtimeEnv = {
+                    ...mode.env,
+                    ...config.runOptions.env,
+                    ...runtimeTargetEnv,
+                    ...(process.env.BROWSER?.trim()
+                        ? { BROWSER: process.env.BROWSER.trim() }
+                        : config.runOptions.runtime.browser.trim()
+                            ? { BROWSER: config.runOptions.runtime.browser.trim() }
+                            : {}),
+                };
+                report = webSession
+                    ? await runWebSessionProcess(webSession, file, config.fuzz.crashDir, options.modeName, snapshotStore, snapshotEnabled, createSnapshots, overwriteSnapshots, reporter, reporterKind == "tap", runtimeEnv)
+                    : await runProcess(invocation, file, config.fuzz.crashDir, options.modeName, snapshotStore, snapshotEnabled, createSnapshots, overwriteSnapshots, reporter, reporterKind == "tap", runtimeEnv);
+            }
+            catch (error) {
+                const modeLabel = options.modeName ?? "default";
+                const details = error instanceof Error ? error.message : String(error);
+                throw new Error(`Failed to run ${path.basename(file)} in mode ${modeLabel} with ${details}`);
+            }
+            const normalized = normalizeReport(report);
+            const selectedSuites = options.suiteSelectors?.length
+                ? filterSelectedSuites(normalized.suites, options.suiteSelectors, file, options.modeName ?? "default")
+                : normalized.suites;
+            snapshotStore.flush();
+            snapshotSummary.matched += snapshotStore.matched;
+            snapshotSummary.created += snapshotStore.created;
+            snapshotSummary.updated += snapshotStore.updated;
+            snapshotSummary.failed += snapshotStore.failed;
+            reports.push({
+                file,
+                modeName: options.modeName ?? "default",
+                suites: selectedSuites,
+                coverage: normalized.coverage,
+                runCommand: runCommandForLog,
+                snapshotSummary: {
+                    matched: snapshotStore.matched,
+                    created: snapshotStore.created,
+                    updated: snapshotStore.updated,
+                    failed: snapshotStore.failed,
+                },
             });
         }
-        catch (error) {
-            const modeLabel = options.modeName ?? "default";
-            const details = error instanceof Error ? error.message : String(error);
-            throw new Error(`Failed to run ${path.basename(file)} in mode ${modeLabel} with ${details}`);
-        }
-        const normalized = normalizeReport(report);
-        const selectedSuites = options.suiteSelectors?.length
-            ? filterSelectedSuites(normalized.suites, options.suiteSelectors, file, options.modeName ?? "default")
-            : normalized.suites;
-        snapshotStore.flush();
-        snapshotSummary.matched += snapshotStore.matched;
-        snapshotSummary.created += snapshotStore.created;
-        snapshotSummary.updated += snapshotStore.updated;
-        snapshotSummary.failed += snapshotStore.failed;
-        reports.push({
-            file,
-            modeName: options.modeName ?? "default",
-            suites: selectedSuites,
-            coverage: normalized.coverage,
-            runCommand: runCommandForLog,
-            snapshotSummary: {
-                matched: snapshotStore.matched,
-                created: snapshotStore.created,
-                updated: snapshotStore.updated,
-                failed: snapshotStore.failed,
-            },
-        });
+    }
+    finally {
+        await ownedWebSession?.close();
     }
     if (config.logs && config.logs != "none") {
         const logRoot = path.join(process.cwd(), config.logs);
@@ -686,7 +712,7 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
             clean: cleanOutput,
             snapshotEnabled,
             showCoverage,
-            buildTime: 0,
+            buildTime,
             snapshotSummary,
             coverageSummary,
             stats,
@@ -705,7 +731,7 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
     }
     return {
         failed,
-        buildTime: 0,
+        buildTime,
         stats,
         snapshotSummary,
         coverageSummary,
@@ -722,6 +748,9 @@ function resolveRuntimeCommand(runtimeRun, target, emitWarnings = true) {
     const targetDefaultAligned = alignDefaultRuntimeToTarget(runtimeRun, target);
     const normalized = resolveLegacyRuntime(targetDefaultAligned, target, emitWarnings);
     return fallbackToDefaultRuntime(normalized, target, emitWarnings);
+}
+function shouldUsePersistentHeadfulWebSession(target, runtimeCommand) {
+    return target == "web" && !runtimeCommand.includes("--headless");
 }
 function alignDefaultRuntimeToTarget(runtimeRun, target) {
     const fallback = getDefaultRuntimeFallback(target);
@@ -817,19 +846,19 @@ function fallbackToDefaultRuntime(runtimeRun, target, emitWarnings) {
 function getDefaultRuntimeFallback(target) {
     if (target == "wasi") {
         return {
-            command: "node ./.as-test/runners/default.wasi.js <file>",
+            command: "node ./.as-test/runners/default.wasi.js",
             scriptPath: "./.as-test/runners/default.wasi.js",
         };
     }
     if (target == "bindings") {
         return {
-            command: "node ./.as-test/runners/default.bindings.js <file>",
+            command: "node ./.as-test/runners/default.bindings.js",
             scriptPath: "./.as-test/runners/default.bindings.js",
         };
     }
     if (target == "web") {
         return {
-            command: "node ./.as-test/runners/default.web.js <file>",
+            command: "node ./.as-test/runners/default.web.js",
             scriptPath: "./.as-test/runners/default.web.js",
         };
     }
@@ -841,7 +870,6 @@ function ensureDefaultRuntimeRunner(target, emitWarnings) {
         return null;
     const resolvedScriptPath = path.join(process.cwd(), fallback.scriptPath);
     if (existsSync(resolvedScriptPath)) {
-        ensureDefaultRuntimeHookFiles(target);
         return fallback;
     }
     const source = getDefaultRuntimeRunnerSource(target);
@@ -854,247 +882,43 @@ function ensureDefaultRuntimeRunner(target, emitWarnings) {
     if (emitWarnings) {
         process.stderr.write(chalk.dim(`runtime script missing; created ${fallback.scriptPath}\n`));
     }
-    ensureDefaultRuntimeHookFiles(target);
     return fallback;
-}
-function ensureDefaultRuntimeHookFiles(target) {
-    const hooks = getDefaultRuntimeRunnerHookFiles(target);
-    for (const file of hooks) {
-        if (existsSync(file.path))
-            continue;
-        if (!existsSync(path.dirname(file.path))) {
-            mkdirSync(path.dirname(file.path), { recursive: true });
-        }
-        writeFileSync(file.path, file.source);
-    }
-}
-function getDefaultRuntimeRunnerHookFiles(target) {
-    if (target == "bindings") {
-        return [
-            {
-                path: path.join(process.cwd(), "./.as-test/runners/default.bindings.hooks.js"),
-                source: getDefaultBindingsRunnerHooksSource(),
-            },
-        ];
-    }
-    if (target == "web") {
-        return [
-            {
-                path: path.join(process.cwd(), "./.as-test/runners/default.web.hooks.js"),
-                source: buildWebRunnerHooksSource(),
-            },
-        ];
-    }
-    return [];
 }
 function getDefaultRuntimeRunnerSource(target) {
     if (target == "wasi") {
-        return `import { readFileSync } from "fs";
-import { WASI } from "wasi";
+        return `import { instantiate } from "as-test/lib";
 
-const originalEmitWarning = process.emitWarning.bind(process);
-process.emitWarning = ((warning, ...args) => {
-  const type = typeof args[0] == "string" ? args[0] : "";
-  const name = typeof warning?.name == "string" ? warning.name : type;
-  const message =
-    typeof warning == "string" ? warning : String(warning?.message ?? "");
-  if (
-    name == "ExperimentalWarning" &&
-    message.includes("WASI is an experimental feature")
-  ) {
-    return;
-  }
-  return originalEmitWarning(warning, ...args);
-});
+const imports = {};
 
-const wasmPath = process.argv[2];
-if (!wasmPath) {
-  process.stderr.write("usage: node ./.as-test/runners/default.wasi.js <file.wasm>\\n");
-  process.exit(1);
-}
-
-try {
-  const wasi = new WASI({
-    version: "preview1",
-    args: [wasmPath],
-    env: process.env,
-    preopens: {},
+instantiate(imports)
+  .then((instance) => {
+    instance.exports.start?.();
+    // Add extra startup logic here when needed.
+  })
+  .catch((error) => {
+    throw new Error("Failed to run WASI module: " + String(error));
   });
-
-  const binary = readFileSync(wasmPath);
-  const module = new WebAssembly.Module(binary);
-  const envImports = {
-    __as_test_request_fuzz_config() {
-      return 0;
-    },
-  };
-  for (const entry of WebAssembly.Module.imports(module)) {
-    if (entry.module == "env" && entry.kind == "function" && !(entry.name in envImports)) {
-      envImports[entry.name] = () => 0;
-    }
-  }
-  const instance = new WebAssembly.Instance(module, {
-    env: envImports,
-    wasi_snapshot_preview1: wasi.wasiImport,
-  });
-  wasi.start(instance);
-} catch (error) {
-  process.stderr.write("failed to run WASI module: " + String(error) + "\\n");
-  process.exit(1);
-}
 `;
     }
     if (target == "bindings") {
-        return `import fs from "fs";
-import path from "path";
-import { pathToFileURL } from "url";
+        return `import { instantiate } from "as-test/lib";
 
-const HOOKS_PATH = path.resolve(
-  path.dirname(new URL(import.meta.url).pathname),
-  "./default.bindings.hooks.js",
-);
+const imports = {};
 
-function readExact(length) {
-  const out = Buffer.alloc(length);
-  let offset = 0;
-  while (offset < length) {
-    let read = 0;
-    try {
-      read = fs.readSync(0, out, offset, length - offset, null);
-    } catch (error) {
-      if (error && error.code === "EAGAIN") {
-        continue;
-      }
-      throw error;
-    }
-    if (!read) break;
-    offset += read;
-  }
-  const view = out.subarray(0, offset);
-  return view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength);
-}
-
-function writeRaw(data) {
-  const view = Buffer.from(data);
-  fs.writeSync(1, view);
-}
-
-function createRunnerContext({ wasmPath, module, helperPath }) {
-  return {
-    wasmPath,
-    helperPath,
-    module,
-    argv: process.argv.slice(2),
-    env: process.env,
-    readFrame(size) {
-      return readExact(Number(size ?? 0));
-    },
-    writeFrame(data) {
-      writeRaw(data);
-      return true;
-    },
-  };
-}
-
-function createAsTestImports(ctx) {
-  const originalWrite = process.stdout.write.bind(process.stdout);
-  process.stdout.write = (chunk, ...args) => {
-    if (chunk instanceof ArrayBuffer) {
-      return ctx.writeFrame(chunk);
-    }
-    return originalWrite(chunk, ...args);
-  };
-  process.stdin.read = (size) => ctx.readFrame(size);
-  return {};
-}
-
-function mergeImports(...groups) {
-  const out = {};
-  for (const group of groups) {
-    if (!group || typeof group != "object") continue;
-    for (const moduleName of Object.keys(group)) {
-      out[moduleName] = Object.assign(out[moduleName] || {}, group[moduleName]);
-    }
-  }
-  return out;
-}
-
-async function loadRunnerHooks() {
-  if (!fs.existsSync(HOOKS_PATH)) {
-    return {
-      createUserImports() {
-        return {};
-      },
-      async runModule(_exports, _ctx) {},
-    };
-  }
-  const mod = await import(pathToFileURL(HOOKS_PATH).href + "?t=" + Date.now());
-  return {
-    createUserImports:
-      typeof mod.createUserImports == "function"
-        ? mod.createUserImports
-        : () => ({}),
-    runModule:
-      typeof mod.runModule == "function" ? mod.runModule : async () => {},
-  };
-}
-
-async function instantiateModule(ctx, hooks) {
-  const helper = await import(pathToFileURL(ctx.helperPath).href);
-  if (typeof helper.instantiate !== "function") {
-    throw new Error("bindings helper missing instantiate export");
-  }
-  const imports = mergeImports(
-    createAsTestImports(ctx),
-    await hooks.createUserImports(ctx),
-  );
-  return helper.instantiate(ctx.module, imports);
-}
-
-const wasmPathArg = process.argv[2];
-if (!wasmPathArg) {
-  process.stderr.write("usage: node ./.as-test/runners/default.bindings.js <file.wasm>\\n");
-  process.exit(1);
-}
-
-const wasmPath = path.resolve(process.cwd(), wasmPathArg);
-const jsPath = wasmPath.replace(/\\.wasm$/, ".js");
-
-try {
-  const binary = fs.readFileSync(wasmPath);
-  const module = new WebAssembly.Module(binary);
-  const ctx = createRunnerContext({ wasmPath, module, helperPath: jsPath });
-  const hooks = await loadRunnerHooks();
-  const exports = await instantiateModule(ctx, hooks);
-  await hooks.runModule(exports, ctx);
-} catch (error) {
-  process.stderr.write("failed to run bindings module: " + String(error) + "\\n");
-  process.exit(1);
-}
+instantiate(imports)
+  .then((instance) => {
+    instance.exports.start?.();
+    // Add extra startup logic here when needed.
+  })
+  .catch((error) => {
+    throw new Error("Failed to run bindings module: " + String(error));
+  });
 `;
     }
     if (target == "web") {
         return buildWebRunnerSource();
     }
     return null;
-}
-function getDefaultBindingsRunnerHooksSource() {
-    return `export function createUserImports(_ctx) {
-  return {
-    // env: {
-    //   now_ms: () => Date.now(),
-    // },
-  };
-}
-
-export async function runModule(_exports, _ctx) {
-  // The generated bindings helper already calls exports._start().
-  // Add extra startup calls here when your module exposes them.
-  //
-  // Example:
-  // _exports.run?.();
-}
-`;
 }
 function resolveArtifactFileName(file, target, modeName, duplicateSpecBasenames = new Set()) {
     const base = path
@@ -1141,14 +965,55 @@ function resolveDisambiguator(file, duplicateSpecBasenames) {
         .replace(/[^A-Za-z0-9._-]/g, "_")
         .replace(/^_+|_+$/g, "");
 }
-function resolveBindingsHelperPath(wasmPath) {
-    const bindingsPath = wasmPath.replace(/\.wasm$/, ".bindings.js");
-    if (existsSync(bindingsPath))
-        return bindingsPath;
-    const legacyRunPath = wasmPath.replace(/\.wasm$/, ".run.js");
-    if (existsSync(legacyRunPath))
-        return legacyRunPath;
-    return bindingsPath;
+function resolveRuntimeTargetEnv(target, wasmPath) {
+    if (target == "bindings") {
+        return resolveBindingsRuntimeEnv(wasmPath);
+    }
+    if (target == "web") {
+        return resolveWebRuntimeEnv(wasmPath);
+    }
+    if (target == "wasi") {
+        return {
+            AS_TEST_RUNTIME_TARGET: "wasi",
+            AS_TEST_WASM_PATH: wasmPath,
+        };
+    }
+    return {};
+}
+function resolveBindingsRuntimeEnv(wasmPath) {
+    const helperPath = wasmPath.replace(/\.wasm$/, ".js");
+    const kind = detectBindingsKind(wasmPath, helperPath);
+    const env = {
+        AS_TEST_RUNTIME_TARGET: "bindings",
+        AS_TEST_WASM_PATH: wasmPath,
+        AS_TEST_BINDINGS_KIND: kind,
+    };
+    if (kind != "none") {
+        env.AS_TEST_HELPER_PATH = helperPath;
+    }
+    return env;
+}
+function resolveWebRuntimeEnv(wasmPath) {
+    const env = resolveBindingsRuntimeEnv(wasmPath);
+    env.AS_TEST_RUNTIME_TARGET = "web";
+    return env;
+}
+function detectBindingsKind(wasmPath, helperPath) {
+    if (!existsSync(wasmPath)) {
+        throw new Error(`bindings artifact not found: ${wasmPath}`);
+    }
+    if (!existsSync(helperPath)) {
+        return "none";
+    }
+    const source = readFileSync(helperPath, "utf8");
+    if (/\bexport\s+(async\s+)?function\s+instantiate\b/.test(source)) {
+        return "raw";
+    }
+    if (/\bexport\s+const\b/.test(source) &&
+        /new URL\([^)]*\.wasm["']?,\s*import\.meta\.url\)/.test(source)) {
+        return "esm";
+    }
+    throw new Error(`could not detect bindings kind for ${helperPath}; expected raw or esm helper output`);
 }
 function extractRuntimeScriptPath(runtimeRun) {
     const tokens = runtimeRun
@@ -1927,6 +1792,285 @@ async function runProcess(invocation, specFile, crashDir, modeName, snapshots, s
         return appendRuntimeFailureReport(report, specFile, modeName, code !== 0
             ? `test runtime failed with exit code ${code}`
             : "test runtime wrote to stderr", errorText, stdoutBuffer, stderrBuffer);
+    }
+    return report;
+}
+async function runWebSessionProcess(session, specFile, crashDir, modeName, snapshots, snapshotEnabled, createSnapshots, overwriteSnapshots, reporter, tapMode = false, env = process.env) {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    let report = null;
+    let parseError = null;
+    let stderrBuffer = "";
+    let stdoutBuffer = "";
+    let sawChannelClose = false;
+    const runtimeEvents = {
+        sawFileStart: false,
+        sawFileEnd: false,
+        fileName: path.basename(specFile),
+        fileVerdict: "none",
+        fileTime: "",
+        suiteStarts: 0,
+        suiteEnds: 0,
+        assertionFails: 0,
+        warnings: 0,
+        logs: 0,
+    };
+    const reportStream = {
+        dataFrames: 0,
+        dataBytes: 0,
+        sawChunkStart: false,
+        sawChunkEnd: false,
+        chunkCountExpected: 0,
+        chunkBytesExpected: 0,
+        chunkTotalBytesExpected: 0,
+        chunkFramesReceived: 0,
+        chunkBytesReceived: 0,
+        chunks: [],
+    };
+    class TestChannel extends Channel {
+        onPassthrough(data) {
+            stdoutBuffer += data.toString("utf8");
+            if (tapMode) {
+                process.stderr.write(data);
+            }
+            else {
+                process.stdout.write(data);
+            }
+        }
+        onCall(msg) {
+            const event = msg;
+            const kind = String(event.kind ?? "");
+            if (kind === "event:assert-fail") {
+                runtimeEvents.assertionFails++;
+                reporter.onAssertionFail?.({
+                    key: String(event.key ?? ""),
+                    instr: String(event.instr ?? ""),
+                    left: String(event.left ?? ""),
+                    right: String(event.right ?? ""),
+                    message: String(event.message ?? ""),
+                });
+                return;
+            }
+            if (kind === "event:file-start") {
+                runtimeEvents.sawFileStart = true;
+                runtimeEvents.fileName = String(event.file ?? runtimeEvents.fileName);
+                reporter.onFileStart?.({
+                    file: String(event.file ?? "unknown"),
+                    depth: 0,
+                    suiteKind: "file",
+                    description: String(event.file ?? "unknown"),
+                });
+                return;
+            }
+            if (kind === "event:file-end") {
+                runtimeEvents.sawFileEnd = true;
+                runtimeEvents.fileName = String(event.file ?? runtimeEvents.fileName);
+                runtimeEvents.fileVerdict = String(event.verdict ?? "none");
+                runtimeEvents.fileTime = String(event.time ?? "");
+                reporter.onFileEnd?.({
+                    file: String(event.file ?? "unknown"),
+                    depth: 0,
+                    suiteKind: "file",
+                    description: String(event.file ?? "unknown"),
+                    verdict: String(event.verdict ?? "none"),
+                    time: String(event.time ?? ""),
+                });
+                return;
+            }
+            if (kind === "event:suite-start") {
+                runtimeEvents.suiteStarts++;
+                reporter.onSuiteStart?.({
+                    file: String(event.file ?? "unknown"),
+                    depth: Number(event.depth ?? 0),
+                    suiteKind: String(event.suiteKind ?? ""),
+                    description: String(event.description ?? ""),
+                });
+                return;
+            }
+            if (kind === "event:suite-end") {
+                runtimeEvents.suiteEnds++;
+                reporter.onSuiteEnd?.({
+                    file: String(event.file ?? "unknown"),
+                    depth: Number(event.depth ?? 0),
+                    suiteKind: String(event.suiteKind ?? ""),
+                    description: String(event.description ?? ""),
+                    verdict: String(event.verdict ?? "none"),
+                });
+                return;
+            }
+            if (kind === "event:warn") {
+                runtimeEvents.warnings++;
+                reporter.onWarning?.({
+                    message: String(event.message ?? ""),
+                });
+                return;
+            }
+            if (kind === "event:log") {
+                runtimeEvents.logs++;
+                reporter.onLog?.({
+                    file: String(event.file ?? "unknown"),
+                    depth: Number(event.depth ?? 0),
+                    text: String(event.text ?? ""),
+                });
+                return;
+            }
+            if (kind === "snapshot:assert") {
+                const key = String(event.key ?? "");
+                const actual = String(event.actual ?? "");
+                const result = snapshots.assert(key, actual, snapshotEnabled, createSnapshots, overwriteSnapshots);
+                if (result.warnMissing) {
+                    reporter.onSnapshotMissing?.({ key });
+                }
+                this.send(MessageType.CALL, Buffer.from(`${result.ok ? "1" : "0"}\n${result.expected}`, "utf8"));
+                return;
+            }
+            if (kind === "report:start") {
+                reportStream.sawChunkStart = true;
+                reportStream.sawChunkEnd = false;
+                reportStream.chunkCountExpected = Number(event.chunkCount ?? 0);
+                reportStream.chunkBytesExpected = Number(event.chunkBytes ?? 0);
+                reportStream.chunkTotalBytesExpected = Number(event.totalBytes ?? 0);
+                reportStream.chunkFramesReceived = 0;
+                reportStream.chunkBytesReceived = 0;
+                reportStream.chunks = [];
+                return;
+            }
+            if (kind === "report:end") {
+                reportStream.sawChunkEnd = true;
+                return;
+            }
+            this.sendJSON(MessageType.CALL, { ok: true, expected: "" });
+        }
+        onDataMessage(data) {
+            reportStream.dataFrames++;
+            reportStream.dataBytes += data.length;
+            if (reportStream.sawChunkStart && !reportStream.sawChunkEnd) {
+                reportStream.chunkFramesReceived++;
+                reportStream.chunkBytesReceived += data.length;
+                reportStream.chunks.push(data.toString("utf8"));
+                return;
+            }
+            try {
+                report = JSON.parse(data.toString("utf8"));
+                parseError = null;
+            }
+            catch (error) {
+                parseError = String(error);
+            }
+        }
+        onClose() {
+            sawChannelClose = true;
+        }
+    }
+    const channel = new TestChannel(input, output);
+    output.on("data", (chunk) => {
+        session.sendReply(Buffer.from(chunk));
+    });
+    let code = 0;
+    try {
+        await session.runJob(Object.fromEntries(Object.entries(env).filter((entry) => typeof entry[1] == "string")), path.basename(specFile), (frame) => {
+            input.write(frame);
+        });
+    }
+    catch (error) {
+        code = 1;
+        await session.close(error instanceof Error ? error : new Error(String(error)));
+        stderrBuffer +=
+            (error instanceof Error ? error.stack ?? error.message : String(error)) +
+                "\n";
+    }
+    finally {
+        input.end();
+        output.end();
+    }
+    if (reportStream.sawChunkStart) {
+        if (!reportStream.sawChunkEnd) {
+            parseError =
+                parseError ??
+                    "missing report:end marker for chunked report payload";
+        }
+        else {
+            const chunkedPayload = reportStream.chunks.join("");
+            try {
+                report = JSON.parse(chunkedPayload);
+                parseError = null;
+            }
+            catch (error) {
+                parseError = `could not parse chunked report payload: ${String(error)}`;
+            }
+            if (reportStream.chunkCountExpected > 0 &&
+                reportStream.chunkFramesReceived !== reportStream.chunkCountExpected) {
+                parseError =
+                    parseError ??
+                        `chunk count mismatch: expected ${reportStream.chunkCountExpected}, received ${reportStream.chunkFramesReceived}`;
+            }
+            if (reportStream.chunkTotalBytesExpected > 0 &&
+                reportStream.chunkBytesReceived !== reportStream.chunkTotalBytesExpected) {
+                parseError =
+                    parseError ??
+                        `chunk size mismatch: expected ${reportStream.chunkTotalBytesExpected} bytes, received ${reportStream.chunkBytesReceived}`;
+            }
+        }
+    }
+    if (parseError) {
+        const errorText = `could not parse report payload: ${parseError}`;
+        const diagnostics = buildRuntimeReportDiagnostics(code, sawChannelClose, reportStream, runtimeEvents);
+        const fullError = `${errorText}\n${diagnostics}`;
+        persistCrashRecord(crashDir, {
+            kind: "test",
+            file: specFile,
+            mode: modeName ?? "default",
+            error: fullError,
+            stdout: stdoutBuffer,
+            stderr: stderrBuffer,
+        });
+        return createRuntimeFailureReport(specFile, modeName, "runtime returned an invalid report payload", fullError, stdoutBuffer, stderrBuffer);
+    }
+    if (!report) {
+        const synthesized = synthesizeReportFromRuntimeEvents(specFile, runtimeEvents);
+        if (synthesized) {
+            reporter.onWarning?.({
+                message: "runtime report payload missing; reconstructed result from streamed lifecycle events",
+            });
+            if (code !== 0 || hasMeaningfulRuntimeOutput(stderrBuffer)) {
+                const errorParts = [];
+                if (code !== 0) {
+                    errorParts.push(`child process exited with code ${code}`);
+                }
+                const stderrText = normalizeRuntimeOutput(stderrBuffer);
+                if (stderrText.length) {
+                    errorParts.push(stderrText);
+                }
+                const diagnostics = buildRuntimeReportDiagnostics(code, sawChannelClose, reportStream, runtimeEvents);
+                reporter.onWarning?.({
+                    message: `${errorParts.join("; ")}\n${diagnostics}`,
+                });
+            }
+            return synthesized;
+        }
+        const diagnostics = buildRuntimeReportDiagnostics(code, sawChannelClose, reportStream, runtimeEvents);
+        const fullError = `missing report payload from test runtime\n${diagnostics}`;
+        persistCrashRecord(crashDir, {
+            kind: "test",
+            file: specFile,
+            mode: modeName ?? "default",
+            error: fullError,
+            stdout: stdoutBuffer,
+            stderr: stderrBuffer,
+        });
+        return createRuntimeFailureReport(specFile, modeName, "missing report payload from test runtime", fullError, stdoutBuffer, stderrBuffer);
+    }
+    if (code != 0 || hasMeaningfulRuntimeOutput(stderrBuffer)) {
+        const diagnostics = buildRuntimeReportDiagnostics(code, sawChannelClose, reportStream, runtimeEvents);
+        reporter.onWarning?.({
+            message: [
+                code !== 0 ? `child process exited with code ${code}` : "",
+                normalizeRuntimeOutput(stderrBuffer),
+                diagnostics,
+            ]
+                .filter(Boolean)
+                .join("\n"),
+        });
     }
     return report;
 }

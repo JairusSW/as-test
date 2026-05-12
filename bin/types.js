@@ -60,6 +60,7 @@ export class Runtime {
 }
 export class ModeConfig {
     constructor() {
+        this.default = true;
         this.config = new Config();
     }
 }
