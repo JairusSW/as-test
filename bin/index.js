@@ -134,7 +134,7 @@ else if (COMMANDS.includes(args[0])) {
             });
         }
         else if (command === "clean") {
-            executeCleanCommand(configPath, selectedModes, resolveExecutionModes).catch((error) => {
+            executeCleanCommand(_args, configPath, selectedModes, resolveExecutionModes).catch((error) => {
                 printCliError(error);
                 process.exit(1);
             });
@@ -370,10 +370,11 @@ function printCommandHelp(command) {
     }
     if (command == "clean") {
         process.stdout.write(chalk.bold("Usage: ast clean [flags]\n\n"));
-        process.stdout.write("Remove configured build outputs, crash reports, and logs for the selected modes.\n\n");
+        process.stdout.write("Remove configured build outputs, crash reports, and logs.\n\n");
         process.stdout.write(chalk.bold("Flags:\n"));
         process.stdout.write("  --config <path>          Use a specific config file\n");
         process.stdout.write("  --mode <name[,name...]>  Clean one or multiple named modes\n");
+        process.stdout.write("  -f, --force              Skip the full-clean confirmation prompt\n");
         process.stdout.write("  --help, -h               Show this help\n");
         return;
     }

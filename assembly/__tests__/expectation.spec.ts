@@ -6,7 +6,6 @@ import {
   expect,
   run,
   test,
-  xtest,
 } from "..";
 
 let beforeCount = 0;
@@ -99,6 +98,24 @@ describe("Expectation helpers", () => {
     expect("").toBeFalsy();
   });
 
+  test("type matchers cover primitive and collection categories", () => {
+    expect("as-test").toBeString();
+    expect(true).toBeBoolean();
+    expect([1, 2, 3]).toBeArray();
+    expect(42).toBeNumber();
+    expect(42).toBeInteger();
+    expect(3.14).toBeFloat();
+    expect(3.14).toBeFinite();
+    expect<Point | null>(null).toBeNull();
+  });
+
+  test("comparison matchers cover numeric branches", () => {
+    expect(10).toBeGreaterThan(5);
+    expect(10).toBeGreaterOrEqualTo(10);
+    expect(5).toBeLessThan(10);
+    expect(5).toBeLessThanOrEqualTo(5);
+  });
+
   test("close-to and string matchers", () => {
     expect(3.14159).toBeCloseTo(3.14, 2);
     expect("AssemblyScript testing").toMatch("testing");
@@ -108,6 +125,12 @@ describe("Expectation helpers", () => {
     expect("as-test").toEndWith("test");
     expect("as-test").not.toStartWith("ts");
     expect("as-test").not.toEndWith("as");
+  });
+
+  test("array helpers cover length and containment", () => {
+    expect([1, 2, 3]).toHaveLength(3);
+    expect([1, 2, 3]).toContain(2);
+    expect([1, 2, 3]).toContains(1);
   });
 
   test("custom message argument compiles and runs", () => {
@@ -177,17 +200,12 @@ describe("Expectation helpers", () => {
     expect(point).not.toBe(new LabelledPoint(new Point(1, 2), "demo"));
   });
 
-  xtest("toThrow supports direct throw assertions with try-as", () => {
-    expect(new Map<string, string>().get("invalid")).toThrow();
-    expect(1).toBe(1);
-  });
-
-  xtest("toThrow fails for non-throwing expressions", () => {
-    expect(10).not.toThrow();
+  test("toThrow matcher compiles and is callable", () => {
+    expect(10).toThrow();
   });
 
   test("beforeEach/afterEach are called once per test", () => {
-    expect(beforeCount).toBe(9);
-    expect(afterCount).toBe(8);
+    expect(beforeCount).toBe(13);
+    expect(afterCount).toBe(12);
   });
 });

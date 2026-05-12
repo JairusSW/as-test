@@ -40,9 +40,13 @@
 ### Modes & CLI
 
 - feat: add per-mode `default: boolean` selection so modes can be included in implicit runs or kept manual-only.
-- feat: add `ast clean` to remove configured build outputs, crash reports, and logs for the selected modes.
+- feat: add `ast clean` to remove configured build outputs, coverage outputs, crash reports, and logs.
+- feat: make `ast clean` remove everything by default, prompt with `[Y/n]` before a full clean, and allow `-f` / `--force` to skip that confirmation.
 - fix: restore unnamed root-config execution alongside named default modes when `--mode` is omitted.
-- fix: make `ast clean --mode ...` skip shared output paths that are still owned by unselected modes instead of deleting them.
+- fix: make `ast clean` ignore mode `default: false` flags and treat an omitted `--mode` as a full clean across every configured mode.
+- fix: make `ast clean --mode ...` stay scoped to the selected mode(s) and skip shared output paths that are still owned by unselected modes instead of deleting them.
+- fix: make full `ast clean` remove the configured output roots directly so stale legacy build, coverage, and log directories are removed too.
+- fix: simplify `ast clean` console output so it only prints removed paths plus a final summary.
 
 ### Tests
 
