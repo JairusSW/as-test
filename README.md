@@ -2,6 +2,14 @@
 ╠═╣ ╚═╗ ══  ║  ╠═  ╚═╗  ║ 
 ╩ ╩ ╚═╝     ╩  ╚═╝ ╚═╝  ╩ </pre></h1>
 
+> **Upgrading to 1.1.0**
+>
+> See [CHANGELOG.md](./CHANGELOG.md) for upgrade notes. In most projects, refreshing generated runners is enough:
+>
+> ```bash
+> rm -rf .as-test/runners && npx as-test init
+> ```
+
 <details>
 <summary>Table of Contents</summary>
 

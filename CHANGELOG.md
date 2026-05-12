@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Upgrading to 1.1.0
+
+- refresh generated runners with:
+
+  ```bash
+  rm -rf .as-test/runners && npx as-test init
+  ```
+
+- generated runners now use a single file per target and import `instantiate(...)` from `as-test/lib`
+- new bindings and web runners no longer use `*.hooks.js`
+- named modes now support `default: false` to make a mode manual-only
+- the repo examples and default config now use mode names like `node:wasi`, `node:bindings`, `chromium`, and `chromium:headless`
+
 ### Runtime & Runners
 
 - feat: replace the split bindings/web hooks model with single-file runners that import `instantiate(...)` from `as-test/lib`, keeping bindings, WASI, and web runner syntax aligned.
