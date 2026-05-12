@@ -1,6 +1,8 @@
 node_modules
 *.lock
 build
+!lib/build/
+!lib/build/**
 !.as-test/
 .as-test/*
 !.as-test/runners/
