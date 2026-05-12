@@ -1,4 +1,4 @@
-import { stringify } from "as-console/stringify";
+import { formatValue } from "./format";
 
 export function quote(value: string): string {
   return '"' + escape(value) + '"';
@@ -36,7 +36,7 @@ export function stringifyValue<T>(value: T): string {
     return value.__as_test_json();
   }
 
-  const formatted = stringify<T>(value);
+  const formatted = formatValue<T>(value);
   if (formatted != "none") {
     return quote(formatted);
   }

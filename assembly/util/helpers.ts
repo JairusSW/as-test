@@ -1,4 +1,4 @@
-import { rainbow } from "as-rainbow";
+import { bgGreen, bgRed } from "./format";
 
 export function visualize<T>(value: T): string {
   if (isNullable<T>() && changetype<usize>(value) == <usize>0) {
@@ -61,16 +61,16 @@ export function diff(left: string, right: string, not: boolean = false): Diff {
     const rChar = right.charAt(i);
     if (not) {
       if (lChar == rChar) {
-        lDiff += rainbow.bgGreen(rChar);
-        rDiff += rainbow.bgRed(lChar);
+        lDiff += bgGreen(rChar);
+        rDiff += bgRed(lChar);
       } else {
         lDiff += rChar;
         rDiff += lChar;
       }
     } else {
       if (lChar != rChar) {
-        lDiff += rainbow.bgGreen(rChar);
-        rDiff += rainbow.bgRed(lChar);
+        lDiff += bgGreen(rChar);
+        rDiff += bgRed(lChar);
       } else {
         lDiff += rChar;
         rDiff += lChar;
@@ -80,19 +80,13 @@ export function diff(left: string, right: string, not: boolean = false): Diff {
 
   if (!not) {
     for (; i < left.length; i++) {
-      rDiff += rainbow.bgRed(left.charAt(i));
+      rDiff += bgRed(left.charAt(i));
     }
-    for (; i < right.length; i++) lDiff += rainbow.bgRed(right.charAt(i));
+    for (; i < right.length; i++) lDiff += bgRed(right.charAt(i));
   }
 
   return {
     left: lDiff,
     right: rDiff,
   };
-}
-
-// @ts-ignore
-@inline
-export function colorText(format: i32[], text: string): string {
-  return `\u001b[${format[0].toString()}m${text}\u001b[${format[1].toString()}m`;
 }

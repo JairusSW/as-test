@@ -1,6 +1,5 @@
 import { Suite } from "./src/suite";
 import { Expectation } from "./src/expectation";
-import { stringify } from "as-console/stringify";
 import {
   __COVER,
   __POINTS,
@@ -16,6 +15,7 @@ import {
   sendReport,
 } from "./util/wipc";
 import { quote } from "./util/json";
+import { bold, formatValue, green, red } from "./util/format";
 import {
   createFuzzer,
   FuzzerBase,
@@ -245,7 +245,7 @@ export function log<T>(data: T): void {
 }
 
 export function __as_test_log_default<T>(data: T): string {
-  return stringify(data);
+  return formatValue(data);
 }
 
 export function __as_test_log_is_enabled(): bool {
@@ -673,11 +673,11 @@ export class Result {
   }
   display(): string {
     let out = "";
-    out += `${rainbow.boldMk(this.name)} `;
+    out += `${bold(this.name)} `;
     if (this.arg1) {
-      out += `${rainbow.boldMk(rainbow.red(this.arg1.toString() + " " + "failed"))}`;
+      out += `${bold(red(this.arg1.toString() + " failed"))}`;
     } else {
-      out += `${rainbow.boldMk(rainbow.green("0 failed"))}`;
+      out += `${bold(green("0 failed"))}`;
     }
     out += ` ${this.arg1 + this.arg2} total\n`;
     return out;
