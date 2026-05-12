@@ -17,11 +17,10 @@ export class MockTransform extends Visitor {
   public srcCurrent: Source | null = null;
   public globalStatements: Statement[] = [];
   public mocked = new Set<string>();
-  public importFns: FunctionDeclaration[] = [];
   public importMocked: Set<string> = new Set<string>();
   visitCallExpression(node: CallExpression): void {
     super.visitCallExpression(node);
-    const name = normalizeName(toString(node.expression));
+    const name = normalizeName(expressionName(node.expression));
 
     if (this.mocked.has(name + "_mock")) {
       node.expression = Node.createIdentifierExpression(
@@ -42,7 +41,7 @@ export class MockTransform extends Visitor {
     if (name == "unmockFn") {
       const oldFn = node.args[0];
       if (!oldFn) return;
-      this.mocked.delete(normalizeName(toString(oldFn)) + "_mock");
+      this.mocked.delete(normalizeName(expressionName(oldFn)) + "_mock");
       return;
     }
 
@@ -51,19 +50,20 @@ export class MockTransform extends Visitor {
     }
 
     if (name != "mockFn") return;
-    const ov = toString(node.args[0]);
-    const cb = node.args[1] as FunctionExpression;
-    const newName = normalizeName(ov);
+    const oldValue = node.args[0];
+    const callback = node.args[1] as FunctionExpression | undefined;
+    if (!oldValue || !callback) return;
+    const newName = normalizeName(expressionName(oldValue));
 
     const newFn = Node.createFunctionDeclaration(
-      Node.createIdentifierExpression(newName + "_mock", cb.range),
-      cb.declaration.decorators,
+      Node.createIdentifierExpression(newName + "_mock", callback.range),
+      callback.declaration.decorators,
       CommonFlags.None,
-      cb.declaration.typeParameters,
-      cb.declaration.signature,
-      cb.declaration.body,
-      cb.declaration.arrowKind,
-      cb.range,
+      callback.declaration.typeParameters,
+      callback.declaration.signature,
+      callback.declaration.body,
+      callback.declaration.arrowKind,
+      callback.range,
     );
 
     const currentSource = this.srcCurrent;
@@ -84,19 +84,20 @@ export class MockTransform extends Visitor {
     node: FunctionDeclaration,
     isDefault?: boolean,
   ): void {
-    if (!node.body) this.importFns.push(node);
+    if (this.mocked.has(node.name.text)) return;
     super.visitFunctionDeclaration(node, isDefault);
   }
   visitSource(node: Source): void {
     this.mocked = new Set<string>();
     this.srcCurrent = node;
-    this.importFns = [];
     super.visitSource(node);
-
-    for (const node of this.importFns) {
+    const currentSource = this.srcCurrent;
+    if (!currentSource) return;
+    const stmts = currentSource.statements;
+    for (let index = 0; index < stmts.length; index++) {
+      const node = stmts[index] as FunctionDeclaration;
+      if (!isBodylessTopLevelFunction(node)) continue;
       let path: string;
-      const currentSource = this.srcCurrent;
-      if (!currentSource) continue;
       const dec = node.decorators?.find(
         (v) => (v.name as IdentifierExpression).text == "external",
       );
@@ -113,19 +114,6 @@ export class MockTransform extends Visitor {
           "." +
           (decArgs[0] as StringLiteralExpression).value;
       else path = currentSource.simplePath + "." + node.name.text;
-      const stmts = currentSource.statements;
-      let index = -1;
-      for (let i = 0; i < stmts.length; i++) {
-        const stmt = stmts[i];
-        if (
-          stmt instanceof FunctionDeclaration &&
-          stmt.name.text === node.name.text
-        ) {
-          index = i;
-          break;
-        }
-      }
-      if (index === -1) continue;
 
       const registerImportTarget = Node.createExpressionStatement(
         Node.createCallExpression(
@@ -151,6 +139,7 @@ export class MockTransform extends Visitor {
       );
       if (!this.importMocked.has(path)) {
         stmts.splice(index + 1, 0, registerImportTarget);
+        index++;
         continue;
       }
 
@@ -198,8 +187,22 @@ export class MockTransform extends Visitor {
       );
 
       stmts.splice(index, 1, newFn, registerImportTarget);
+      index++;
     }
   }
+}
+
+function isBodylessTopLevelFunction(
+  node: Statement | FunctionDeclaration,
+): node is FunctionDeclaration {
+  const candidate = node as FunctionDeclaration;
+  return (
+    candidate != null &&
+    typeof candidate == "object" &&
+    candidate.name instanceof IdentifierExpression &&
+    "signature" in candidate &&
+    candidate.body == null
+  );
 }
 
 function normalizeName(value: string): string {
@@ -208,4 +211,27 @@ function normalizeName(value: string): string {
     .replaceAll("[", "_")
     .replaceAll("]", "_")
     .replace(/[^A-Za-z0-9_]/g, "_");
+}
+
+function expressionName(node: Expression | null | undefined): string {
+  const candidate = node as Expression & {
+    text?: string;
+    expression?: Expression;
+    property?: { text?: string };
+  };
+  if (!candidate || typeof candidate != "object") return "";
+  if (typeof candidate.text == "string") return candidate.text;
+  const propertyText = candidate.property?.text;
+  if (propertyText && candidate.expression) {
+    const left = expressionName(candidate.expression);
+    return left.length ? `${left}.${propertyText}` : propertyText;
+  }
+  const sourceText = candidate.range?.source?.text;
+  if (typeof sourceText == "string") {
+    const raw = sourceText
+      .slice(candidate.range.start, candidate.range.end)
+      .trim();
+    if (raw.length) return raw;
+  }
+  return toString(candidate);
 }

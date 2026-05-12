@@ -2540,6 +2540,7 @@ async function ensureWebBrowsersReady(configPath, modes, browserOverride) {
             continue;
         }
         active.runOptions.runtime.browser = resolved.browser;
+        await ensurePlaywrightBrowserDepsReady(requestedBrowser, resolved.browser);
         process.env.BROWSER = resolved.browser;
     }
     if (!missing.length)
@@ -2658,6 +2659,59 @@ async function handleMissingWebBrowsers(missing) {
     }
     process.env.BROWSER = browserPath;
 }
+async function ensurePlaywrightBrowserDepsReady(requestedBrowser, resolvedBrowser) {
+    if (process.platform != "linux")
+        return;
+    if (!isPlaywrightBrowserExecutable(resolvedBrowser))
+        return;
+    const browser = normalizeBrowserInstallName(requestedBrowser);
+    if (!browser)
+        return;
+    const dryRun = spawnSync("npx", ["-y", "playwright", "install-deps", "--dry-run", browser], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+        shell: false,
+    });
+    if (dryRun.status === 0)
+        return;
+    const installCommand = `npx -y playwright install-deps ${browser}`;
+    const details = extractPlaywrightDepsSummary(dryRun).trim();
+    if (!canPromptForWebInstall()) {
+        throw new Error([
+            `Playwright ${browser} system dependencies are missing on Linux.`,
+            details.length ? details : null,
+            `Install them with "${installCommand}" and rerun.`,
+        ]
+            .filter(Boolean)
+            .join("\n"));
+    }
+    process.stdout.write(chalk.bold.blue("◇  Browser Deps Needed") +
+        "\n" +
+        `│  Playwright ${browser} needs Linux system packages before it can launch.\n` +
+        (details.length
+            ? `│\n${details
+                .split("\n")
+                .map((line) => `│  ${line}`)
+                .join("\n")}\n`
+            : "") +
+        "│\n");
+    const choice = await promptLine(`Install Playwright ${browser} system dependencies now? [Y/n] `);
+    const normalized = choice.trim().toLowerCase();
+    if (normalized == "n" || normalized == "no") {
+        throw new Error(`browser dependency install skipped. Run "${installCommand}", then rerun.`);
+    }
+    if (normalized != "" && normalized != "y" && normalized != "yes") {
+        throw new Error(`invalid answer "${choice}". Expected yes or no.`);
+    }
+    process.stdout.write(chalk.dim(`installing Playwright ${browser} system dependencies...\n`));
+    const install = spawnSync("npx", ["-y", "playwright", "install-deps", browser], {
+        stdio: "inherit",
+        shell: false,
+    });
+    if (install.status !== 0) {
+        throw new Error(`Playwright system dependency install failed for ${browser}`);
+    }
+}
 function choosePreferredBrowserInstall(missing) {
     for (const entry of missing) {
         const normalized = normalizeBrowserInstallName(entry.browser);
@@ -2683,6 +2737,21 @@ function normalizeBrowserInstallName(browser) {
         return "chromium";
     }
     return null;
+}
+function isPlaywrightBrowserExecutable(browser) {
+    const normalized = browser.trim().replace(/\\/g, "/").toLowerCase();
+    return (normalized.includes("/ms-playwright/") ||
+        normalized.endsWith("/pw_run.sh") ||
+        normalized.endsWith("/playwright.exe"));
+}
+function extractPlaywrightDepsSummary(result) {
+    const stdout = typeof result.stdout == "string"
+        ? result.stdout
+        : result.stdout?.toString("utf8") ?? "";
+    const stderr = typeof result.stderr == "string"
+        ? result.stderr
+        : result.stderr?.toString("utf8") ?? "";
+    return [stdout.trim(), stderr.trim()].filter(Boolean).join("\n");
 }
 function canPromptForWebInstall() {
     return Boolean(process.stdin.isTTY && process.stdout.isTTY);

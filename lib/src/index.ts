@@ -273,6 +273,7 @@ async function instantiateWebInstance(
     let wsBuffer = Buffer.alloc(0);
     let stdinBuffer = Buffer.alloc(0);
     let browserProcess: ChildProcess | null = null;
+    let browserStderr = "";
     let browserRetryTimer: NodeJS.Timeout | null = null;
     let browserStartupTimer: NodeJS.Timeout | null = null;
     let browserTempProfileDir: string | null = null;
@@ -569,6 +570,14 @@ async function instantiateWebInstance(
         browserProcess = launched.process;
         browserTempProfileDir = launched.tempProfileDir;
         ownsBrowserProcess = launched.ownsProcess;
+        if (browserProcess.stderr) {
+          browserProcess.stderr.on("data", (chunk: Buffer | string) => {
+            browserStderr = appendBrowserOutput(
+              browserStderr,
+              typeof chunk == "string" ? chunk : chunk.toString("utf8"),
+            );
+          });
+        }
         if (!headless) {
           browserRetryTimer = setInterval(() => {
             if (finished || resolved || ready || wsSocket) return;
@@ -595,9 +604,7 @@ async function instantiateWebInstance(
               return;
             }
             if (code && code != 0) {
-              rejectOnce(
-                new Error(`web browser process exited with code ${code}`),
-              );
+              rejectOnce(new Error(formatBrowserExitError(code, browserStderr)));
               return;
             }
             if (ready || wsSocket) {
@@ -933,7 +940,7 @@ function openWithInstalledBrowser(
         candidate.command,
         [...(headless ? candidate.headless : []), url],
         {
-          stdio: "ignore",
+          stdio: ["ignore", "ignore", "pipe"],
           detached: true,
         },
       ),
@@ -969,7 +976,7 @@ function spawnBrowserCommand(
     args.push(url);
     return {
       process: spawn(directCommand, args, {
-        stdio: "ignore",
+        stdio: ["ignore", "ignore", "pipe"],
         detached: true,
       }),
       tempProfileDir: resolvedHeadless.tempProfileDir,
@@ -990,7 +997,7 @@ function spawnBrowserCommand(
   args.push(url);
   return {
     process: spawn(command, args, {
-      stdio: "ignore",
+      stdio: ["ignore", "ignore", "pipe"],
       detached: true,
     }),
     tempProfileDir,
@@ -1035,6 +1042,20 @@ function splitCommand(commandValue: string): string[] {
     parts.push(current);
   }
   return parts;
+}
+
+function appendBrowserOutput(current: string, next: string): string {
+  const combined = current + next;
+  if (combined.length <= 16384) return combined;
+  return combined.slice(combined.length - 16384);
+}
+
+function formatBrowserExitError(code: number, stderr: string): string {
+  const trimmed = stderr.trim();
+  if (!trimmed.length) {
+    return `web browser process exited with code ${code}`;
+  }
+  return `web browser process exited with code ${code}\nstderr:\n${trimmed}`;
 }
 
 function killOwnedBrowserProcess(browserProcess: ChildProcess): void {

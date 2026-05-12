@@ -14,5 +14,5 @@ instantiate(imports)
     // Add extra startup logic here when needed.
   })
   .catch((error) => {
-    throw new Error("Failed to run web module: " + String(error));
+    throw error;
   });
