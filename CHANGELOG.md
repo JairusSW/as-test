@@ -1,6 +1,11 @@
 # Change Log
 
-## Unreleased
+## v1.1.1
+
+- add `ast clean` command to remove build outputs, coverage outputs, crash reports, and logs.
+- remove deps
+
+## v1.1.0
 
 ### Upgrading to 1.1.0
 
