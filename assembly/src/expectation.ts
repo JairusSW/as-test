@@ -62,6 +62,7 @@ export class Expectation<T> extends Tests {
     instr: string,
     left: string,
     right: string,
+    message: string = "",
   ): void {
     if (this._skip) {
       this.verdict = "skip";
@@ -77,7 +78,8 @@ export class Expectation<T> extends Tests {
     this.instr = instr;
     this.left = left;
     this.right = right;
-    this.message = isFail ? this._message : "";
+    const resolvedMessage = message.length ? message : this._message;
+    this.message = isFail ? resolvedMessage : "";
     if (isFail) {
       sendAssertionFailure(this._snapshotKey, instr, left, right, this.message);
       // @ts-ignore
@@ -103,7 +105,7 @@ export class Expectation<T> extends Tests {
   /**
    * Tests if a == null
    */
-  toBeNull(): void {
+  toBeNull(message: string = ""): void {
     const passed =
       (isNullable<T>() && changetype<usize>(this._left) == 0) ||
       (isInteger<T>() && nameof<T>() == "usize" && this._left == 0);
@@ -117,13 +119,14 @@ export class Expectation<T> extends Tests {
       visualize<T>(
         load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")),
       ),
+      message,
     );
   }
 
   /**
    * Tests if a > b
    */
-  toBeGreaterThan(value: T): void {
+  toBeGreaterThan(value: T, message: string = ""): void {
     if (!isInteger<T>() && !isFloat<T>())
       ERROR("toBeGreaterThan() can only be used on number types!");
 
@@ -139,13 +142,14 @@ export class Expectation<T> extends Tests {
       visualize<T>(
         load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")),
       ),
+      message,
     );
   }
 
   /**
    * Tests if a >= b
    */
-  toBeGreaterOrEqualTo(value: T): void {
+  toBeGreaterOrEqualTo(value: T, message: string = ""): void {
     if (!isInteger<T>() && !isFloat<T>())
       ERROR("toBeGreaterOrEqualTo() can only be used on number types!");
 
@@ -161,13 +165,14 @@ export class Expectation<T> extends Tests {
       visualize<T>(
         load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")),
       ),
+      message,
     );
   }
 
   /**
    * Tests if a < b
    */
-  toBeLessThan(value: T): void {
+  toBeLessThan(value: T, message: string = ""): void {
     if (!isInteger<T>() && !isFloat<T>())
       ERROR("toBeLessThan() can only be used on number types!");
 
@@ -183,13 +188,14 @@ export class Expectation<T> extends Tests {
       visualize<T>(
         load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")),
       ),
+      message,
     );
   }
 
   /**
    * Tests if a <= b
    */
-  toBeLessThanOrEqualTo(value: T): void {
+  toBeLessThanOrEqualTo(value: T, message: string = ""): void {
     if (!isInteger<T>() && !isFloat<T>())
       ERROR("toBeLessThanOrEqualTo() can only be used on number types!");
 
@@ -205,93 +211,127 @@ export class Expectation<T> extends Tests {
       visualize<T>(
         load<T>(changetype<usize>(this), offsetof<Expectation<T>>("_right")),
       ),
+      message,
     );
   }
 
   /**
    * Tests if a is string
    */
-  toBeString(): void {
-    this._resolve(isString<T>(), "toBeString", q(nameof<T>()), q("string"));
+  toBeString(message: string = ""): void {
+    this._resolve(
+      isString<T>(),
+      "toBeString",
+      q(nameof<T>()),
+      q("string"),
+      message,
+    );
   }
 
   /**
    * Tests if a is boolean
    */
-  toBeBoolean(): void {
-    this._resolve(isBoolean<T>(), "toBeBoolean", q(nameof<T>()), q("boolean"));
+  toBeBoolean(message: string = ""): void {
+    this._resolve(
+      isBoolean<T>(),
+      "toBeBoolean",
+      q(nameof<T>()),
+      q("boolean"),
+      message,
+    );
   }
 
   /**
    * Tests if a is array
    */
-  toBeArray(): void {
-    this._resolve(isArray<T>(), "toBeArray", q(nameof<T>()), q("Array<any>"));
+  toBeArray(message: string = ""): void {
+    this._resolve(
+      isArray<T>(),
+      "toBeArray",
+      q(nameof<T>()),
+      q("Array<any>"),
+      message,
+    );
   }
 
   /**
    * Tests if a is number
    */
-  toBeNumber(): void {
+  toBeNumber(message: string = ""): void {
     this._resolve(
       isFloat<T>() || isInteger<T>(),
       "toBeNumber",
       q(nameof<T>()),
       q("number"),
+      message,
     );
   }
 
   /**
    * Tests if a is integer
    */
-  toBeInteger(): void {
-    this._resolve(isInteger<T>(), "toBeInteger", q(nameof<T>()), q("integer"));
+  toBeInteger(message: string = ""): void {
+    this._resolve(
+      isInteger<T>(),
+      "toBeInteger",
+      q(nameof<T>()),
+      q("integer"),
+      message,
+    );
   }
 
   /**
    * Tests if a is float
    */
-  toBeFloat(): void {
-    this._resolve(isFloat<T>(), "toBeFloat", q(nameof<T>()), q("float"));
+  toBeFloat(message: string = ""): void {
+    this._resolve(
+      isFloat<T>(),
+      "toBeFloat",
+      q(nameof<T>()),
+      q("float"),
+      message,
+    );
   }
 
   /**
    * Tests if a is finite
    */
-  toBeFinite(): void {
+  toBeFinite(message: string = ""): void {
     // @ts-ignore
     const passed = (isFloat<T>() || isInteger<T>()) && isFinite(this._left);
-    this._resolve(passed, "toBeFinite", q("Infinity"), q("Finite"));
+    this._resolve(passed, "toBeFinite", q("Infinity"), q("Finite"), message);
   }
 
   /**
    * Tests if a value is truthy
    */
-  toBeTruthy(): void {
+  toBeTruthy(message: string = ""): void {
     this._resolve(
       isTruthy<T>(this._left),
       "toBeTruthy",
       q("falsy"),
       q("truthy"),
+      message,
     );
   }
 
   /**
    * Tests if a value is falsy
    */
-  toBeFalsy(): void {
+  toBeFalsy(message: string = ""): void {
     this._resolve(
       !isTruthy<T>(this._left),
       "toBeFalsy",
       q("truthy"),
       q("falsy"),
+      message,
     );
   }
 
   /**
    * Tests if a floating-point number is close to expected
    */
-  toBeCloseTo(expected: T, precision: i32 = 2): void {
+  toBeCloseTo(expected: T, precision: i32 = 2, message: string = ""): void {
     if (!isFloat<T>() && !isInteger<T>())
       ERROR("toBeCloseTo() can only be used on number types!");
     const factor = Math.pow(10, precision as f64);
@@ -302,67 +342,74 @@ export class Expectation<T> extends Tests {
       "toBeCloseTo",
       visualize<T>(this._left),
       visualize<T>(expected),
+      message,
     );
   }
 
   /**
    * Tests if a string contains substring
    */
-  toMatch(value: string): void {
+  toMatch(value: string, message: string = ""): void {
     if (!isString<T>()) ERROR("toMatch() can only be used on string types!");
     // @ts-ignore
     const passed = this._left.indexOf(value) >= 0;
     // @ts-ignore
-    this._resolve(passed, "toMatch", q(this._left as string), q(value));
+    this._resolve(passed, "toMatch", q(this._left as string), q(value), message);
   }
 
   /**
    * Tests if a string starts with the provided prefix.
    */
-  toStartWith(value: string): void {
+  toStartWith(value: string, message: string = ""): void {
     if (!isString<T>())
       ERROR("toStartWith() can only be used on string types!");
     // @ts-ignore
     const left = this._left as string;
     const passed = left.indexOf(value) == 0;
-    this._resolve(passed, "toStartWith", q(left), q(value));
+    this._resolve(passed, "toStartWith", q(left), q(value), message);
   }
 
   /**
    * Tests if a string ends with the provided suffix.
    */
-  toEndWith(value: string): void {
+  toEndWith(value: string, message: string = ""): void {
     if (!isString<T>()) ERROR("toEndWith() can only be used on string types!");
     // @ts-ignore
     const left = this._left as string;
     const idx = left.lastIndexOf(value);
     const passed = idx >= 0 && idx + value.length == left.length;
-    this._resolve(passed, "toEndWith", q(left), q(value));
+    this._resolve(passed, "toEndWith", q(left), q(value), message);
   }
 
   /**
    * Tests if an array has length x
    */
-  toHaveLength(value: i32): void {
+  toHaveLength(value: i32, message: string = ""): void {
     // @ts-ignore
     const leftLen = this._left.length as i32;
     // @ts-ignore
     const passed = isArray<T>() && leftLen == value;
-    this._resolve(passed, "toHaveLength", leftLen.toString(), value.toString());
+    this._resolve(
+      passed,
+      "toHaveLength",
+      leftLen.toString(),
+      value.toString(),
+      message,
+    );
   }
 
   /**
    * Tests if an array or string contains a value
    */
   // @ts-ignore
-  toContain(value: valueof<T>): void {
+  toContain(value: valueof<T>, message: string = ""): void {
     if (isString<T>()) {
       // @ts-ignore
       const left = this._left as string;
       // @ts-ignore
       const needle = value as string;
       const passed = left.indexOf(needle) >= 0;
-      this._resolve(passed, "toContain", q(left), q(needle));
+      this._resolve(passed, "toContain", q(left), q(needle), message);
       return;
     }
 
@@ -374,6 +421,7 @@ export class Expectation<T> extends Tests {
         "toContain",
         stringifyValue<T>(this._left),
         stringifyValue<valueof<T>>(value),
+        message,
       );
       return;
     }
@@ -385,28 +433,28 @@ export class Expectation<T> extends Tests {
    * Alias for toContain().
    */
   // @ts-ignore
-  toContains(value: valueof<T>): void {
-    this.toContain(value);
+  toContains(value: valueof<T>, message: string = ""): void {
+    this.toContain(value, message);
   }
 
   /**
    * Tests if serialized value matches stored snapshot.
    */
-  toMatchSnapshot(name: string = ""): void {
+  toMatchSnapshot(name: string = "", message: string = ""): void {
     let key = name.length
       ? namedSnapshotKey(this._snapshotKey, name)
       : nextUnnamedSnapshotKey(this._snapshotKey);
 
     const actual = stringifyValue<T>(this._left);
     const res = snapshotAssert(key, actual);
-    this._resolve(res.ok, "toMatchSnapshot", actual, res.expected);
+    this._resolve(res.ok, "toMatchSnapshot", actual, res.expected, message);
   }
 
   /**
    * Delegates throw assertions to try-as when available.
    * If try-as is unavailable, this matcher is disabled and warns once.
    */
-  toThrow(): void {
+  toThrow(message: string = ""): void {
     // @ts-ignore
     if (!isDefined(AS_TEST_TRY_AS)) {
       if (!warnedToThrowDisabled) {
@@ -415,7 +463,7 @@ export class Expectation<T> extends Tests {
         );
         warnedToThrowDisabled = true;
       }
-      this._resolve(true, "toThrow", q("disabled"), q("disabled"));
+      this._resolve(true, "toThrow", q("disabled"), q("disabled"), message);
       return;
     }
 
@@ -425,13 +473,13 @@ export class Expectation<T> extends Tests {
       // @ts-ignore
       __ExceptionState.Failures--;
     }
-    this._resolve(passed, "toThrow", q("throws"), q("throws"));
+    this._resolve(passed, "toThrow", q("throws"), q("throws"), message);
   }
 
   /**
    * Tests for equality
    */
-  toBe(equals: T): void {
+  toBe(equals: T, message: string = ""): void {
     const passed = this._left === equals;
 
     this._resolve(
@@ -439,32 +487,35 @@ export class Expectation<T> extends Tests {
       "toBe",
       stringifyValue<T>(this._left),
       stringifyValue<T>(equals),
+      message,
     );
   }
 
   /**
    * Tests for deep equality
    */
-  toEqual(equals: T): void {
+  toEqual(equals: T, message: string = ""): void {
     const passed = valueEquals<T>(this._left, equals, false);
     this._resolve(
       passed,
       "toEqual",
       stringifyValue<T>(this._left),
       stringifyValue<T>(equals),
+      message,
     );
   }
 
   /**
    * Tests for strict deep equality
    */
-  toStrictEqual(equals: T): void {
+  toStrictEqual(equals: T, message: string = ""): void {
     const passed = valueEquals<T>(this._left, equals, true);
     this._resolve(
       passed,
       "toStrictEqual",
       stringifyValue<T>(this._left),
       stringifyValue<T>(equals),
+      message,
     );
   }
 }

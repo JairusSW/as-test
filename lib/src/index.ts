@@ -130,7 +130,25 @@ function readExact(length: number): ArrayBuffer {
 
 function writeRaw(data: ArrayBuffer): void {
   const view = Buffer.from(data);
-  fs.writeSync(1, view);
+  let offset = 0;
+  while (offset < view.byteLength) {
+    let written = 0;
+    try {
+      written = fs.writeSync(1, view, offset, view.byteLength - offset);
+    } catch (error) {
+      if (
+        error &&
+        typeof error == "object" &&
+        "code" in error &&
+        error.code == "EAGAIN"
+      ) {
+        continue;
+      }
+      throw error;
+    }
+    if (!written) continue;
+    offset += written;
+  }
 }
 
 function mergeImports(...groups: unknown[]): AnyImports {

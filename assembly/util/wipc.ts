@@ -305,9 +305,12 @@ function wasiWriteAll(data: ArrayBuffer): void {
     store<usize>(iovPtr, <usize>left, sizeof<usize>());
     store<u32>(writtenPtr, 0, 0);
     const errno = wasi_fd_write(1, iovPtr, 1, writtenPtr);
+    if (errno == WASI_ERRNO_AGAIN || errno == WASI_ERRNO_INTR) {
+      continue;
+    }
     if (errno != 0) return;
     const written = <i32>load<u32>(writtenPtr, 0);
-    if (written <= 0) return;
+    if (written <= 0) continue;
     offset += written;
   }
 }

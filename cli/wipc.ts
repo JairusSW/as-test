@@ -8,6 +8,7 @@ export enum MessageType {
 export class Channel {
   private static readonly MAGIC = Buffer.from("WIPC");
   private static readonly HEADER_SIZE = 9;
+  private static readonly MAGIC_PREFIX_MAX = Channel.MAGIC.length - 1;
 
   private buffer = Buffer.alloc(0);
 
@@ -43,8 +44,15 @@ export class Channel {
       const idx = this.buffer.indexOf(Channel.MAGIC);
 
       if (idx === -1) {
-        this.onPassthrough(this.buffer);
-        this.buffer = Buffer.alloc(0);
+        const keep = Math.min(
+          this.buffer.length,
+          Channel.MAGIC_PREFIX_MAX,
+        );
+        const flushLength = this.buffer.length - keep;
+        if (flushLength > 0) {
+          this.onPassthrough(this.buffer.subarray(0, flushLength));
+          this.buffer = this.buffer.subarray(flushLength);
+        }
         return;
       }
 
