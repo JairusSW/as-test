@@ -1,6 +1,7 @@
 import { OBJECT, TOTAL_OVERHEAD } from "rt/common";
 import { JSON } from "../../src/json-as";
 
+
 @json
 class Foo {
   a: i32 = 0;

@@ -1,5 +1,5 @@
 export function buildWebRunnerSource() {
-    return `// Feel free to edit this file!
+  return `// Feel free to edit this file!
 // Runner files use the name <mode>.<type>.js, where <type> is bindings, wasi, or web.
 // To create a runner for another mode, copy this file to <new-mode>.<type>.js.
 

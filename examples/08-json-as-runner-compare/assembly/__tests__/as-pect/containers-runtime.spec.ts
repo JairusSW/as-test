@@ -1,5 +1,6 @@
 import { JSON } from "../../src/json-as";
 
+
 @json
 class ContainerVec3 {
   x: f64 = 0.0;

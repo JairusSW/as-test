@@ -3,9 +3,7 @@ import { diff } from "typer-diff";
 import { readFileSync } from "fs";
 import * as path from "path";
 import { formatSpecDisplayPath, formatTime } from "../util.js";
-import {
-  describeCoveragePoint,
-} from "../coverage-points.js";
+import { describeCoveragePoint } from "../coverage-points.js";
 import {
   FuzzCompleteEvent,
   FuzzFileCompleteEvent,
@@ -1281,9 +1279,7 @@ function renderCoveragePointTree(
   isLast: boolean,
   expandNested: boolean,
 ): number {
-  const visibleChildren = [
-    ...(childrenByParent.get(point.hash) ?? []),
-  ]
+  const visibleChildren = [...(childrenByParent.get(point.hash) ?? [])]
     .filter((child) => shouldRenderCoveragePoint(child, childrenByParent))
     .sort(compareCoverageGapPoints);
   const nestedUncoveredCount = countNestedUncoveredPoints(
@@ -1350,10 +1346,12 @@ function shouldRenderCoveragePoint(
   >,
 ): boolean {
   if (!point.executed) return true;
-  return countNestedUncoveredPoints(
-    childrenByParent.get(point.hash) ?? [],
-    childrenByParent,
-  ) > 0;
+  return (
+    countNestedUncoveredPoints(
+      childrenByParent.get(point.hash) ?? [],
+      childrenByParent,
+    ) > 0
+  );
 }
 
 function countNestedUncoveredPoints(
@@ -1411,9 +1409,7 @@ function renderCoverageGapLine(
   const locationLabel = location.padEnd(layout.locationWidth + 6);
   const treePrefix = buildCoverageTreePrefix(ancestorHasNext, isLast);
   const meta = `${typeLabel}${locationLabel}`;
-  console.log(
-    `    ${treePrefix}${chalk.dim(meta)}  ${snippet}`,
-  );
+  console.log(`    ${treePrefix}${chalk.dim(meta)}  ${snippet}`);
 }
 
 function renderCoverageScopeHeader(
@@ -1451,9 +1447,7 @@ function renderCoverageScopeHeader(
   );
   const treePrefix = buildCoverageTreePrefix(ancestorHasNext, isLast);
   const meta = `${typeLabel}${locationLabel}`;
-  console.log(
-    `    ${treePrefix}${chalk.dim(meta)}  ${chalk.dim(snippet)}`,
-  );
+  console.log(`    ${treePrefix}${chalk.dim(meta)}  ${chalk.dim(snippet)}`);
 }
 
 function buildCoverageTreePrefix(

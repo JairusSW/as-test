@@ -1,5 +1,6 @@
 import { JSON } from "../../src/json-as";
 
+
 @json
 class TinyVec3 {
   x: i32 = 0;

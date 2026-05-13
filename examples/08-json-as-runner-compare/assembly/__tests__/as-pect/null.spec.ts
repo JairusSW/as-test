@@ -1,5 +1,6 @@
 import { JSON } from "../../src/json-as";
 
+
 @json
 class MaybeData {
   value: string | null = null;

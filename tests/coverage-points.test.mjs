@@ -19,10 +19,7 @@ test("coverage point descriptors prefer parameter default values over declaratio
 
   assert.equal(info.displayType, "DefaultValue");
   assert.equal(info.subjectName, "precision");
-  assert.equal(
-    info.visible.slice(info.highlightStart, info.highlightEnd),
-    "2",
-  );
+  assert.equal(info.visible.slice(info.highlightStart, info.highlightEnd), "2");
 });
 
 test("coverage point descriptors keep transform-emitted ternary labels", async () => {

@@ -1,5 +1,6 @@
 import { JSON } from "../../src/json-as";
 
+
 @json
 class MapValue {
   id: i32 = 0;

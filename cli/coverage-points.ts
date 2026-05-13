@@ -426,7 +426,8 @@ function detectCoverageIfBranch(
   const conditionPadding = condition.length
     ? condition.length - condition.trimStart().length
     : 0;
-  const conditionStart = openParen == -1 ? -1 : openParen + 1 + conditionPadding;
+  const conditionStart =
+    openParen == -1 ? -1 : openParen + 1 + conditionPadding;
   if (conditionStart == -1 || !condition.length) {
     return { type: "IfBranch", start: 0, end: full.length };
   }

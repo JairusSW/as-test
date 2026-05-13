@@ -1,5 +1,6 @@
 import { JSON } from "../../src/json-as";
 
+
 @json
 class GenericTest<T> {
   public foo: T;

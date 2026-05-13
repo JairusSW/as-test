@@ -3,6 +3,7 @@ import { describe, expect, it } from "as-test";
 // bs import prevents json-as transform from adding broken pnpm paths.
 import { JSON } from "json-as/assembly";
 
+
 @json
 class SimpleData {
   name: string = "";

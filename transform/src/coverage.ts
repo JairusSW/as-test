@@ -92,7 +92,9 @@ export class CoverageTransform extends Visitor {
   private scopeStack: CoverPoint[] = [];
 
   private getCurrentScope(): CoverPoint | null {
-    return this.scopeStack.length ? this.scopeStack[this.scopeStack.length - 1]! : null;
+    return this.scopeStack.length
+      ? this.scopeStack[this.scopeStack.length - 1]!
+      : null;
   }
 
   private withScope(point: CoverPoint, callback: () => void): void {
@@ -277,12 +279,7 @@ export class CoverageTransform extends Visitor {
       const path = node.range.source.normalizedPath;
       const methodName = getNodeName(node.name);
       const scopeKind = methodName == "constructor" ? "Constructor" : "Method";
-      const point = this.createFunctionPoint(
-        path,
-        node,
-        scopeKind,
-        methodName,
-      );
+      const point = this.createFunctionPoint(path, node, scopeKind, methodName);
 
       const replacer = new RangeTransform(node);
       const registerStmt = createRegisterStatement(point);
@@ -397,23 +394,23 @@ export class CoverageTransform extends Visitor {
             expression.range,
           );
 
-        const bodyBlock = node.body as BlockStatement;
-        bodyBlock.statements.unshift(coverStmt);
-      }
-
-      this.withScope(point, () => {
-        this.visit(node.name, node);
-        this.visit(node.decorators, node);
-        this.visit(node.typeParameters, node);
-        this.visit(node.signature, node);
-        if (node.body instanceof BlockStatement) {
-          this.visit(node.body.statements, node.body);
-        } else {
-          this.visit(node.body, node);
+          const bodyBlock = node.body as BlockStatement;
+          bodyBlock.statements.unshift(coverStmt);
         }
-      });
+
+        this.withScope(point, () => {
+          this.visit(node.name, node);
+          this.visit(node.decorators, node);
+          this.visit(node.typeParameters, node);
+          this.visit(node.signature, node);
+          if (node.body instanceof BlockStatement) {
+            this.visit(node.body.statements, node.body);
+          } else {
+            this.visit(node.body, node);
+          }
+        });
+      }
     }
-  }
   }
   visitIfStatement(node: IfStatement): void {
     // @ts-ignore
