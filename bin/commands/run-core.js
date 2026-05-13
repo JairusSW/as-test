@@ -719,6 +719,8 @@ export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selector
             clean: cleanOutput,
             snapshotEnabled,
             showCoverage,
+            showCoverageAll: Boolean(flags.showCoverageAll),
+            verbose: Boolean(flags.verbose),
             buildTime,
             snapshotSummary,
             coverageSummary,
@@ -1204,6 +1206,10 @@ function normalizeCoverage(value) {
             column: Number(p.column ?? 0),
             type: String(p.type ?? ""),
             executed: Boolean(p.executed),
+            parentHash: String(p.parentHash ?? ""),
+            scopeKind: String(p.scopeKind ?? ""),
+            scopeName: String(p.scopeName ?? ""),
+            depth: Number(p.depth ?? 0),
         };
     })
         .filter((point) => point.file.length > 0);
@@ -1475,10 +1481,14 @@ function matchesCoverageTextPattern(value, pattern) {
     return globPatternToRegExp(normalized).test(value);
 }
 function compareCoveragePoints(a, b) {
+    const depthA = a.depth ?? 0;
+    const depthB = b.depth ?? 0;
     if (a.line !== b.line)
         return a.line - b.line;
     if (a.column !== b.column)
         return a.column - b.column;
+    if (depthA !== depthB)
+        return depthA - depthB;
     if (a.type !== b.type)
         return a.type.localeCompare(b.type);
     return a.hash.localeCompare(b.hash);

@@ -42,6 +42,10 @@ test("skipped callbacks were not executed", () => {
   expect(ran).toBe(0);
 });
 
+test("callback-only test still passes", () => {
+  ran += 1;
+});
+
 describe("todo and only helpers", () => {
   only("only runs the focused test", () => {
     focusedRan++;
@@ -61,6 +65,7 @@ describe("todo and only helpers", () => {
 });
 
 test("only skipped unfocused siblings", () => {
+  expect(ran).toBe(1);
   expect(focusedRan).toBe(1);
   expect(unfocusedRan).toBe(0);
 });

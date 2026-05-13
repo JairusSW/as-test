@@ -14,6 +14,7 @@ export type RunFlags = {
   overwriteSnapshots: boolean;
   clean: boolean;
   showCoverage: boolean;
+  showCoverageAll: boolean;
   verbose: boolean;
   jobs: number;
   buildJobs: number;

@@ -142,6 +142,301 @@ test("parallel test mode reports build failures after other files finish", async
   }
 });
 
+test("coverage gaps group unhit parent scopes before nested points", async () => {
+  const helperPath = path.join(
+    repoRoot,
+    "assembly",
+    "__tests__",
+    "__tmp_coverage_helper.ts",
+  );
+  const specPath = path.join(
+    repoRoot,
+    "assembly",
+    "__tests__",
+    "__tmp_coverage.spec.ts",
+  );
+
+  await fs.writeFile(
+    helperPath,
+    [
+      "export function covered(): i32 {",
+      "  return 1;",
+      "}",
+      "",
+      "export function neverCalled(",
+      "  value: i32 = nestedValue(1),",
+      "): i32 {",
+      "  return value;",
+      "}",
+      "",
+      "export function partiallyCovered(",
+      "  value: i32 = nestedValue(2),",
+      "): i32 {",
+      "  return value;",
+      "}",
+      "",
+      "function nestedValue(value: i32): i32 {",
+      "  return value + 1;",
+      "}",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await fs.writeFile(
+    specPath,
+    [
+      'import { test, expect } from "..";',
+      'import { covered, partiallyCovered } from "./__tmp_coverage_helper";',
+      "",
+      'test("coverage", () => {',
+      "  expect(covered()).toBe(1);",
+      "  expect(partiallyCovered(1)).toBe(1);",
+      "});",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+
+  try {
+    const result = await runNode(
+      [
+        "./bin/index.js",
+        "test",
+        "assembly/__tests__/__tmp_coverage.spec.ts",
+        "--mode",
+        "node:wasi",
+        "--no-parallel",
+        "--enable",
+        "coverage",
+        "--show-coverage",
+      ],
+      {},
+    );
+    const output = result.stdout + result.stderr;
+    assert.equal(result.code, 0, output);
+    assert.match(output, /Coverage Gaps/);
+    assert.match(output, /__tmp_coverage_helper\.ts \(6 uncovered\)/);
+    assert.match(
+      output,
+      /Function\s+assembly\/__tests__\/__tmp_coverage_helper\.ts:5:\d+.*neverCalled/,
+    );
+    assert.match(output, /\(\+2 nested uncovered points\)/);
+    assert.match(
+      output,
+      /Function\s+assembly\/__tests__\/__tmp_coverage_helper\.ts:11:\d+.*partiallyCovered/,
+    );
+    assert.match(
+      output,
+      /Run with --show-coverage=all or --verbose to expand nested coverage gaps\./,
+    );
+  } finally {
+    await fs.rm(helperPath, { force: true });
+    await fs.rm(specPath, { force: true });
+  }
+});
+
+test("coverage gaps expand nested points for verbose and --show-coverage=all", async () => {
+  const helperPath = path.join(
+    repoRoot,
+    "assembly",
+    "__tests__",
+    "__tmp_coverage_helper.ts",
+  );
+  const specPath = path.join(
+    repoRoot,
+    "assembly",
+    "__tests__",
+    "__tmp_coverage.spec.ts",
+  );
+
+  await fs.writeFile(
+    helperPath,
+    [
+      "export function covered(): i32 {",
+      "  return 1;",
+      "}",
+      "",
+      "export function neverCalled(",
+      "  value: i32 = nestedValue(1),",
+      "): i32 {",
+      "  return value;",
+      "}",
+      "",
+      "export function partiallyCovered(",
+      "  value: i32 = nestedValue(2),",
+      "): i32 {",
+      "  return value;",
+      "}",
+      "",
+      "function nestedValue(value: i32): i32 {",
+      "  return value + 1;",
+      "}",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await fs.writeFile(
+    specPath,
+    [
+      'import { test, expect } from "..";',
+      'import { covered, partiallyCovered } from "./__tmp_coverage_helper";',
+      "",
+      'test("coverage", () => {',
+      "  expect(covered()).toBe(1);",
+      "  expect(partiallyCovered(1)).toBe(1);",
+      "});",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+
+  try {
+    for (const extraArgs of [
+      ["--show-coverage=all"],
+      ["--show-coverage", "--verbose"],
+    ]) {
+      const result = await runNode(
+        [
+          "./bin/index.js",
+          "test",
+          "assembly/__tests__/__tmp_coverage.spec.ts",
+          "--mode",
+          "node:wasi",
+          "--no-parallel",
+          "--enable",
+          "coverage",
+          ...extraArgs,
+        ],
+        {},
+      );
+      const output = result.stdout + result.stderr;
+      assert.equal(result.code, 0, output);
+      assert.doesNotMatch(output, /\(\+1 nested uncovered point\)/);
+      assert.match(
+        output,
+        /DefaultValue\s+assembly\/__tests__\/__tmp_coverage_helper\.ts:6:\d+.*value: i32 = nestedValue\(1\)/,
+      );
+      assert.match(
+        output,
+        /DefaultValue\s+assembly\/__tests__\/__tmp_coverage_helper\.ts:12:\d+.*value: i32 = nestedValue\(2\)/,
+      );
+    }
+  } finally {
+    await fs.rm(helperPath, { force: true });
+    await fs.rm(specPath, { force: true });
+  }
+});
+
+test("coverage gaps surface control-flow and assignment kinds", async () => {
+  const helperPath = path.join(
+    repoRoot,
+    "assembly",
+    "__tests__",
+    "__tmp_coverage_kinds_helper.ts",
+  );
+  const specPath = path.join(
+    repoRoot,
+    "assembly",
+    "__tests__",
+    "__tmp_coverage_kinds.spec.ts",
+  );
+
+  await fs.writeFile(
+    helperPath,
+    [
+      "export function coveredLoop(): i32 {",
+      "  let total = 0;",
+      "  for (let i = 0; i < 1; i++) total += i;",
+      "  return total;",
+      "}",
+      "",
+      "export function uncoveredIfBranch(flag: bool): i32 {",
+      "  if (flag) return 1;",
+      "  return 0;",
+      "}",
+      "",
+      "export function uncoveredAssignment(): i32 {",
+      "  let value = 0;",
+      "  value = nestedValue(3);",
+      "  return value;",
+      "}",
+      "",
+      "export function uncoveredLoop(): i32 {",
+      "  for (let i = 0; i < 2; i++) {",
+      "    if (i == 1) return i;",
+      "  }",
+      "  return -1;",
+      "}",
+      "",
+      "export function uncoveredThrow(): void {",
+      '  throw new Error("boom");',
+      "}",
+      "",
+      "function nestedValue(value: i32): i32 {",
+      "  return value + 1;",
+      "}",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await fs.writeFile(
+    specPath,
+    [
+      'import { test, expect } from "..";',
+      'import { coveredLoop, uncoveredIfBranch } from "./__tmp_coverage_kinds_helper";',
+      "",
+      'test("coverage kinds", () => {',
+      "  expect(coveredLoop()).toBe(0);",
+      "  expect(uncoveredIfBranch(false)).toBe(0);",
+      "});",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+
+  try {
+    const result = await runNode(
+      [
+        "./bin/index.js",
+        "test",
+        "assembly/__tests__/__tmp_coverage_kinds.spec.ts",
+        "--mode",
+        "node:wasi",
+        "--no-parallel",
+        "--enable",
+        "coverage",
+        "--show-coverage=all",
+      ],
+      {},
+    );
+    const output = result.stdout + result.stderr;
+    assert.equal(result.code, 0, output);
+    assert.match(
+      output,
+      /IfBranch\s+assembly\/__tests__\/__tmp_coverage_kinds_helper\.ts:8:\d+.*if \(flag\) return 1;/,
+    );
+    assert.match(
+      output,
+      /Assignment\s+assembly\/__tests__\/__tmp_coverage_kinds_helper\.ts:14:\d+.*value = nestedValue\(3\);/,
+    );
+    assert.match(
+      output,
+      /Loop\s+assembly\/__tests__\/__tmp_coverage_kinds_helper\.ts:19:\d+.*for \(let i = 0; i < 2; i\+\+\) \{/,
+    );
+    assert.match(
+      output,
+      /Return\s+assembly\/__tests__\/__tmp_coverage_kinds_helper\.ts:22:\d+.*return -1;/,
+    );
+    assert.match(
+      output,
+      /Throw\s+assembly\/__tests__\/__tmp_coverage_kinds_helper\.ts:26:\d+.*throw new Error\("boom"\);/,
+    );
+  } finally {
+    await fs.rm(helperPath, { force: true });
+    await fs.rm(specPath, { force: true });
+  }
+});
+
 test("web runner supports raw, esm, and none", async (t) => {
   if (!(await canListenOnLoopback())) {
     t.skip("loopback listeners are not permitted in this environment");

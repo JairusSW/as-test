@@ -4,6 +4,10 @@ export class CoverPoint {
   public line: i32 = 0;
   public column: i32 = 0;
   public type: string = "";
+  public parentHash: string = "";
+  public scopeKind: string = "";
+  public scopeName: string = "";
+  public depth: i32 = 0;
   public executed: boolean = false;
 }
 
@@ -29,6 +33,10 @@ export function __REGISTER_RAW(
   line: i32,
   column: i32,
   type: string,
+  parentHash: string = "",
+  scopeKind: string = "",
+  scopeName: string = "",
+  depth: i32 = 0,
 ): void {
   if (Coverage.SN.allIndex.has(hash)) return;
   const point = new CoverPoint();
@@ -37,6 +45,10 @@ export function __REGISTER_RAW(
   point.line = line;
   point.column = column;
   point.type = type;
+  point.parentHash = parentHash;
+  point.scopeKind = scopeKind;
+  point.scopeName = scopeName;
+  point.depth = depth;
   Coverage.SN.points++;
   Coverage.SN.allIndex.set(hash, Coverage.SN.all.length);
   Coverage.SN.all.push(point);

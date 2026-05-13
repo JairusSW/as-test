@@ -8,12 +8,14 @@ export async function executeTestCommand(rawArgs, flags, configPath, selectedMod
         tryAs: featureToggles.tryAs,
         coverage: featureToggles.coverage,
     };
+    const showCoverageMode = deps.resolveShowCoverageMode(rawArgs, "test");
     const runFlags = {
         snapshot: !flags.includes("--no-snapshot"),
         createSnapshots: flags.includes("--create-snapshots"),
         overwriteSnapshots: flags.includes("--overwrite-snapshots"),
         clean: flags.includes("--clean"),
-        showCoverage: flags.includes("--show-coverage"),
+        showCoverage: showCoverageMode != undefined,
+        showCoverageAll: showCoverageMode == "all",
         verbose: flags.includes("--verbose"),
         ...deps.resolveParallelJobs(rawArgs, "test"),
         coverage: featureToggles.coverage,

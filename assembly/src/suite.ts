@@ -131,6 +131,8 @@ export class Suite {
       this.verdict = "ok";
     } else if (hasSkip) {
       this.verdict = "skip";
+    } else if (isTestCase) {
+      this.verdict = "ok";
     } else {
       this.verdict = "none";
     }

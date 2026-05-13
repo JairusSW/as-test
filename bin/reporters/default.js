@@ -3,7 +3,7 @@ import { diff } from "typer-diff";
 import { readFileSync } from "fs";
 import * as path from "path";
 import { formatSpecDisplayPath, formatTime } from "../util.js";
-import { describeCoveragePoint, readCoverageSourceLine, resolveCoverageHighlightSpan, } from "../coverage-points.js";
+import { describeCoveragePoint, } from "../coverage-points.js";
 export const createReporter = (context) => {
     return new DefaultReporter(context);
 };
@@ -288,7 +288,7 @@ class DefaultReporter {
         if (event.coverageSummary.enabled) {
             renderCoverageSummary(event.coverageSummary, event.showCoverage);
             if (event.showCoverage && event.coverageSummary.uncovered) {
-                renderCoveragePoints(event.coverageSummary.files);
+                renderCoveragePoints(event.coverageSummary.files, Boolean(event.verbose || event.showCoverageAll));
             }
         }
         renderTotals(event.stats, event);
@@ -831,7 +831,7 @@ function renderCoverageSummary(summary, showCoverage) {
         console.log(chalk.dim(`    ... ${ranked.length - 8} more files`));
     }
 }
-function renderCoveragePoints(files) {
+function renderCoveragePoints(files, expandNested) {
     console.log("");
     console.log(chalk.bold("Coverage Gaps"));
     const sortedFiles = [...files].sort((a, b) => a.file.localeCompare(b.file));
@@ -842,28 +842,126 @@ function renderCoveragePoints(files) {
         displayType: describeCoveragePoint(point.file, point.line, point.column, point.type).displayType,
     })));
     const layout = createCoverageGapLayout(missingPoints);
+    let renderedFileCount = 0;
+    let collapsedNestedPoints = 0;
     for (const file of sortedFiles) {
-        const points = [...file.points].sort((a, b) => {
-            if (a.line != b.line)
-                return a.line - b.line;
-            if (a.column != b.column)
-                return a.column - b.column;
-            return a.type.localeCompare(b.type);
-        });
+        const points = [...file.points].sort(compareCoverageGapPoints);
         const missing = points.filter((point) => !point.executed);
         if (!missing.length)
             continue;
-        console.log(`  ${chalk.bold(toRelativeResultPath(file.file))} ${chalk.dim(`(${missing.length} uncovered)`)}`);
-        for (const point of points) {
-            if (point.executed)
-                continue;
-            const location = `${toRelativeResultPath(point.file)}:${point.line}:${point.column}`;
-            const snippet = formatCoverageSnippet(point.file, point.line, point.column);
-            const typeLabel = describeCoveragePoint(point.file, point.line, point.column, point.type).displayType.padEnd(layout.typeWidth + 4);
-            const locationLabel = location.padEnd(layout.locationWidth + 4);
-            console.log(`    ${chalk.red("x")} ${chalk.dim(typeLabel)}${chalk.dim(locationLabel)}${snippet}`);
+        if (renderedFileCount > 0) {
+            console.log("");
         }
+        console.log(`  ${chalk.bold(toRelativeResultPath(file.file))} ${chalk.dim(`(${missing.length} uncovered)`)}`);
+        const pointsByHash = new Map(points.map((point) => [point.hash, point]));
+        const childrenByParent = new Map();
+        const roots = [];
+        for (const point of points) {
+            const parentHash = point.parentHash ?? "";
+            if (parentHash.length && pointsByHash.has(parentHash)) {
+                const children = childrenByParent.get(parentHash) ?? [];
+                children.push(point);
+                childrenByParent.set(parentHash, children);
+            }
+            else {
+                roots.push(point);
+            }
+        }
+        const visibleRoots = roots.filter((point) => shouldRenderCoveragePoint(point, childrenByParent));
+        for (let i = 0; i < visibleRoots.length; i++) {
+            collapsedNestedPoints += renderCoveragePointTree(visibleRoots[i], childrenByParent, layout, [], i == visibleRoots.length - 1, expandNested);
+        }
+        renderedFileCount++;
     }
+    if (!expandNested && collapsedNestedPoints > 0) {
+        console.log("");
+        console.log(chalk.dim("  Run with --show-coverage=all or --verbose to expand nested coverage gaps."));
+    }
+}
+function renderCoveragePointTree(point, childrenByParent, layout, ancestorHasNext, isLast, expandNested) {
+    const visibleChildren = [
+        ...(childrenByParent.get(point.hash) ?? []),
+    ]
+        .filter((child) => shouldRenderCoveragePoint(child, childrenByParent))
+        .sort(compareCoverageGapPoints);
+    const nestedUncoveredCount = countNestedUncoveredPoints(visibleChildren, childrenByParent);
+    if (!point.executed) {
+        renderCoverageGapLine(point, layout, ancestorHasNext, isLast);
+        if (nestedUncoveredCount > 0) {
+            if (expandNested) {
+                let rendered = 0;
+                for (let i = 0; i < visibleChildren.length; i++) {
+                    rendered += renderCoveragePointTree(visibleChildren[i], childrenByParent, layout, [...ancestorHasNext, !isLast], i == visibleChildren.length - 1, expandNested);
+                }
+                return 1 + rendered;
+            }
+            const treePrefix = buildCoverageTreePrefix([...ancestorHasNext, !isLast], true);
+            console.log(`    ${treePrefix}${chalk.dim(`(+${nestedUncoveredCount} nested uncovered point${nestedUncoveredCount == 1 ? "" : "s"})`)}`);
+            return nestedUncoveredCount;
+        }
+        return 0;
+    }
+    if (nestedUncoveredCount <= 0)
+        return 0;
+    renderCoverageScopeHeader(point, layout, ancestorHasNext, isLast);
+    let rendered = 0;
+    for (let i = 0; i < visibleChildren.length; i++) {
+        rendered += renderCoveragePointTree(visibleChildren[i], childrenByParent, layout, [...ancestorHasNext, !isLast], i == visibleChildren.length - 1, expandNested);
+    }
+    return rendered;
+}
+function shouldRenderCoveragePoint(point, childrenByParent) {
+    if (!point.executed)
+        return true;
+    return countNestedUncoveredPoints(childrenByParent.get(point.hash) ?? [], childrenByParent) > 0;
+}
+function countNestedUncoveredPoints(points, childrenByParent) {
+    let count = 0;
+    for (const point of points) {
+        if (!point.executed)
+            count++;
+        count += countNestedUncoveredPoints(childrenByParent.get(point.hash) ?? [], childrenByParent);
+    }
+    return count;
+}
+function renderCoverageGapLine(point, layout, ancestorHasNext, isLast) {
+    const location = `${toRelativeResultPath(point.file)}:${point.line}:${point.column}`;
+    const snippet = formatCoverageSnippet(point.file, point.line, point.column, point.type, ancestorHasNext.length);
+    const typeLabel = describeCoveragePoint(point.file, point.line, point.column, point.type).displayType.padEnd(layout.typeWidth + 6);
+    const locationLabel = location.padEnd(layout.locationWidth + 6);
+    const treePrefix = buildCoverageTreePrefix(ancestorHasNext, isLast);
+    const meta = `${typeLabel}${locationLabel}`;
+    console.log(`    ${treePrefix}${chalk.dim(meta)}  ${snippet}`);
+}
+function renderCoverageScopeHeader(point, layout, ancestorHasNext, isLast) {
+    const descriptor = describeCoveragePoint(point.file, point.line, point.column, point.type);
+    const label = point.scopeKind || descriptor.displayType;
+    const location = `${toRelativeResultPath(point.file)}:${point.line}:${point.column}`;
+    const locationLabel = location.padEnd(layout.locationWidth + 6);
+    const typeLabel = label.padEnd(layout.typeWidth + 6);
+    const snippet = formatCoverageSnippet(point.file, point.line, point.column, point.type, ancestorHasNext.length);
+    const treePrefix = buildCoverageTreePrefix(ancestorHasNext, isLast);
+    const meta = `${typeLabel}${locationLabel}`;
+    console.log(`    ${treePrefix}${chalk.dim(meta)}  ${chalk.dim(snippet)}`);
+}
+function buildCoverageTreePrefix(ancestorHasNext, isLast) {
+    let out = "";
+    for (const hasNext of ancestorHasNext) {
+        out += hasNext ? "│ " : "  ";
+    }
+    out += isLast ? "└─" : "├─";
+    return chalk.dim(out);
+}
+function compareCoverageGapPoints(a, b) {
+    if (a.line != b.line)
+        return a.line - b.line;
+    if (a.column != b.column)
+        return a.column - b.column;
+    if ((a.depth ?? 0) != (b.depth ?? 0))
+        return (a.depth ?? 0) - (b.depth ?? 0);
+    if (a.type != b.type)
+        return a.type.localeCompare(b.type);
+    return a.hash.localeCompare(b.hash);
 }
 function renderCoverageBar(percent) {
     const slots = 12;
@@ -877,32 +975,25 @@ function createCoverageGapLayout(points) {
             .length), 1),
     };
 }
-function formatCoverageSnippet(file, line, column) {
-    const sourceLine = readCoverageSourceLine(file, line);
-    if (!sourceLine)
-        return "";
-    const expanded = sourceLine.replace(/\t/g, "  ");
-    const firstNonWhitespace = expanded.search(/\S/);
-    if (firstNonWhitespace == -1)
-        return "";
-    const visible = expanded.slice(firstNonWhitespace).trimEnd();
+function formatCoverageSnippet(file, line, column, fallbackType, _depth) {
+    const descriptor = describeCoveragePoint(file, line, column, fallbackType);
+    const visible = descriptor.visible;
     if (!visible.length)
         return "";
     const maxWidth = 72;
-    const focus = Math.max(0, Math.min(visible.length - 1, Math.max(0, column - 1 - firstNonWhitespace)));
+    const focus = Math.max(0, Math.min(visible.length - 1, descriptor.focus));
     if (visible.length <= maxWidth) {
-        return styleCoverageSnippetWindow(visible, 0, visible.length, focus);
+        return styleCoverageSnippetWindow(visible, 0, visible.length, focus, descriptor.highlightStart, descriptor.highlightEnd);
     }
     const start = Math.max(0, Math.min(visible.length - maxWidth, focus - Math.floor(maxWidth / 2)));
     const end = Math.min(visible.length, start + maxWidth);
-    return styleCoverageSnippetWindow(visible, start, end, focus);
+    return styleCoverageSnippetWindow(visible, start, end, focus, descriptor.highlightStart, descriptor.highlightEnd);
 }
-function styleCoverageSnippetWindow(visible, start, end, focus) {
+function styleCoverageSnippetWindow(visible, start, end, focus, highlightStart, highlightEnd) {
     const prefix = start > 0 ? "..." : "";
     const suffix = end < visible.length ? "..." : "";
     const slice = visible.slice(start, end);
     const localFocus = Math.max(0, Math.min(slice.length - 1, focus - start));
-    const [highlightStart, highlightEnd] = resolveCoverageHighlightSpan(visible, focus);
     const localStart = Math.max(0, Math.min(slice.length, highlightStart - start));
     const localEnd = Math.max(localStart + 1, Math.min(slice.length, highlightEnd - start));
     if (!slice.length)

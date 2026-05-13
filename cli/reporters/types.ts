@@ -70,6 +70,10 @@ export type CoverageSummary = {
       column: number;
       type: string;
       executed: boolean;
+      parentHash?: string;
+      scopeKind?: string;
+      scopeName?: string;
+      depth?: number;
     }[];
   }[];
 };
@@ -86,6 +90,8 @@ export type RunCompleteEvent = {
   clean: boolean;
   snapshotEnabled: boolean;
   showCoverage: boolean;
+  showCoverageAll: boolean;
+  verbose: boolean;
   buildTime: number;
   snapshotSummary: SnapshotSummary;
   coverageSummary: CoverageSummary;

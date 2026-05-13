@@ -107,6 +107,7 @@ if (!args.length) {
         resolveParallelJobs,
         resolveBrowserOverride,
         resolveReporterOverride,
+        resolveShowCoverageMode,
         resolveExecutionModes,
         listExecutionPlan,
         runRuntimeModes,
@@ -124,6 +125,7 @@ if (!args.length) {
         resolveParallelJobs,
         resolveBrowserOverride,
         resolveReporterOverride,
+        resolveShowCoverageMode,
         resolveFuzzOverrides,
         resolveExecutionModes,
         listExecutionPlan,
@@ -387,7 +389,7 @@ function printCommandHelp(command: string): void {
       "  --no-snapshot            Disable snapshot assertions for this run\n",
     );
     process.stdout.write(
-      "  --show-coverage          Print uncovered coverage point details\n",
+      "  --show-coverage[=all]    Print uncovered coverage point details; use =all to expand nested gaps\n",
     );
     process.stdout.write(
       "  --suite <name[,name...]> Filter results to matching suite names or suite slug paths\n",
@@ -460,7 +462,7 @@ function printCommandHelp(command: string): void {
       "  --no-snapshot            Disable snapshot assertions for this run\n",
     );
     process.stdout.write(
-      "  --show-coverage          Print uncovered coverage point details\n",
+      "  --show-coverage[=all]    Print uncovered coverage point details; use =all to expand nested gaps\n",
     );
     process.stdout.write(
       "  --suite <name[,name...]> Filter results to matching suite names or suite slug paths\n",
@@ -714,9 +716,15 @@ function resolveCommandArgs(rawArgs: string[], command: string): string[] {
       arg == "--build-jobs" ||
       arg == "--run-jobs" ||
       arg == "--browser" ||
+      arg == "--show-coverage" ||
       arg == "--fuzz-runs" ||
       arg == "--fuzz-seed"
     ) {
+      if (arg == "--show-coverage") {
+        const next = rawArgs[i + 1];
+        if (next == "all") i++;
+        continue;
+      }
       i++;
       continue;
     }
@@ -730,6 +738,7 @@ function resolveCommandArgs(rawArgs: string[], command: string): string[] {
       arg.startsWith("--build-jobs=") ||
       arg.startsWith("--run-jobs=") ||
       arg.startsWith("--browser=") ||
+      arg.startsWith("--show-coverage=") ||
       arg.startsWith("--fuzz-runs=") ||
       arg.startsWith("--fuzz-seed=")
     ) {
@@ -1075,6 +1084,38 @@ function resolveReporterOverride(
     }
     if (arg == "--tap") {
       return "tap";
+    }
+  }
+  return undefined;
+}
+
+function resolveShowCoverageMode(
+  rawArgs: string[],
+  command: "run" | "test",
+): "collapsed" | "all" | undefined {
+  let seenCommand = false;
+  for (let i = 0; i < rawArgs.length; i++) {
+    const arg = rawArgs[i]!;
+    if (!seenCommand) {
+      if (arg == command) seenCommand = true;
+      continue;
+    }
+    if (arg == "--show-coverage") {
+      const next = rawArgs[i + 1];
+      if (next == "all") return "all";
+      return "collapsed";
+    }
+    if (arg.startsWith("--show-coverage=")) {
+      const value = arg.slice("--show-coverage=".length).trim();
+      if (!value.length) {
+        throw new Error("--show-coverage requires a value when using =");
+      }
+      if (value != "all") {
+        throw new Error(
+          `--show-coverage only supports "all" when given a value`,
+        );
+      }
+      return "all";
     }
   }
   return undefined;
@@ -1483,6 +1524,7 @@ async function runTestSequential(
     overwriteSnapshots: boolean;
     clean: boolean;
     showCoverage: boolean;
+    showCoverageAll: boolean;
     verbose: boolean;
     coverage?: boolean;
     reporterPath?: string;
@@ -1585,6 +1627,8 @@ async function runTestSequential(
       clean: runFlags.clean,
       snapshotEnabled,
       showCoverage: runFlags.showCoverage,
+      showCoverageAll: runFlags.showCoverageAll,
+      verbose: runFlags.verbose,
       buildTime: getMergedIntervalDuration(buildIntervals),
       snapshotSummary: summary.snapshotSummary,
       coverageSummary: summary.coverageSummary,
@@ -1682,6 +1726,7 @@ async function runRuntimeModes(
     overwriteSnapshots: boolean;
     clean: boolean;
     showCoverage: boolean;
+    showCoverageAll: boolean;
     verbose: boolean;
     jobs: number;
     buildJobs: number;
@@ -1698,7 +1743,11 @@ async function runRuntimeModes(
   await ensureWebBrowsersReady(configPath, modes, runFlags.browser);
   const modeSummaryTotal = Math.max(modes.length, 1);
   const fileSummaryTotal = await resolveConfiguredFileTotal(configPath);
-  let effectiveRunFlags = {
+  let effectiveRunFlags: typeof runFlags & {
+    jobs: number;
+    buildJobs: number;
+    runJobs: number;
+  } = {
     ...runFlags,
     ...resolveEffectiveParallelJobs(runFlags, fileSummaryTotal),
   };
@@ -1813,6 +1862,7 @@ async function runRuntimeMatrix(
     overwriteSnapshots: boolean;
     clean: boolean;
     showCoverage: boolean;
+    showCoverageAll: boolean;
     verbose: boolean;
     jobs: number;
     buildJobs: number;
@@ -1941,6 +1991,8 @@ async function runRuntimeMatrix(
     clean: runFlags.clean,
     snapshotEnabled,
     showCoverage: runFlags.showCoverage,
+    showCoverageAll: runFlags.showCoverageAll,
+    verbose: runFlags.verbose,
     buildTime: 0,
     snapshotSummary: summary.snapshotSummary,
     coverageSummary: summary.coverageSummary,
@@ -1958,6 +2010,7 @@ async function runTestModes(
     overwriteSnapshots: boolean;
     clean: boolean;
     showCoverage: boolean;
+    showCoverageAll: boolean;
     verbose: boolean;
     jobs: number;
     buildJobs: number;
@@ -1981,7 +2034,11 @@ async function runTestModes(
     configPath,
     selectors,
   );
-  let effectiveRunFlags = {
+  let effectiveRunFlags: typeof runFlags & {
+    jobs: number;
+    buildJobs: number;
+    runJobs: number;
+  } = {
     ...runFlags,
     ...resolveEffectiveParallelJobs(runFlags, fileSummaryTotal),
   };
@@ -2092,6 +2149,8 @@ async function runTestModes(
           clean: runFlags.clean,
           snapshotEnabled: effectiveRunFlags.snapshot !== false,
           showCoverage: effectiveRunFlags.showCoverage,
+          showCoverageAll: effectiveRunFlags.showCoverageAll,
+          verbose: effectiveRunFlags.verbose,
           buildTime:
             modeResult.summary.buildTime +
             getMergedIntervalDuration(collectFuzzBuildIntervals(fuzzResults)),
@@ -2122,6 +2181,7 @@ async function runTestMatrix(
     overwriteSnapshots: boolean;
     clean: boolean;
     showCoverage: boolean;
+    showCoverageAll: boolean;
     verbose: boolean;
     jobs: number;
     buildJobs: number;
@@ -2295,6 +2355,8 @@ async function runTestMatrix(
     clean: runFlags.clean,
     snapshotEnabled,
     showCoverage: runFlags.showCoverage,
+    showCoverageAll: runFlags.showCoverageAll,
+    verbose: runFlags.verbose,
     buildTime: getMergedIntervalDuration(buildIntervals),
     snapshotSummary: summary.snapshotSummary,
     coverageSummary: summary.coverageSummary,
@@ -2369,6 +2431,7 @@ async function runRuntimeSingleParallel(
     overwriteSnapshots: boolean;
     clean: boolean;
     showCoverage: boolean;
+    showCoverageAll: boolean;
     verbose: boolean;
     jobs: number;
     buildJobs: number;
@@ -2462,6 +2525,8 @@ async function runRuntimeSingleParallel(
     clean: runFlags.clean,
     snapshotEnabled,
     showCoverage: runFlags.showCoverage,
+    showCoverageAll: runFlags.showCoverageAll,
+    verbose: runFlags.verbose,
     buildTime: 0,
     snapshotSummary: summary.snapshotSummary,
     coverageSummary: summary.coverageSummary,
@@ -2484,6 +2549,7 @@ async function runRuntimeMatrixParallel(
     overwriteSnapshots: boolean;
     clean: boolean;
     showCoverage: boolean;
+    showCoverageAll: boolean;
     verbose: boolean;
     jobs: number;
     buildJobs: number;
@@ -2628,6 +2694,8 @@ async function runRuntimeMatrixParallel(
     clean: runFlags.clean,
     snapshotEnabled,
     showCoverage: runFlags.showCoverage,
+    showCoverageAll: runFlags.showCoverageAll,
+    verbose: runFlags.verbose,
     buildTime: getMergedIntervalDuration(buildIntervals),
     snapshotSummary: summary.snapshotSummary,
     coverageSummary: summary.coverageSummary,
@@ -2646,6 +2714,7 @@ async function runTestSingleParallel(
     overwriteSnapshots: boolean;
     clean: boolean;
     showCoverage: boolean;
+    showCoverageAll: boolean;
     verbose: boolean;
     jobs: number;
     buildJobs: number;
@@ -2799,6 +2868,8 @@ async function runTestSingleParallel(
     clean: runFlags.clean,
     snapshotEnabled,
     showCoverage: runFlags.showCoverage,
+    showCoverageAll: runFlags.showCoverageAll,
+    verbose: runFlags.verbose,
     buildTime: getMergedIntervalDuration(buildIntervals),
     snapshotSummary: summary.snapshotSummary,
     coverageSummary: summary.coverageSummary,
@@ -2822,6 +2893,7 @@ async function runTestMatrixParallel(
     overwriteSnapshots: boolean;
     clean: boolean;
     showCoverage: boolean;
+    showCoverageAll: boolean;
     verbose: boolean;
     jobs: number;
     buildJobs: number;
@@ -3007,6 +3079,8 @@ async function runTestMatrixParallel(
     clean: runFlags.clean,
     snapshotEnabled,
     showCoverage: runFlags.showCoverage,
+    showCoverageAll: runFlags.showCoverageAll,
+    verbose: runFlags.verbose,
     buildTime: getMergedIntervalDuration(buildIntervals),
     snapshotSummary: summary.snapshotSummary,
     coverageSummary: summary.coverageSummary,

@@ -78,6 +78,7 @@ else if (COMMANDS.includes(args[0])) {
                 resolveParallelJobs,
                 resolveBrowserOverride,
                 resolveReporterOverride,
+                resolveShowCoverageMode,
                 resolveExecutionModes,
                 listExecutionPlan,
                 runRuntimeModes,
@@ -96,6 +97,7 @@ else if (COMMANDS.includes(args[0])) {
                 resolveParallelJobs,
                 resolveBrowserOverride,
                 resolveReporterOverride,
+                resolveShowCoverageMode,
                 resolveFuzzOverrides,
                 resolveExecutionModes,
                 listExecutionPlan,
@@ -277,7 +279,7 @@ function printCommandHelp(command) {
         process.stdout.write("  --create-snapshots       Create missing snapshot entries\n");
         process.stdout.write("  --overwrite-snapshots    Overwrite existing snapshot entries on mismatch\n");
         process.stdout.write("  --no-snapshot            Disable snapshot assertions for this run\n");
-        process.stdout.write("  --show-coverage          Print uncovered coverage point details\n");
+        process.stdout.write("  --show-coverage[=all]    Print uncovered coverage point details; use =all to expand nested gaps\n");
         process.stdout.write("  --suite <name[,name...]> Filter results to matching suite names or suite slug paths\n");
         process.stdout.write("  --suites <name[,name...]> Alias for --suite\n");
         process.stdout.write("  --enable <feature>       Enable feature (coverage|try-as)\n");
@@ -305,7 +307,7 @@ function printCommandHelp(command) {
         process.stdout.write("  --create-snapshots       Create missing snapshot entries\n");
         process.stdout.write("  --overwrite-snapshots    Overwrite existing snapshot entries on mismatch\n");
         process.stdout.write("  --no-snapshot            Disable snapshot assertions for this run\n");
-        process.stdout.write("  --show-coverage          Print uncovered coverage point details\n");
+        process.stdout.write("  --show-coverage[=all]    Print uncovered coverage point details; use =all to expand nested gaps\n");
         process.stdout.write("  --suite <name[,name...]> Filter results to matching suite names or suite slug paths\n");
         process.stdout.write("  --suites <name[,name...]> Alias for --suite\n");
         process.stdout.write("  --enable <feature>       Enable feature (coverage|try-as)\n");
@@ -462,8 +464,15 @@ function resolveCommandArgs(rawArgs, command) {
             arg == "--build-jobs" ||
             arg == "--run-jobs" ||
             arg == "--browser" ||
+            arg == "--show-coverage" ||
             arg == "--fuzz-runs" ||
             arg == "--fuzz-seed") {
+            if (arg == "--show-coverage") {
+                const next = rawArgs[i + 1];
+                if (next == "all")
+                    i++;
+                continue;
+            }
             i++;
             continue;
         }
@@ -476,6 +485,7 @@ function resolveCommandArgs(rawArgs, command) {
             arg.startsWith("--build-jobs=") ||
             arg.startsWith("--run-jobs=") ||
             arg.startsWith("--browser=") ||
+            arg.startsWith("--show-coverage=") ||
             arg.startsWith("--fuzz-runs=") ||
             arg.startsWith("--fuzz-seed=")) {
             continue;
@@ -758,6 +768,34 @@ function resolveReporterOverride(rawArgs, command) {
         }
         if (arg == "--tap") {
             return "tap";
+        }
+    }
+    return undefined;
+}
+function resolveShowCoverageMode(rawArgs, command) {
+    let seenCommand = false;
+    for (let i = 0; i < rawArgs.length; i++) {
+        const arg = rawArgs[i];
+        if (!seenCommand) {
+            if (arg == command)
+                seenCommand = true;
+            continue;
+        }
+        if (arg == "--show-coverage") {
+            const next = rawArgs[i + 1];
+            if (next == "all")
+                return "all";
+            return "collapsed";
+        }
+        if (arg.startsWith("--show-coverage=")) {
+            const value = arg.slice("--show-coverage=".length).trim();
+            if (!value.length) {
+                throw new Error("--show-coverage requires a value when using =");
+            }
+            if (value != "all") {
+                throw new Error(`--show-coverage only supports "all" when given a value`);
+            }
+            return "all";
         }
     }
     return undefined;
@@ -1140,6 +1178,8 @@ async function runTestSequential(runFlags, configPath, selectors, suiteSelectors
             clean: runFlags.clean,
             snapshotEnabled,
             showCoverage: runFlags.showCoverage,
+            showCoverageAll: runFlags.showCoverageAll,
+            verbose: runFlags.verbose,
             buildTime: getMergedIntervalDuration(buildIntervals),
             snapshotSummary: summary.snapshotSummary,
             coverageSummary: summary.coverageSummary,
@@ -1372,6 +1412,8 @@ async function runRuntimeMatrix(runFlags, configPath, selectors, suiteSelectors,
         clean: runFlags.clean,
         snapshotEnabled,
         showCoverage: runFlags.showCoverage,
+        showCoverageAll: runFlags.showCoverageAll,
+        verbose: runFlags.verbose,
         buildTime: 0,
         snapshotSummary: summary.snapshotSummary,
         coverageSummary: summary.coverageSummary,
@@ -1435,6 +1477,8 @@ async function runTestModes(runFlags, configPath, selectors, suiteSelectors, fuz
                     clean: runFlags.clean,
                     snapshotEnabled: effectiveRunFlags.snapshot !== false,
                     showCoverage: effectiveRunFlags.showCoverage,
+                    showCoverageAll: effectiveRunFlags.showCoverageAll,
+                    verbose: effectiveRunFlags.verbose,
                     buildTime: modeResult.summary.buildTime +
                         getMergedIntervalDuration(collectFuzzBuildIntervals(fuzzResults)),
                     snapshotSummary: modeResult.summary.snapshotSummary,
@@ -1572,6 +1616,8 @@ async function runTestMatrix(runFlags, configPath, selectors, suiteSelectors, fu
         clean: runFlags.clean,
         snapshotEnabled,
         showCoverage: runFlags.showCoverage,
+        showCoverageAll: runFlags.showCoverageAll,
+        verbose: runFlags.verbose,
         buildTime: getMergedIntervalDuration(buildIntervals),
         snapshotSummary: summary.snapshotSummary,
         coverageSummary: summary.coverageSummary,
@@ -1664,6 +1710,8 @@ async function runRuntimeSingleParallel(runFlags, configPath, selectors, suiteSe
         clean: runFlags.clean,
         snapshotEnabled,
         showCoverage: runFlags.showCoverage,
+        showCoverageAll: runFlags.showCoverageAll,
+        verbose: runFlags.verbose,
         buildTime: 0,
         snapshotSummary: summary.snapshotSummary,
         coverageSummary: summary.coverageSummary,
@@ -1778,6 +1826,8 @@ async function runRuntimeMatrixParallel(runFlags, configPath, selectors, suiteSe
         clean: runFlags.clean,
         snapshotEnabled,
         showCoverage: runFlags.showCoverage,
+        showCoverageAll: runFlags.showCoverageAll,
+        verbose: runFlags.verbose,
         buildTime: getMergedIntervalDuration(buildIntervals),
         snapshotSummary: summary.snapshotSummary,
         coverageSummary: summary.coverageSummary,
@@ -1880,6 +1930,8 @@ async function runTestSingleParallel(runFlags, configPath, selectors, suiteSelec
         clean: runFlags.clean,
         snapshotEnabled,
         showCoverage: runFlags.showCoverage,
+        showCoverageAll: runFlags.showCoverageAll,
+        verbose: runFlags.verbose,
         buildTime: getMergedIntervalDuration(buildIntervals),
         snapshotSummary: summary.snapshotSummary,
         coverageSummary: summary.coverageSummary,
@@ -2013,6 +2065,8 @@ async function runTestMatrixParallel(runFlags, configPath, selectors, suiteSelec
         clean: runFlags.clean,
         snapshotEnabled,
         showCoverage: runFlags.showCoverage,
+        showCoverageAll: runFlags.showCoverageAll,
+        verbose: runFlags.verbose,
         buildTime: getMergedIntervalDuration(buildIntervals),
         snapshotSummary: summary.snapshotSummary,
         coverageSummary: summary.coverageSummary,

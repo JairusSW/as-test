@@ -37,7 +37,74 @@ export function describeCoveragePoint(
     };
   }
 
-  const declaration = detectCoverageDeclaration(context.visible);
+  const parameter = detectCoverageParameter(
+    context.visible,
+    context.focus,
+    fallbackType,
+  );
+  if (parameter) {
+    return {
+      displayType: parameter.type,
+      subjectName: parameter.name,
+      visible: context.visible,
+      focus: context.focus,
+      highlightStart: parameter.start,
+      highlightEnd: parameter.end,
+    };
+  }
+
+  const ternary = detectCoverageTernary(
+    context.visible,
+    context.focus,
+    fallbackType,
+  );
+  if (ternary) {
+    return {
+      displayType: ternary.type,
+      subjectName: null,
+      visible: context.visible,
+      focus: context.focus,
+      highlightStart: ternary.start,
+      highlightEnd: ternary.end,
+    };
+  }
+
+  const ifBranch = detectCoverageIfBranch(context.visible, fallbackType);
+  if (ifBranch) {
+    return {
+      displayType: ifBranch.type,
+      subjectName: null,
+      visible: context.visible,
+      focus: context.focus,
+      highlightStart: ifBranch.start,
+      highlightEnd: ifBranch.end,
+    };
+  }
+
+  const assignment = detectCoverageAssignment(context.visible, fallbackType);
+  if (assignment) {
+    return {
+      displayType: assignment.type,
+      subjectName: null,
+      visible: context.visible,
+      focus: context.focus,
+      highlightStart: assignment.start,
+      highlightEnd: assignment.end,
+    };
+  }
+
+  const declarationAllowed =
+    fallbackType == "Expression" ||
+    fallbackType == "Block" ||
+    fallbackType == "Function" ||
+    fallbackType == "Method" ||
+    fallbackType == "Constructor" ||
+    fallbackType == "Variable" ||
+    fallbackType == "Property" ||
+    fallbackType == "Call";
+  const declaration = declarationAllowed
+    ? detectCoverageDeclaration(context.visible)
+    : null;
   if (declaration) {
     const [highlightStart, highlightEnd] = resolveCoverageHighlightSpan(
       context.visible,
@@ -53,7 +120,10 @@ export function describeCoveragePoint(
     };
   }
 
-  const call = detectCoverageCall(context.visible, context.focus);
+  const callAllowed = fallbackType == "Expression" || fallbackType == "Call";
+  const call = callAllowed
+    ? detectCoverageCall(context.visible, context.focus)
+    : null;
   if (call) {
     return {
       displayType: "Call",
@@ -189,6 +259,210 @@ function detectCoverageDeclaration(visible: string): {
   return null;
 }
 
+function detectCoverageParameter(
+  visible: string,
+  focus: number,
+  fallbackType: string,
+): {
+  type: string;
+  name: string | null;
+  start: number;
+  end: number;
+} | null {
+  const inlineParameter = detectCoverageInlineParameter(
+    visible,
+    focus,
+    fallbackType,
+  );
+  if (inlineParameter) {
+    return inlineParameter;
+  }
+
+  const openParen = visible.indexOf("(");
+  const closeParen = visible.lastIndexOf(")");
+  if (openParen == -1 || closeParen == -1 || closeParen <= openParen) {
+    return null;
+  }
+  if (focus <= openParen || focus >= closeParen) {
+    return null;
+  }
+
+  const params = visible.slice(openParen + 1, closeParen);
+  const matches = [
+    ...params.matchAll(/([A-Za-z_]\w*)\s*:\s*[^,)=]+(?:=\s*[^,)]*)?/g),
+  ];
+  if (!matches.length) return null;
+
+  for (const match of matches) {
+    const localStart = match.index ?? -1;
+    if (localStart == -1) continue;
+    const localEnd = localStart + match[0].length;
+    const absoluteStart = openParen + 1 + localStart;
+    const absoluteEnd = openParen + 1 + localEnd;
+    if (focus < absoluteStart || focus > absoluteEnd) continue;
+    const name = match[1] ?? null;
+    if (!name) return null;
+    const nameOffset = match[0].indexOf(name);
+    const equalsOffset = match[0].indexOf("=");
+    if (fallbackType == "DefaultValue" && equalsOffset != -1) {
+      const valueStart = absoluteStart + equalsOffset + 1;
+      const valueVisibleStart = skipCoverageWhitespace(visible, valueStart);
+      const [start, end] = resolveCoverageHighlightSpan(
+        visible,
+        Math.max(valueVisibleStart, focus),
+      );
+      return {
+        type: "DefaultValue",
+        name,
+        start,
+        end,
+      };
+    }
+    return {
+      type: fallbackType == "Parameter" ? "Parameter" : "Property",
+      name,
+      start: absoluteStart + nameOffset,
+      end: absoluteStart + nameOffset + name.length,
+    };
+  }
+
+  return null;
+}
+
+function detectCoverageInlineParameter(
+  visible: string,
+  focus: number,
+  fallbackType: string,
+): {
+  type: string;
+  name: string | null;
+  start: number;
+  end: number;
+} | null {
+  const match = visible.match(
+    /^([A-Za-z_]\w*)\s*:\s*[^=,]+(?:=\s*[^,]+)?[,]?$/,
+  );
+  if (!match) return null;
+
+  const name = match[1] ?? null;
+  if (!name) return null;
+
+  const nameStart = visible.indexOf(name);
+  const nameEnd = nameStart + name.length;
+  const equalsIndex = visible.indexOf("=");
+
+  if (fallbackType == "DefaultValue" && equalsIndex != -1) {
+    const valueStart = skipCoverageWhitespace(visible, equalsIndex + 1);
+    const [start, end] = resolveCoverageHighlightSpan(
+      visible,
+      Math.max(valueStart, focus),
+    );
+    return {
+      type: "DefaultValue",
+      name,
+      start,
+      end,
+    };
+  }
+
+  return {
+    type: fallbackType == "Parameter" ? "Parameter" : "Property",
+    name,
+    start: nameStart,
+    end: nameEnd,
+  };
+}
+
+function detectCoverageTernary(
+  visible: string,
+  focus: number,
+  fallbackType: string,
+): {
+  type: string;
+  start: number;
+  end: number;
+} | null {
+  if (fallbackType != "Ternary" && fallbackType != "LogicalBranch") {
+    return null;
+  }
+
+  const q = visible.indexOf("?");
+  if (q == -1) return null;
+
+  if (fallbackType == "LogicalBranch") {
+    const [start, end] = resolveCoverageHighlightSpan(visible, focus);
+    return { type: "LogicalBranch", start, end };
+  }
+
+  const colon = visible.indexOf(":", q + 1);
+  if (colon == -1) {
+    const [start, end] = resolveCoverageHighlightSpan(visible, focus);
+    return { type: "Ternary", start, end };
+  }
+
+  const branchStart = focus <= colon ? q + 1 : colon + 1;
+  const normalizedStart = skipCoverageWhitespace(visible, branchStart);
+  const [start, end] = resolveCoverageHighlightSpan(
+    visible,
+    Math.max(normalizedStart, focus),
+  );
+  return { type: "Ternary", start, end };
+}
+
+function detectCoverageIfBranch(
+  visible: string,
+  fallbackType: string,
+): {
+  type: string;
+  start: number;
+  end: number;
+} | null {
+  if (fallbackType != "IfBranch") return null;
+  const match = visible.match(/^if\s*\(([^)]*)\)/);
+  if (!match) return null;
+  const full = match[0];
+  const condition = match[1] ?? "";
+  const openParen = full.indexOf("(");
+  const conditionPadding = condition.length
+    ? condition.length - condition.trimStart().length
+    : 0;
+  const conditionStart = openParen == -1 ? -1 : openParen + 1 + conditionPadding;
+  if (conditionStart == -1 || !condition.length) {
+    return { type: "IfBranch", start: 0, end: full.length };
+  }
+  return {
+    type: "IfBranch",
+    start: conditionStart,
+    end: conditionStart + condition.length,
+  };
+}
+
+function detectCoverageAssignment(
+  visible: string,
+  fallbackType: string,
+): {
+  type: string;
+  start: number;
+  end: number;
+} | null {
+  if (fallbackType != "Assignment") return null;
+  const match = visible.match(
+    /([A-Za-z_]\w*(?:\.[A-Za-z_]\w*|\[[^\]]+\])?)\s*(=|\+=|-=|\*=|\*\*=|\/=|%=|<<=|>>=|>>>=|&=|\|=|\^=)/,
+  );
+  if (!match) return null;
+  const full = match[0];
+  const lhs = match[1] ?? "";
+  const operator = match[2] ?? "=";
+  const fullStart = visible.indexOf(full);
+  const lhsStart = fullStart + full.indexOf(lhs);
+  const operatorStart = fullStart + full.lastIndexOf(operator);
+  return {
+    type: "Assignment",
+    start: lhsStart,
+    end: operatorStart + operator.length,
+  };
+}
+
 function detectCoverageCall(
   visible: string,
   focus: number,
@@ -241,4 +515,12 @@ function detectCoverageCall(
 
 function isCoverageBoundary(ch: string): boolean {
   return /[\s()[\]{}.,;:+\-*/%&|^!?=<>]/.test(ch);
+}
+
+function skipCoverageWhitespace(visible: string, index: number): number {
+  let current = Math.max(0, Math.min(visible.length - 1, index));
+  while (current < visible.length - 1 && /\s/.test(visible.charAt(current))) {
+    current++;
+  }
+  return current;
 }

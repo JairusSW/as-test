@@ -21,6 +21,10 @@ type RunCommandDeps = {
     rawArgs: string[],
     command: "run",
   ): string | undefined;
+  resolveShowCoverageMode(
+    rawArgs: string[],
+    command: "run",
+  ): "collapsed" | "all" | undefined;
   resolveExecutionModes(
     configPath: string | undefined,
     selectedModes: string[],
@@ -52,12 +56,14 @@ export async function executeRunCommand(
   const suiteSelectors = deps.resolveSuiteSelectors(rawArgs, "run");
   const listFlags = deps.resolveListFlags(rawArgs, "run");
   const featureToggles = deps.resolveFeatureToggles(rawArgs, "run");
+  const showCoverageMode = deps.resolveShowCoverageMode(rawArgs, "run");
   const runFlags: RunFlags = {
     snapshot: !flags.includes("--no-snapshot"),
     createSnapshots: flags.includes("--create-snapshots"),
     overwriteSnapshots: flags.includes("--overwrite-snapshots"),
     clean: flags.includes("--clean"),
-    showCoverage: flags.includes("--show-coverage"),
+    showCoverage: showCoverageMode != undefined,
+    showCoverageAll: showCoverageMode == "all",
     verbose: flags.includes("--verbose"),
     ...deps.resolveParallelJobs(rawArgs, "run"),
     coverage: featureToggles.coverage,

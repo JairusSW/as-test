@@ -548,6 +548,10 @@ class CoveragePointReport {
   column: i32 = 0;
   type: string = "";
   executed: bool = false;
+  parentHash: string = "";
+  scopeKind: string = "";
+  scopeName: string = "";
+  depth: i32 = 0;
 
   serialize(): string {
     return (
@@ -563,6 +567,14 @@ class CoveragePointReport {
       quote(this.type) +
       ',"executed":' +
       (this.executed ? "true" : "false") +
+      ',"parentHash":' +
+      quote(this.parentHash) +
+      ',"scopeKind":' +
+      quote(this.scopeKind) +
+      ',"scopeName":' +
+      quote(this.scopeName) +
+      ',"depth":' +
+      this.depth.toString() +
       "}"
     );
   }
@@ -632,6 +644,10 @@ function toCoveragePointReport(point: CoverPoint): CoveragePointReport {
   out.column = point.column;
   out.type = point.type;
   out.executed = point.executed;
+  out.parentHash = point.parentHash;
+  out.scopeKind = point.scopeKind;
+  out.scopeName = point.scopeName;
+  out.depth = point.depth;
   return out;
 }
 
