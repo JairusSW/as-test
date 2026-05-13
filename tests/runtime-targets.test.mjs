@@ -378,6 +378,8 @@ function runNode(args, extraEnv) {
       cwd: repoRoot,
       env: {
         ...process.env,
+        NO_COLOR: "1",
+        FORCE_COLOR: "0",
         ...extraEnv,
       },
       stdio: ["ignore", "pipe", "pipe"],
