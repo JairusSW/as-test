@@ -1,16 +1,16 @@
 # Change Log
 
-## Unreleased
+## 2026-05-13 - v1.1.2
 
 - update build and run faliures to provide helpful error messages and reproduction commands and instructions
 - remove confirmation from ast clean
 
-## v1.1.1
+## 2026-05-12 -v1.1.1
 
 - add `ast clean` command to remove build outputs, coverage outputs, crash reports, and logs.
 - remove deps
 
-## v1.1.0
+## 2026-05-12 -v1.1.0
 
 ### Upgrading to 1.1.0
 
