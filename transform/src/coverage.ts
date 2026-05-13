@@ -341,10 +341,7 @@ export class CoverageTransform extends Visitor {
       this.globalStatements.push(registerStmt);
     }
   }
-  visitFunctionDeclaration(
-    node: FunctionDeclaration,
-    isDefault?: boolean | undefined,
-  ): void {
+  visitFunctionDeclaration(node: FunctionDeclaration): void {
     // @ts-ignore
     if (node.visited) return;
     // @ts-ignore

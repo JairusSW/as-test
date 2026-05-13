@@ -264,7 +264,7 @@ export class CoverageTransform extends Visitor {
             this.globalStatements.push(registerStmt);
         }
     }
-    visitFunctionDeclaration(node, isDefault) {
+    visitFunctionDeclaration(node) {
         if (node.visited)
             return;
         node.visited = true;
