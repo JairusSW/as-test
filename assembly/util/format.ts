@@ -35,7 +35,10 @@ export function formatValue<T>(value: T, deep: boolean = false): string {
     let out = "Map(" + keys.length.toString() + ") { ";
     for (let i = 0; i < keys.length; i++) {
       if (i) out += ", ";
-      out += formatValue(changetype<valueof<typeof keys>>(unchecked(keys[i])), true);
+      out += formatValue(
+        changetype<valueof<typeof keys>>(unchecked(keys[i])),
+        true,
+      );
       out += " => ";
       out += formatValue(
         changetype<valueof<typeof values>>(unchecked(values[i])),
@@ -73,30 +76,36 @@ export function formatValue<T>(value: T, deep: boolean = false): string {
   return nameof<T>();
 }
 
+
 @inline
 export function colorText(format: i32[], text: string): string {
   return `\u001b[${format[0].toString()}m${text}\u001b[${format[1].toString()}m`;
 }
+
 
 @inline
 export function red(text: string): string {
   return colorText([31, 39], text);
 }
 
+
 @inline
 export function green(text: string): string {
   return colorText([32, 39], text);
 }
+
 
 @inline
 export function bgRed(text: string): string {
   return colorText([41, 49], text);
 }
 
+
 @inline
 export function bgGreen(text: string): string {
   return colorText([42, 49], text);
 }
+
 
 @inline
 export function bold(text: string): string {

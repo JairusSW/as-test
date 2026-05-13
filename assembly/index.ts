@@ -445,10 +445,7 @@ function runFuzzers(): void {
   for (let i = 0; i < entryFuzzers.length; i++) {
     const fuzzer = unchecked(entryFuzzers[i]);
     prepareFuzzIteration();
-    const result = fuzzer.run(
-      config.seed,
-      resolveFuzzerRuns(fuzzer, config),
-    );
+    const result = fuzzer.run(config.seed, resolveFuzzerRuns(fuzzer, config));
     report.fuzzers.push(result);
   }
   sendReport(report.serialize());

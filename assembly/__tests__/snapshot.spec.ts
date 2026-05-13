@@ -1,4 +1,10 @@
-import { describe, expect, namedSnapshotKey, nextUnnamedSnapshotKey, test } from "..";
+import {
+  describe,
+  expect,
+  namedSnapshotKey,
+  nextUnnamedSnapshotKey,
+  test,
+} from "..";
 
 describe("Snapshot support", () => {
   test("string snapshot", () => {

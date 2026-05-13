@@ -6,6 +6,7 @@ import { CliFeatureToggles, CliListFlags } from "./types.js";
 
 export { build } from "./build-core.js";
 export {
+  BuildFailureError,
   formatInvocation,
   getBuildInvocationPreview,
   getBuildReuseInfo,

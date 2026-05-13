@@ -1,5 +1,6 @@
 import { OBJECT, TOTAL_OVERHEAD } from "rt/common";
 import { JSON } from "../../src/json-as";
+
 @json
 class Foo {
   a: i32 = 0;
@@ -58,12 +59,16 @@ describe("should use custom deserializer even when type is the parent", () => {
 });
 
 describe("Additional regression coverage - primitives and arrays", () => {
-  expect(JSON.stringify(JSON.parse<string>('"regression"'))).toBe('"regression"');
+  expect(JSON.stringify(JSON.parse<string>('"regression"'))).toBe(
+    '"regression"',
+  );
   expect(JSON.stringify(JSON.parse<i32>("-42"))).toBe("-42");
   expect(JSON.stringify(JSON.parse<bool>("false"))).toBe("false");
   expect(JSON.stringify(JSON.parse<f64>("3.5"))).toBe("3.5");
   expect(JSON.stringify(JSON.parse<i32[]>("[1,2,3,4]"))).toBe("[1,2,3,4]");
-  expect(JSON.stringify(JSON.parse<string[]>('["a","b","c"]'))).toBe('["a","b","c"]');
+  expect(JSON.stringify(JSON.parse<string[]>('["a","b","c"]'))).toBe(
+    '["a","b","c"]',
+  );
 });
 
 describe("should return default subclass value on unmatched custom payload", () => {
@@ -103,6 +108,10 @@ describe("Extended regression coverage - nested and escaped payloads", () => {
   expect(JSON.stringify(JSON.parse<i32>("0"))).toBe("0");
   expect(JSON.stringify(JSON.parse<bool>("true"))).toBe("true");
   expect(JSON.stringify(JSON.parse<f64>("-0.125"))).toBe("-0.125");
-  expect(JSON.stringify(JSON.parse<i32[][]>("[[1],[2,3],[]]"))).toBe("[[1],[2,3],[]]");
-  expect(JSON.stringify(JSON.parse<string>('"line\\nbreak"'))).toBe('"line\\nbreak"');
+  expect(JSON.stringify(JSON.parse<i32[][]>("[[1],[2,3],[]]"))).toBe(
+    "[[1],[2,3],[]]",
+  );
+  expect(JSON.stringify(JSON.parse<string>('"line\\nbreak"'))).toBe(
+    '"line\\nbreak"',
+  );
 });

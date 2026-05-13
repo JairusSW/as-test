@@ -8,7 +8,9 @@ import { spawn } from "child_process";
 const repoRoot = process.cwd();
 
 test("packed as-test compiles from a clean consumer without extra AssemblyScript deps", async () => {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "as-test-package-surface-"));
+  const tempDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "as-test-package-surface-"),
+  );
   const cacheDir = path.join(tempDir, "npm-cache");
   const consumerDir = path.join(tempDir, "consumer");
   await fs.mkdir(path.join(consumerDir, "assembly"), { recursive: true });
@@ -34,16 +36,16 @@ test("packed as-test compiles from a clean consumer without extra AssemblyScript
     path.join(consumerDir, "node_modules", "assemblyscript"),
   );
 
-  const pack = await run(
-    "npm",
-    ["pack", "--json", "--cache", cacheDir],
-    { cwd: repoRoot },
-  );
+  const pack = await run("npm", ["pack", "--json", "--cache", cacheDir], {
+    cwd: repoRoot,
+  });
   assert.equal(pack.code, 0, pack.stderr);
   const [{ filename }] = JSON.parse(pack.stdout);
   const tarballPath = path.join(repoRoot, filename);
 
-  await fs.mkdir(path.join(consumerDir, "node_modules", "as-test"), { recursive: true });
+  await fs.mkdir(path.join(consumerDir, "node_modules", "as-test"), {
+    recursive: true,
+  });
   const untar = await run(
     "tar",
     [
@@ -59,7 +61,13 @@ test("packed as-test compiles from a clean consumer without extra AssemblyScript
 
   const compile = await run(
     "node",
-    ["./node_modules/assemblyscript/bin/asc.js", "assembly/index.ts", "--target", "debug", "--exportRuntime"],
+    [
+      "./node_modules/assemblyscript/bin/asc.js",
+      "assembly/index.ts",
+      "--target",
+      "debug",
+      "--exportRuntime",
+    ],
     { cwd: consumerDir },
   );
   assert.equal(compile.code, 0, compile.stderr);

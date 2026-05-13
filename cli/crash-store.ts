@@ -35,7 +35,9 @@ export function persistCrashRecord(
   jsonPath: string;
   logPath: string;
 } {
-  const entry = record.entryKey?.length ? record.entryKey : crashEntryKey(record.file);
+  const entry = record.entryKey?.length
+    ? record.entryKey
+    : crashEntryKey(record.file);
   const dir = path.resolve(process.cwd(), rootDir);
   mkdirSync(dir, { recursive: true });
 

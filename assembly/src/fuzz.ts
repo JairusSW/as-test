@@ -79,14 +79,24 @@ export class FuzzSeed {
 
   i8(options: IntegerOptions<i8> | null = null): i8 {
     if (options == null) {
-      return this.nextI8InRange(i8.MIN_VALUE, i8.MAX_VALUE, EMPTY_I8_EXCLUDE, false);
+      return this.nextI8InRange(
+        i8.MIN_VALUE,
+        i8.MAX_VALUE,
+        EMPTY_I8_EXCLUDE,
+        false,
+      );
     }
     return this.nextI8InRange(options.min, options.max, options.exclude, true);
   }
 
   u8(options: IntegerOptions<u8> | null = null): u8 {
     if (options == null) {
-      return this.nextU8InRange(u8.MIN_VALUE, u8.MAX_VALUE, EMPTY_U8_EXCLUDE, false);
+      return this.nextU8InRange(
+        u8.MIN_VALUE,
+        u8.MAX_VALUE,
+        EMPTY_U8_EXCLUDE,
+        false,
+      );
     }
     return this.nextU8InRange(options.min, options.max, options.exclude, true);
   }
@@ -186,7 +196,9 @@ export class FuzzSeed {
       if (!exclude.length) {
         for (let i = 0; i < length; i++) {
           unchecked(
-            (out[i] = <u8>unchecked(include[this.nextRange(0, include.length - 1)])),
+            (out[i] = <u8>(
+              unchecked(include[this.nextRange(0, include.length - 1)])
+            )),
           );
         }
         return out;
@@ -299,7 +311,9 @@ export class FuzzSeed {
       return <i32>this.nextU32();
     }
     if (!exclude.length) {
-      return max <= min ? min : min + <i32>(this.nextU32() % <u32>(max - min + 1));
+      return max <= min
+        ? min
+        : min + <i32>(this.nextU32() % <u32>(max - min + 1));
     }
     for (let attempts = 0; attempts < 1024; attempts++) {
       const value =
@@ -324,12 +338,16 @@ export class FuzzSeed {
     const right = <i32>max;
     if (!exclude.length) {
       return <i8>(
-        right <= left ? left : left + <i32>(this.nextU32() % <u32>(right - left + 1))
+        (right <= left
+          ? left
+          : left + <i32>(this.nextU32() % <u32>(right - left + 1)))
       );
     }
     for (let attempts = 0; attempts < 1024; attempts++) {
       const value = <i8>(
-        right <= left ? left : left + <i32>(this.nextU32() % <u32>(right - left + 1))
+        (right <= left
+          ? left
+          : left + <i32>(this.nextU32() % <u32>(right - left + 1)))
       );
       if (!containsValue<i8>(exclude, value)) return value;
     }
@@ -350,11 +368,13 @@ export class FuzzSeed {
     const left = <u32>min;
     const right = <u32>max;
     if (!exclude.length) {
-      return <u8>(right <= left ? left : left + (this.nextU32() % (right - left + 1)));
+      return <u8>(
+        (right <= left ? left : left + (this.nextU32() % (right - left + 1)))
+      );
     }
     for (let attempts = 0; attempts < 1024; attempts++) {
       const value = <u8>(
-        right <= left ? left : left + (this.nextU32() % (right - left + 1))
+        (right <= left ? left : left + (this.nextU32() % (right - left + 1)))
       );
       if (!containsValue<u8>(exclude, value)) return value;
     }
@@ -376,12 +396,16 @@ export class FuzzSeed {
     const right = <i32>max;
     if (!exclude.length) {
       return <i16>(
-        right <= left ? left : left + <i32>(this.nextU32() % <u32>(right - left + 1))
+        (right <= left
+          ? left
+          : left + <i32>(this.nextU32() % <u32>(right - left + 1)))
       );
     }
     for (let attempts = 0; attempts < 1024; attempts++) {
       const value = <i16>(
-        right <= left ? left : left + <i32>(this.nextU32() % <u32>(right - left + 1))
+        (right <= left
+          ? left
+          : left + <i32>(this.nextU32() % <u32>(right - left + 1)))
       );
       if (!containsValue<i16>(exclude, value)) return value;
     }
@@ -402,11 +426,13 @@ export class FuzzSeed {
     const left = <u32>min;
     const right = <u32>max;
     if (!exclude.length) {
-      return <u16>(right <= left ? left : left + (this.nextU32() % (right - left + 1)));
+      return <u16>(
+        (right <= left ? left : left + (this.nextU32() % (right - left + 1)))
+      );
     }
     for (let attempts = 0; attempts < 1024; attempts++) {
       const value = <u16>(
-        right <= left ? left : left + (this.nextU32() % (right - left + 1))
+        (right <= left ? left : left + (this.nextU32() % (right - left + 1)))
       );
       if (!containsValue<u16>(exclude, value)) return value;
     }
@@ -448,9 +474,7 @@ export class FuzzSeed {
     const left = this.toOrderedU64(min);
     const right = this.toOrderedU64(max);
     if (!exclude.length) {
-      return this.fromOrderedU64(
-        left + this.nextU64Offset(left, right),
-      );
+      return this.fromOrderedU64(left + this.nextU64Offset(left, right));
     }
     for (let attempts = 0; attempts < 1024; attempts++) {
       const value = this.fromOrderedU64(left + this.nextU64Offset(left, right));
@@ -529,7 +553,7 @@ export class FuzzSeed {
   }
 
   private toOrderedU64(value: i64): u64 {
-    return <u64>value ^ I64_SIGN_MASK;
+    return (<u64>value) ^ I64_SIGN_MASK;
   }
 
   private fromOrderedU64(value: u64): i64 {
@@ -543,13 +567,11 @@ const DIGIT_ALPHABET: i32[] = rangeChars(48, 57);
 const HEX_ALPHABET: i32[] = DIGIT_ALPHABET.concat(rangeChars(97, 102));
 const ALNUM_ALPHABET: i32[] = ALPHA_ALPHABET.concat(DIGIT_ALPHABET);
 const BASE64_ALPHABET: i32[] = ALPHA_ALPHABET.concat(DIGIT_ALPHABET).concat([
-  43,
-  47,
-  61,
+  43, 47, 61,
 ]);
-const IDENTIFIER_ALPHABET: i32[] = [95].concat(ALPHA_ALPHABET).concat(
-  DIGIT_ALPHABET,
-);
+const IDENTIFIER_ALPHABET: i32[] = [95]
+  .concat(ALPHA_ALPHABET)
+  .concat(DIGIT_ALPHABET);
 const WHITESPACE_ALPHABET: i32[] = [9, 10, 13, 32];
 
 export abstract class FuzzerBase {
@@ -1112,7 +1134,6 @@ function removeFirst(values: i32[], needle: i32): void {
   const index = values.indexOf(needle);
   if (index >= 0) values.splice(index, 1);
 }
-
 
 function validateLengthRange(label: string, min: i32, max: i32): void {
   if (min < 0 || max < 0) panic();

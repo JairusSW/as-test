@@ -59,8 +59,10 @@ fuzz("seed perf bytes/array", (_n: i32): bool => true).generate(
     let score = 0;
     for (let i = 0; i < 64; i++) {
       score += seed.bytes(PERF_BYTES).length;
-      score += seed.array<i32>((s) => s.i32({ min: -9, max: 9 }), PERF_ARRAY)
-        .length;
+      score += seed.array<i32>(
+        (s) => s.i32({ min: -9, max: 9 }),
+        PERF_ARRAY,
+      ).length;
     }
     run(score);
   },

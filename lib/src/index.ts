@@ -6,7 +6,7 @@ import os from "os";
 import path from "path";
 import type { Duplex } from "stream";
 import { pathToFileURL } from "url";
-import { WASI } from "wasi";
+import type { WASI } from "wasi";
 import { buildWebRunnerClientSource } from "./web-runner/client.js";
 import { buildWebRunnerHtml } from "./web-runner/html.js";
 import { buildWebRunnerWorkerSource } from "./web-runner/worker.js";
@@ -45,31 +45,85 @@ export async function instantiate(
 ): Promise<WebAssembly.Instance> {
   validateImports(imports, "instantiate");
 
-  const wasmPath = process.env.AS_TEST_WASM_PATH;
-  if (!wasmPath || !wasmPath.length) {
-    throw new Error(
-      "AS_TEST_WASM_PATH is not set; as-test must resolve the wasm artifact before launching the runner",
-    );
-  }
-  const target = (process.env.AS_TEST_RUNTIME_TARGET || "bindings") as RuntimeTarget;
+  const wasmPath = resolveWasmPath();
+  const target = resolveRuntimeTarget();
   if (target == "wasi") {
     return instantiateWasiInstance(wasmPath, imports);
   }
   if (target == "web") {
     return instantiateWebInstance(wasmPath, imports);
   }
-  const kind = (process.env.AS_TEST_BINDINGS_KIND || "none") as BindingsKind;
+  const helperPath = resolveBindingsHelperPath(wasmPath);
+  const kind = resolveBindingsKind(helperPath);
 
   if (kind == "raw") {
-    return instantiateRawInstance(wasmPath, imports);
+    return instantiateRawInstance(wasmPath, helperPath, imports);
   }
   if (kind == "esm") {
-    return instantiateEsmInstance(wasmPath, imports);
+    return instantiateEsmInstance(wasmPath, helperPath, imports);
   }
   if (kind == "none") {
     return instantiateNoBindingsInstance(wasmPath, imports);
   }
   throw new Error(`unsupported bindings kind "${kind}"`);
+}
+
+function resolveRuntimeTarget(): RuntimeTarget {
+  const envTarget = process.env.AS_TEST_RUNTIME_TARGET?.trim();
+  if (envTarget == "bindings" || envTarget == "wasi" || envTarget == "web") {
+    return envTarget;
+  }
+  const runnerPath = String(process.argv[1] ?? "");
+  if (runnerPath.includes(".wasi.")) return "wasi";
+  if (runnerPath.includes(".web.")) return "web";
+  return "bindings";
+}
+
+function resolveWasmPath(): string {
+  const envWasmPath = process.env.AS_TEST_WASM_PATH?.trim();
+  if (envWasmPath?.length) {
+    return path.resolve(envWasmPath);
+  }
+  const argWasmPath = process.argv[2]?.trim();
+  if (argWasmPath?.length) {
+    return path.resolve(argWasmPath);
+  }
+  const runnerPath = String(process.argv[1] ?? "");
+  const runnerName = path.basename(runnerPath || "runner.js");
+  throw new Error(
+    [
+      "No wasm artifact was provided for this runner.",
+      "",
+      `Direct usage: node .as-test/runners/${runnerName} .as-test/build/<artifact>.wasm`,
+      "Managed usage: bunx ast test --mode <mode>",
+      "",
+      "as-test normally sets AS_TEST_WASM_PATH automatically when it launches the runner.",
+    ].join("\n"),
+  );
+}
+
+function resolveBindingsHelperPath(wasmPath: string): string {
+  const envHelperPath = process.env.AS_TEST_HELPER_PATH?.trim();
+  if (envHelperPath?.length) {
+    return path.resolve(envHelperPath);
+  }
+  const candidate = wasmPath.replace(/\.wasm$/i, ".js");
+  return fs.existsSync(candidate) ? candidate : "";
+}
+
+function resolveBindingsKind(helperPath: string): BindingsKind {
+  const envKind = process.env.AS_TEST_BINDINGS_KIND?.trim();
+  if (envKind == "raw" || envKind == "esm" || envKind == "none") {
+    return envKind;
+  }
+  if (!helperPath.length) {
+    return "none";
+  }
+  const source = fs.readFileSync(helperPath, "utf8");
+  if (/\bexport\s+(?:async\s+)?function\s+instantiate\b/.test(source)) {
+    return "raw";
+  }
+  return "esm";
 }
 
 function validateImports(
@@ -173,16 +227,18 @@ function mergeImports(...groups: unknown[]): AnyImports {
 
 async function instantiateRawInstance(
   wasmPath: string,
+  helperPath: string,
   imports: WebAssembly.Imports,
 ): Promise<WebAssembly.Instance> {
   validateImports(imports, "instantiateRawInstance");
-  const helperPath = process.env.AS_TEST_HELPER_PATH || "";
   if (!helperPath.length) {
     throw new Error("bindings kind is raw but AS_TEST_HELPER_PATH is not set");
   }
   const binary = fs.readFileSync(wasmPath);
   const module = new WebAssembly.Module(binary);
-  const helper = (await import(`${pathToFileURL(helperPath).href}?t=${Date.now()}`)) as {
+  const helper = (await import(
+    `${pathToFileURL(helperPath).href}?t=${Date.now()}`
+  )) as {
     instantiate?: (
       module: WebAssembly.Module,
       imports?: WebAssembly.Imports,
@@ -200,10 +256,10 @@ async function instantiateRawInstance(
 
 async function instantiateEsmInstance(
   wasmPath: string,
+  helperPath: string,
   imports: WebAssembly.Imports,
 ): Promise<WebAssembly.Instance> {
   validateImports(imports, "instantiateEsmInstance");
-  const helperPath = process.env.AS_TEST_HELPER_PATH || "";
   if (!helperPath.length) {
     throw new Error("bindings kind is esm but AS_TEST_HELPER_PATH is not set");
   }
@@ -233,6 +289,7 @@ async function instantiateWasiInstance(
 ): Promise<WebAssembly.Instance> {
   validateImports(imports, "instantiateWasiInstance");
   suppressExperimentalWasiWarning();
+  const { WASI } = await import("wasi");
   const binary = fs.readFileSync(wasmPath);
   const module = new WebAssembly.Module(binary);
   const wasi = new WASI({
@@ -259,7 +316,8 @@ async function instantiateWebInstance(
     );
   }
 
-  const bindingsKind = (process.env.AS_TEST_BINDINGS_KIND || "raw") as BindingsKind;
+  const bindingsKind = (process.env.AS_TEST_BINDINGS_KIND ||
+    "raw") as BindingsKind;
   const helperPath = process.env.AS_TEST_HELPER_PATH
     ? path.resolve(process.cwd(), process.env.AS_TEST_HELPER_PATH)
     : wasmPath.replace(/\.wasm$/, ".js");
@@ -378,9 +436,11 @@ async function instantiateWebInstance(
       if (message?.kind == "instantiated") {
         if (resolved) return;
         resolved = true;
-        resolve(createWebInstanceController(() => {
-          sendControl({ kind: "start" });
-        }));
+        resolve(
+          createWebInstanceController(() => {
+            sendControl({ kind: "start" });
+          }),
+        );
         return;
       }
       if (message?.kind == "done") {
@@ -477,9 +537,9 @@ async function instantiateWebInstance(
         res.end(
           html.replace(
             "</body>",
-            '    <script>window.__AS_TEST_ENV__ = ' +
+            "    <script>window.__AS_TEST_ENV__ = " +
               JSON.stringify(webRuntimeEnv) +
-              ';</script>\n  </body>',
+              ";</script>\n  </body>",
           ),
         );
         return;
@@ -561,11 +621,7 @@ async function instantiateWebInstance(
       });
       socket.on("error", (error) => {
         if (!finished) {
-          rejectOnce(
-            error instanceof Error
-              ? error
-              : new Error(String(error)),
-          );
+          rejectOnce(error instanceof Error ? error : new Error(String(error)));
         }
       });
       flushPendingFrames();
@@ -622,7 +678,9 @@ async function instantiateWebInstance(
               return;
             }
             if (code && code != 0) {
-              rejectOnce(new Error(formatBrowserExitError(code, browserStderr)));
+              rejectOnce(
+                new Error(formatBrowserExitError(code, browserStderr)),
+              );
               return;
             }
             if (ready || wsSocket) {
@@ -631,9 +689,7 @@ async function instantiateWebInstance(
           });
         }
       } catch (error) {
-        rejectOnce(
-          error instanceof Error ? error : new Error(String(error)),
-        );
+        rejectOnce(error instanceof Error ? error : new Error(String(error)));
       }
     });
   });
@@ -680,7 +736,7 @@ function suppressExperimentalWasiWarning(): void {
         ? warning
         : String(
             warning && typeof warning == "object" && "message" in warning
-              ? (warning as { message?: unknown }).message ?? ""
+              ? ((warning as { message?: unknown }).message ?? "")
               : "",
           );
     if (
@@ -831,7 +887,9 @@ function launchWebBrowser(
 function openWithReusableBrowserWindow(url: string): ChildProcess | null {
   if (process.platform != "darwin") return null;
   if (!hasExecutable("osascript")) return null;
-  const browserApp = resolveMacBrowserAppName(process.env.BROWSER?.trim() ?? "");
+  const browserApp = resolveMacBrowserAppName(
+    process.env.BROWSER?.trim() ?? "",
+  );
   if (!browserApp) return null;
   const script = buildMacBrowserOpenScript(browserApp, url);
   if (!script.length) return null;
@@ -844,7 +902,9 @@ function openWithReusableBrowserWindow(url: string): ChildProcess | null {
 
 function openWithSystemBrowser(url: string): ChildProcess | null {
   if (process.env.BROWSER) {
-    return spawnBrowserCommand(process.env.BROWSER, url, false)?.process ?? null;
+    return (
+      spawnBrowserCommand(process.env.BROWSER, url, false)?.process ?? null
+    );
   }
   if (process.platform == "darwin") {
     if (!hasExecutable("open")) return null;
@@ -901,7 +961,7 @@ function buildMacBrowserOpenScript(appName: string, url: string): string[] {
     return [
       `tell application "${escapedApp}"`,
       "activate",
-      'if (count of windows) = 0 then make new window',
+      "if (count of windows) = 0 then make new window",
       `set URL of active tab of front window to "${escapedUrl}"`,
       "end tell",
     ];
@@ -910,7 +970,7 @@ function buildMacBrowserOpenScript(appName: string, url: string): string[] {
     return [
       `tell application "${escapedApp}"`,
       "activate",
-      'if (count of windows) = 0 then make new document',
+      "if (count of windows) = 0 then make new document",
       `set URL of front document to "${escapedUrl}"`,
       "end tell",
     ];
@@ -1256,7 +1316,8 @@ async function captureHelperInstance(
   try {
     await runHelper();
   } finally {
-    WebAssembly.instantiate = originalInstantiate as typeof WebAssembly.instantiate;
+    WebAssembly.instantiate =
+      originalInstantiate as typeof WebAssembly.instantiate;
   }
 
   if (!instance) {

@@ -214,7 +214,9 @@ export class CoverageTransform extends Visitor {
         const ifTrue = node.ifTrue;
         const ifFalse = node.ifFalse;
         const path = node.range.source.normalizedPath;
-        if (ifTrue.kind !== 31 && !isBuiltinStatement(ifTrue)) {
+        if (ifTrue &&
+            ifTrue.kind !== 31 &&
+            !isBuiltinStatement(ifTrue)) {
             const trueLc = getLineCol(ifTrue);
             const point = new CoverPoint();
             point.line = trueLc?.line;

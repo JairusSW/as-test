@@ -354,7 +354,13 @@ export class Expectation<T> extends Tests {
     // @ts-ignore
     const passed = this._left.indexOf(value) >= 0;
     // @ts-ignore
-    this._resolve(passed, "toMatch", q(this._left as string), q(value), message);
+    this._resolve(
+      passed,
+      "toMatch",
+      q(this._left as string),
+      q(value),
+      message,
+    );
   }
 
   /**

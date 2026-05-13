@@ -144,7 +144,9 @@ function resolveFuzzConfig(
   config.runsOverrideKind = 0;
   config.runsOverrideValue = 0;
   if (overrides.runsOverride) {
-    config.runsOverrideKind = encodeRunsOverrideKind(overrides.runsOverride.kind);
+    config.runsOverrideKind = encodeRunsOverrideKind(
+      overrides.runsOverride.kind,
+    );
     config.runsOverrideValue = overrides.runsOverride.value;
     if (overrides.runsOverride.kind == "set") {
       config.runs = Math.max(1, Math.round(overrides.runsOverride.value));
@@ -341,7 +343,11 @@ async function runFuzzTarget(
     const crash = persistCrashRecord(config.crashDir, {
       kind: "fuzz",
       file,
-      entryKey: buildFuzzFailureEntryKey(file, fuzzer.name, modeName ?? "default"),
+      entryKey: buildFuzzFailureEntryKey(
+        file,
+        fuzzer.name,
+        modeName ?? "default",
+      ),
       mode: modeName ?? "default",
       seed: firstFailureSeed,
       reproCommand: buildFuzzReproCommand(
@@ -439,10 +445,12 @@ function buildFuzzCrashEntryKey(file: string, modeName: string): string {
 }
 
 function sanitizeEntryName(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "") || "fuzzer";
+  return (
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "fuzzer"
+  );
 }
 
 function captureFrames(

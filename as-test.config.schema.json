@@ -336,168 +336,190 @@
                   }
                 ]
               },
-          "outDir": {
-            "type": "string",
-            "description": "Mode-specific build output directory. If omitted, defaults to <outDir>/<mode-name>."
-          },
-          "logs": {
-            "type": "string",
-            "description": "Mode-specific log output directory."
-          },
-          "coverageDir": {
-            "type": "string",
-            "description": "Mode-specific coverage output directory."
-          },
-          "snapshotDir": {
-            "type": "string",
-            "description": "Mode-specific snapshot directory."
-          },
-          "config": {
-            "type": "string",
-            "description": "Mode-specific asconfig path or \"none\"."
-          },
-          "coverage": {
-            "description": "Mode-specific coverage settings.",
-            "oneOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "object",
-                "additionalProperties": true,
-                "properties": {
-                  "enabled": {
-                    "type": "boolean"
-                  },
-                  "includeSpecs": {
-                    "type": "boolean"
-                  }
-                }
-              }
-            ]
-          },
-          "fuzz": {
-            "type": "object",
-            "additionalProperties": false,
-            "description": "Mode-specific fuzz overrides applied before running `ast fuzz` or `ast test --fuzz` in this mode.",
-            "properties": {
-              "input": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "runs": {
-                "type": "number"
-              },
-              "seed": {
-                "type": "number"
-              },
-              "maxInputBytes": {
-                "type": "number"
-              },
-              "target": {
+              "outDir": {
                 "type": "string",
-                "enum": ["bindings"]
+                "description": "Mode-specific build output directory. If omitted, defaults to <outDir>/<mode-name>."
               },
-              "corpusDir": {
-                "type": "string"
-              },
-              "crashDir": {
-                "type": "string"
-              }
-            }
-          },
-          "buildOptions": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "cmd": {
+              "logs": {
                 "type": "string",
-                "description": "Mode-specific custom build command template."
+                "description": "Mode-specific log output directory."
               },
-              "args": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "target": {
+              "coverageDir": {
                 "type": "string",
-                "enum": ["wasi", "bindings", "web"]
+                "description": "Mode-specific coverage output directory."
               },
-              "env": {
-                "description": "Mode-specific build environment overrides.",
+              "snapshotDir": {
+                "type": "string",
+                "description": "Mode-specific snapshot directory."
+              },
+              "config": {
+                "type": "string",
+                "description": "Mode-specific asconfig path or \"none\"."
+              },
+              "coverage": {
+                "description": "Mode-specific coverage settings.",
                 "oneOf": [
                   {
-                    "type": "string"
+                    "type": "boolean"
                   },
                   {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "includeSpecs": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                ]
+              },
+              "fuzz": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Mode-specific fuzz overrides applied before running `ast fuzz` or `ast test --fuzz` in this mode.",
+                "properties": {
+                  "input": {
                     "type": "array",
                     "items": {
                       "type": "string"
                     }
                   },
-                  {
-                    "type": "object",
-                    "additionalProperties": {
-                      "type": "string"
-                    }
+                  "runs": {
+                    "type": "number"
+                  },
+                  "seed": {
+                    "type": "number"
+                  },
+                  "maxInputBytes": {
+                    "type": "number"
+                  },
+                  "target": {
+                    "type": "string",
+                    "enum": ["bindings"]
+                  },
+                  "corpusDir": {
+                    "type": "string"
+                  },
+                  "crashDir": {
+                    "type": "string"
                   }
-                ]
-              }
-            }
-          },
-          "runOptions": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "runtime": {
+                }
+              },
+              "buildOptions": {
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
                   "cmd": {
                     "type": "string",
-                    "description": "Mode-specific runtime command."
+                    "description": "Mode-specific custom build command template."
                   },
-                  "browser": {
+                  "args": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "target": {
                     "type": "string",
-                    "description": "Mode-specific browser for web targets. Use chrome, chromium, firefox, webkit, or an executable path."
-                  }
-                }
-              },
-              "reporter": {
-                "description": "Mode-specific reporter config.",
-                "oneOf": [
-                  {
-                    "type": "string"
+                    "enum": ["wasi", "bindings", "web"]
                   },
-                  {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "properties": {
-                      "name": {
+                  "env": {
+                    "description": "Mode-specific build environment overrides.",
+                    "oneOf": [
+                      {
                         "type": "string"
                       },
-                      "options": {
+                      {
                         "type": "array",
                         "items": {
                           "type": "string"
                         }
                       },
-                      "outDir": {
+                      {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "runOptions": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "runtime": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "cmd": {
+                        "type": "string",
+                        "description": "Mode-specific runtime command."
+                      },
+                      "browser": {
+                        "type": "string",
+                        "description": "Mode-specific browser for web targets. Use chrome, chromium, firefox, webkit, or an executable path."
+                      }
+                    }
+                  },
+                  "reporter": {
+                    "description": "Mode-specific reporter config.",
+                    "oneOf": [
+                      {
                         "type": "string"
                       },
-                      "outFile": {
-                        "type": "string"
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "options": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "outDir": {
+                            "type": "string"
+                          },
+                          "outFile": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["name"]
                       }
-                    },
-                    "required": ["name"]
+                    ]
+                  },
+                  "env": {
+                    "description": "Mode-specific runtime environment overrides.",
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      }
+                    ]
                   }
-                ]
+                }
               },
               "env": {
-                "description": "Mode-specific runtime environment overrides.",
+                "description": "Mode-wide environment variables merged before build/run-specific env.",
                 "oneOf": [
                   {
                     "type": "string"
@@ -516,28 +538,6 @@
                   }
                 ]
               }
-            }
-          },
-          "env": {
-            "description": "Mode-wide environment variables merged before build/run-specific env.",
-            "oneOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              {
-                "type": "object",
-                "additionalProperties": {
-                  "type": "string"
-                }
-              }
-            ]
-          }
             }
           }
         ]

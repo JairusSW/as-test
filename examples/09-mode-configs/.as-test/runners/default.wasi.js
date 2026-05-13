@@ -2,7 +2,7 @@ import { readFileSync } from "fs";
 import { WASI } from "wasi";
 
 const originalEmitWarning = process.emitWarning.bind(process);
-process.emitWarning = ((warning, ...args) => {
+process.emitWarning = (warning, ...args) => {
   const type = typeof args[0] == "string" ? args[0] : "";
   const name = typeof warning?.name == "string" ? warning.name : type;
   const message =
@@ -14,11 +14,13 @@ process.emitWarning = ((warning, ...args) => {
     return;
   }
   return originalEmitWarning(warning, ...args);
-});
+};
 
 const wasmPath = process.argv[2];
 if (!wasmPath) {
-  process.stderr.write("usage: node ./.as-test/runners/default.wasi.js <file.wasm>\n");
+  process.stderr.write(
+    "usage: node ./.as-test/runners/default.wasi.js <file.wasm>\n",
+  );
   process.exit(1);
 }
 
@@ -38,7 +40,11 @@ try {
     },
   };
   for (const entry of WebAssembly.Module.imports(module)) {
-    if (entry.module == "env" && entry.kind == "function" && !(entry.name in envImports)) {
+    if (
+      entry.module == "env" &&
+      entry.kind == "function" &&
+      !(entry.name in envImports)
+    ) {
       envImports[entry.name] = () => 0;
     }
   }

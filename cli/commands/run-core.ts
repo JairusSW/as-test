@@ -4,6 +4,7 @@ import { glob } from "glob";
 import { Channel, MessageType } from "../wipc.js";
 import {
   applyMode,
+  formatSpecDisplayPath,
   formatTime,
   getExec,
   loadConfig,
@@ -105,6 +106,7 @@ export type RunResult = {
     suites: any[];
     coverage: FileCoverage;
     runCommand: string;
+    buildCommand: string;
     snapshotSummary: {
       matched: number;
       created: number;
@@ -567,11 +569,7 @@ function formatReadableLog(
       );
       if (failure.suitePath.length) {
         lines.push(
-          `Repro: ${buildSuiteReproCommand(
-            file,
-            failure.suitePath,
-            modeName,
-          )}`,
+          `Repro: ${buildSuiteReproCommand(file, failure.suitePath, modeName)}`,
         );
       }
       if (failure.message.length) lines.push(`Message: ${failure.message}`);
@@ -645,7 +643,7 @@ function resolveSuiteSelectionMatches(
       const resolved = resolveExplicitSuitePath(suites, normalized);
       if (!resolved) {
         throw new Error(
-          `No suites matched "${selector}" in ${path.basename(file)}.`,
+          `No suites matched "${selector}" in ${formatSpecDisplayPath(file)}.`,
         );
       }
       matches.push({
@@ -660,7 +658,7 @@ function resolveSuiteSelectionMatches(
     const resolved = resolveBareSuiteSelector(suites, normalized);
     if (!resolved) {
       throw new Error(
-        `No suites matched "${selector}" in ${path.basename(file)}.`,
+        `No suites matched "${selector}" in ${formatSpecDisplayPath(file)}.`,
       );
     }
     matches.push({
@@ -702,7 +700,10 @@ function resolveBareSuiteSelector(
   if (!slug.length) return null;
   const matches: Array<{ path: string; depth: number }> = [];
   walkSuites(suites, (suite, depth) => {
-    const leaf = String(suite.path ?? "").split("/").pop() ?? "";
+    const leaf =
+      String(suite.path ?? "")
+        .split("/")
+        .pop() ?? "";
     if (leaf == slug) {
       matches.push({ path: String(suite.path), depth });
     }
@@ -727,7 +728,9 @@ function walkSuites(
 ): boolean {
   for (const suite of suites) {
     if (visitor(suite, depth)) return true;
-    const childSuites = Array.isArray(suite?.suites) ? (suite.suites as any[]) : [];
+    const childSuites = Array.isArray(suite?.suites)
+      ? (suite.suites as any[])
+      : [];
     if (walkSuites(childSuites, visitor, depth + 1)) return true;
   }
   return false;
@@ -741,14 +744,17 @@ function cloneSelectedSuites(
 ): any[] {
   const out: any[] = [];
   for (const suite of suites) {
-    const childSuites = Array.isArray(suite.suites) ? (suite.suites as any[]) : [];
+    const childSuites = Array.isArray(suite.suites)
+      ? (suite.suites as any[])
+      : [];
     const selectedChildren = cloneSelectedSuites(
       childSuites,
       selected,
       file,
       modeName,
     );
-    const keep = selected.has(String(suite.path ?? "")) || selectedChildren.length > 0;
+    const keep =
+      selected.has(String(suite.path ?? "")) || selectedChildren.length > 0;
     if (!keep) continue;
     out.push({
       ...suite,
@@ -773,7 +779,8 @@ function buildSuiteReproCommand(
   suitePath: string,
   modeName?: string,
 ): string {
-  const modeArg = modeName && modeName != "default" ? ` --mode ${modeName}` : "";
+  const modeArg =
+    modeName && modeName != "default" ? ` --mode ${modeName}` : "";
   return `ast run ${file}${modeArg} --suite ${suitePath}`;
 }
 
@@ -795,8 +802,8 @@ function collectReadableFailures(
       out.push({
         title: `${nextPath.join(" > ")}#${i + 1}`,
         where: String(test.location ?? "").length
-          ? `${path.basename(file)}:${String(test.location ?? "")}`
-          : path.basename(file),
+          ? `${formatSpecDisplayPath(file)}:${String(test.location ?? "")}`
+          : formatSpecDisplayPath(file),
         message: String(test.message ?? ""),
         left: JSON.stringify(test.left ?? ""),
         right: JSON.stringify(test.right ?? ""),
@@ -1018,7 +1025,7 @@ export async function run(
         const modeLabel = options.modeName ?? "default";
         const details = error instanceof Error ? error.message : String(error);
         throw new Error(
-          `Failed to run ${path.basename(file)} in mode ${modeLabel} with ${details}`,
+          `Failed to run ${formatSpecDisplayPath(file)} in mode ${modeLabel} with ${details}`,
         );
       }
       const normalized = normalizeReport(report);
@@ -1041,6 +1048,8 @@ export async function run(
         suites: selectedSuites,
         coverage: normalized.coverage,
         runCommand: runCommandForLog,
+        buildCommand:
+          options.buildCommandsByFile?.[file] ?? options.buildCommand ?? "",
         snapshotSummary: {
           matched: snapshotStore.matched,
           created: snapshotStore.created,
@@ -1172,7 +1181,10 @@ function shouldUsePersistentHeadfulWebSession(
   return target == "web" && !runtimeCommand.includes("--headless");
 }
 
-function alignDefaultRuntimeToTarget(runtimeRun: string, target: string): string {
+function alignDefaultRuntimeToTarget(
+  runtimeRun: string,
+  target: string,
+): string {
   const fallback = getDefaultRuntimeFallback(target);
   if (!fallback) return runtimeRun;
   const trimmed = runtimeRun.trim();
@@ -1466,9 +1478,7 @@ function resolveRuntimeTargetEnv(
   return {};
 }
 
-function resolveBindingsRuntimeEnv(
-  wasmPath: string,
-): Record<string, string> {
+function resolveBindingsRuntimeEnv(wasmPath: string): Record<string, string> {
   const helperPath = wasmPath.replace(/\.wasm$/, ".js");
   const kind = detectBindingsKind(wasmPath, helperPath);
   const env: Record<string, string> = {
@@ -1946,10 +1956,14 @@ function resolveCoverageOptions(raw: unknown): CoverageOptions {
         : [],
       ignore: {
         labels: Array.isArray(ignore?.labels)
-          ? ignore.labels.filter((item): item is string => typeof item == "string")
+          ? ignore.labels.filter(
+              (item): item is string => typeof item == "string",
+            )
           : [],
         names: Array.isArray(ignore?.names)
-          ? ignore.names.filter((item): item is string => typeof item == "string")
+          ? ignore.names.filter(
+              (item): item is string => typeof item == "string",
+            )
           : [],
         locations: Array.isArray(ignore?.locations)
           ? ignore.locations.filter(
@@ -2100,7 +2114,7 @@ async function runProcess(
   const runtimeEvents = {
     sawFileStart: false,
     sawFileEnd: false,
-    fileName: path.basename(specFile),
+    fileName: formatSpecDisplayPath(specFile),
     fileVerdict: "none",
     fileTime: "",
     suiteStarts: 0,
@@ -2290,7 +2304,10 @@ async function runProcess(
   const code = await new Promise<number>((resolve) => {
     child.on("close", (exitCode) => resolve(exitCode ?? 1));
   });
-  if (stderrPendingLine.length && !shouldSuppressWasiWarningLine(stderrPendingLine)) {
+  if (
+    stderrPendingLine.length &&
+    !shouldSuppressWasiWarningLine(stderrPendingLine)
+  ) {
     stderrBuffer += stderrPendingLine;
   }
   const processSpawnError = spawnError as Error | null;
@@ -2317,8 +2334,7 @@ async function runProcess(
   if (reportStream.sawChunkStart) {
     if (!reportStream.sawChunkEnd) {
       parseError =
-        parseError ??
-        "missing report:end marker for chunked report payload";
+        parseError ?? "missing report:end marker for chunked report payload";
     } else {
       const chunkedPayload = reportStream.chunks.join("");
       try {
@@ -2373,7 +2389,10 @@ async function runProcess(
     );
   }
   if (!report) {
-    const synthesized = synthesizeReportFromRuntimeEvents(specFile, runtimeEvents);
+    const synthesized = synthesizeReportFromRuntimeEvents(
+      specFile,
+      runtimeEvents,
+    );
     if (synthesized) {
       reporter.onWarning?.({
         message:
@@ -2499,7 +2518,7 @@ async function runWebSessionProcess(
   const runtimeEvents = {
     sawFileStart: false,
     sawFileEnd: false,
-    fileName: path.basename(specFile),
+    fileName: formatSpecDisplayPath(specFile),
     fileVerdict: "none",
     fileTime: "",
     suiteStarts: 0,
@@ -2680,7 +2699,7 @@ async function runWebSessionProcess(
           (entry): entry is [string, string] => typeof entry[1] == "string",
         ),
       ),
-      path.basename(specFile),
+      formatSpecDisplayPath(specFile),
       (frame) => {
         input.write(frame);
       },
@@ -2691,8 +2710,9 @@ async function runWebSessionProcess(
       error instanceof Error ? error : new Error(String(error)),
     );
     stderrBuffer +=
-      (error instanceof Error ? error.stack ?? error.message : String(error)) +
-      "\n";
+      (error instanceof Error
+        ? (error.stack ?? error.message)
+        : String(error)) + "\n";
   } finally {
     input.end();
     output.end();
@@ -2701,8 +2721,7 @@ async function runWebSessionProcess(
   if (reportStream.sawChunkStart) {
     if (!reportStream.sawChunkEnd) {
       parseError =
-        parseError ??
-        "missing report:end marker for chunked report payload";
+        parseError ?? "missing report:end marker for chunked report payload";
     } else {
       const chunkedPayload = reportStream.chunks.join("");
       try {
@@ -2757,7 +2776,10 @@ async function runWebSessionProcess(
     );
   }
   if (!report) {
-    const synthesized = synthesizeReportFromRuntimeEvents(specFile, runtimeEvents);
+    const synthesized = synthesizeReportFromRuntimeEvents(
+      specFile,
+      runtimeEvents,
+    );
     if (synthesized) {
       reporter.onWarning?.({
         message:
@@ -2816,14 +2838,13 @@ async function runWebSessionProcess(
       runtimeEvents,
     );
     reporter.onWarning?.({
-      message:
-        [
-          code !== 0 ? `child process exited with code ${code}` : "",
-          normalizeRuntimeOutput(stderrBuffer),
-          diagnostics,
-        ]
-          .filter(Boolean)
-          .join("\n"),
+      message: [
+        code !== 0 ? `child process exited with code ${code}` : "",
+        normalizeRuntimeOutput(stderrBuffer),
+        diagnostics,
+      ]
+        .filter(Boolean)
+        .join("\n"),
     });
   }
   return report;
@@ -2861,7 +2882,7 @@ function synthesizeReportFromRuntimeEvents(
     suites: [
       {
         file: specFile,
-        description: runtimeEvents.fileName || path.basename(specFile),
+        description: runtimeEvents.fileName || formatSpecDisplayPath(specFile),
         depth: 0,
         kind: "file",
         verdict,
@@ -2958,7 +2979,7 @@ function appendRuntimeFailureReport(
   const suites = Array.isArray(report?.suites) ? report.suites : [];
   suites.push({
     file: specFile,
-    description: path.basename(specFile),
+    description: formatSpecDisplayPath(specFile),
     depth: 0,
     kind: "runtime-error",
     verdict: "fail",
@@ -3053,11 +3074,13 @@ function readFileReport(stats: RunStats, fileReport: unknown): void {
       : [];
   const file = String(fileReportAny.file ?? "");
   const modeName = String(fileReportAny.modeName ?? "");
+  const runCommand = String(fileReportAny.runCommand ?? "");
+  const buildCommand = String(fileReportAny.buildCommand ?? "");
   let fileVerdict: Verdict = "none";
   for (const suite of suites) {
     fileVerdict = mergeVerdict(
       fileVerdict,
-      readSuite(stats, suite, file, modeName),
+      readSuite(stats, suite, file, modeName, runCommand, buildCommand),
     );
   }
   if (fileVerdict == "fail") {
@@ -3074,6 +3097,8 @@ function readSuite(
   suite: unknown,
   file: string,
   modeName: string,
+  runCommand: string,
+  buildCommand: string,
 ): Verdict {
   const suiteAny = suite as Record<string, unknown>;
   const kind = String(suiteAny.kind ?? "");
@@ -3088,7 +3113,10 @@ function readSuite(
     ? (suiteAny.suites as unknown[])
     : [];
   for (const subSuite of subSuites) {
-    verdict = mergeVerdict(verdict, readSuite(stats, subSuite, file, modeName));
+    verdict = mergeVerdict(
+      verdict,
+      readSuite(stats, subSuite, file, modeName, runCommand, buildCommand),
+    );
   }
 
   const tests = Array.isArray(suiteAny.tests)
@@ -3125,6 +3153,8 @@ function readSuite(
       ...suiteAny,
       file,
       modeName,
+      runCommand,
+      buildCommand,
     });
   } else if (verdict == "ok") {
     stats.passedSuites++;

@@ -242,9 +242,7 @@ export class PersistentWebSessionHost {
     }
     const url = `http://127.0.0.1:${address.port}/`;
     if (!this.headless && !process.env.BROWSER?.trim().length) {
-      process.stdout.write(
-        `Open web session: ${url}\n`,
-      );
+      process.stdout.write(`Open web session: ${url}\n`);
     } else {
       const launched = launchBrowser(url, this.headless);
       this.browserProcess = launched.process;
@@ -278,10 +276,7 @@ export class PersistentWebSessionHost {
     process.off("SIGHUP", this.onTerminalHangup);
   }
 
-  private onRequest(
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-  ): void {
+  private onRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
     const headers = {
       "Cross-Origin-Embedder-Policy": "require-corp",
       "Cross-Origin-Opener-Policy": "same-origin",
@@ -543,7 +538,12 @@ function spawnBrowserCommand(
 function resolveHeadlessFlags(commandValue: string): string[] {
   const lower = commandValue.toLowerCase();
   if (lower.includes("firefox")) return ["-headless"];
-  return ["--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check"];
+  return [
+    "--headless=new",
+    "--disable-gpu",
+    "--no-first-run",
+    "--no-default-browser-check",
+  ];
 }
 
 function hasExecutable(command: string): boolean {

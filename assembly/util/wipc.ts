@@ -154,8 +154,7 @@ export function requestFuzzConfig(): FuzzConfigReply {
   const runs = body.slice(0, first);
   const seed =
     second >= 0 ? body.slice(first + 1, second) : body.slice(first + 1);
-  const kind =
-    second >= 0 && third >= 0 ? body.slice(second + 1, third) : "";
+  const kind = second >= 0 && third >= 0 ? body.slice(second + 1, third) : "";
   const value = third >= 0 ? body.slice(third + 1) : "";
   if (runs.length) reply.runs = I32.parseInt(runs);
   if (seed.length) reply.seed = U64.parseInt(seed);

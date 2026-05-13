@@ -3,6 +3,7 @@
 import chalk from "chalk";
 import {
   build,
+  BuildFailureError,
   BuildFeatureToggles,
   formatInvocation as formatBuildInvocation,
   getBuildInvocationPreview,
@@ -18,8 +19,9 @@ import { executeCleanCommand } from "./commands/clean.js";
 import { fuzz, FuzzOverrides } from "./commands/fuzz-core.js";
 import {
   applyMode,
-  getDefaultModeNames,
   formatTime,
+  formatSpecDisplayPath,
+  getDefaultModeNames,
   getCliVersion,
   loadConfig,
   resolveModeNames,
@@ -156,12 +158,15 @@ if (!args.length) {
         process.exit(1);
       });
     } else if (command === "clean") {
-      executeCleanCommand(_args, configPath, selectedModes, resolveExecutionModes).catch(
-        (error) => {
-          printCliError(error);
-          process.exit(1);
-        },
-      );
+      executeCleanCommand(
+        _args,
+        configPath,
+        selectedModes,
+        resolveExecutionModes,
+      ).catch((error) => {
+        printCliError(error);
+        process.exit(1);
+      });
     }
   } catch (error) {
     printCliError(error);
@@ -387,9 +392,7 @@ function printCommandHelp(command: string): void {
     process.stdout.write(
       "  --suite <name[,name...]> Filter results to matching suite names or suite slug paths\n",
     );
-    process.stdout.write(
-      "  --suites <name[,name...]> Alias for --suite\n",
-    );
+    process.stdout.write("  --suites <name[,name...]> Alias for --suite\n");
     process.stdout.write(
       "  --enable <feature>       Enable feature (coverage|try-as)\n",
     );
@@ -462,9 +465,7 @@ function printCommandHelp(command: string): void {
     process.stdout.write(
       "  --suite <name[,name...]> Filter results to matching suite names or suite slug paths\n",
     );
-    process.stdout.write(
-      "  --suites <name[,name...]> Alias for --suite\n",
-    );
+    process.stdout.write("  --suites <name[,name...]> Alias for --suite\n");
     process.stdout.write(
       "  --enable <feature>       Enable feature (coverage|try-as)\n",
     );
@@ -537,15 +538,9 @@ function printCommandHelp(command: string): void {
     process.stdout.write(
       "  --fuzzer <name[,name...]> Filter results to matching fuzz target names\n",
     );
-    process.stdout.write(
-      "  --fuzzers <name[,name...]> Alias for --fuzzer\n",
-    );
-    process.stdout.write(
-      "  --suite <name[,name...]> Alias for --fuzzer\n",
-    );
-    process.stdout.write(
-      "  --suites <name[,name...]> Alias for --fuzzer\n",
-    );
+    process.stdout.write("  --fuzzers <name[,name...]> Alias for --fuzzer\n");
+    process.stdout.write("  --suite <name[,name...]> Alias for --fuzzer\n");
+    process.stdout.write("  --suites <name[,name...]> Alias for --fuzzer\n");
     process.stdout.write(
       "  --jobs <n>               Run files through an ordered worker pool\n",
     );
@@ -622,9 +617,6 @@ function printCommandHelp(command: string): void {
     );
     process.stdout.write(
       "  --mode <name[,name...]>  Clean one or multiple named modes\n",
-    );
-    process.stdout.write(
-      "  -f, --force              Skip the full-clean confirmation prompt\n",
     );
     process.stdout.write("  --help, -h               Show this help\n");
     return;
@@ -863,13 +855,11 @@ function resolveNamedSelectors(
       continue;
     }
 
-    let parsed:
-      | {
-          key: string;
-          value: string;
-          consumeNext: boolean;
-        }
-      | null = null;
+    let parsed: {
+      key: string;
+      value: string;
+      consumeNext: boolean;
+    } | null = null;
     for (const flag of flags) {
       parsed = parseStringFlag(rawArgs, i, flag);
       if (parsed) break;
@@ -894,14 +884,12 @@ function parseFuzzRunsFlag(
   rawArgs: string[],
   index: number,
   flag: string,
-):
-  | {
-      key: string;
-      absoluteRuns?: number;
-      override: FuzzOverrides["runsOverride"];
-      consumeNext: boolean;
-    }
-  | null {
+): {
+  key: string;
+  absoluteRuns?: number;
+  override: FuzzOverrides["runsOverride"];
+  consumeNext: boolean;
+} | null {
   const arg = rawArgs[index]!;
   let value = "";
   let consumeNext = false;
@@ -1457,20 +1445,25 @@ function resolveCommandTokens(rawArgs: string[], command: string): string[] {
   return values;
 }
 
-async function buildFileForMode(
-  args: {
-    configPath: string | undefined;
-    file: string;
-    modeName: string | undefined;
-    buildFeatureToggles: BuildFeatureToggles;
-    buildPool?: BuildWorkerPool;
-  },
-): Promise<void> {
+async function buildFileForMode(args: {
+  configPath: string | undefined;
+  file: string;
+  modeName: string | undefined;
+  buildFeatureToggles: BuildFeatureToggles;
+  buildPool?: BuildWorkerPool;
+}): Promise<void> {
   if (args.buildPool) {
+    const buildInvocation = await getBuildInvocationPreview(
+      args.configPath,
+      args.file,
+      args.modeName,
+      args.buildFeatureToggles,
+    );
     await args.buildPool.buildFileMode({
       configPath: args.configPath,
       file: args.file,
       modeName: args.modeName,
+      buildCommand: formatBuildInvocation(buildInvocation),
       featureToggles: args.buildFeatureToggles,
     });
   } else {
@@ -1548,26 +1541,36 @@ async function runTestSequential(
   const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
   for (const file of files) {
     const buildStartedAt = Date.now();
-    await build(configPath, [file], modeName, buildFeatureToggles);
-    buildIntervals.push({ start: buildStartedAt, end: Date.now() });
-    const buildInvocation = await getBuildInvocationPreview(
-      configPath,
-      file,
-      modeName,
-      buildFeatureToggles,
-    );
-    const artifactKey = resolvePerFileArtifactKey(file, duplicateSpecBasenames);
-    const result = await run(runFlags, configPath, [file], false, {
-      reporter,
-      webSession,
-      suiteSelectors,
-      emitRunStart: false,
-      emitRunComplete: false,
-      logFileName: `test.${artifactKey}.log.json`,
-      coverageFileName: `coverage.${artifactKey}.log.json`,
-      buildCommand: formatBuildInvocation(buildInvocation),
-      modeName,
-    });
+    let result: RunResult;
+    try {
+      await build(configPath, [file], modeName, buildFeatureToggles);
+      buildIntervals.push({ start: buildStartedAt, end: Date.now() });
+      const buildInvocation = await getBuildInvocationPreview(
+        configPath,
+        file,
+        modeName,
+        buildFeatureToggles,
+      );
+      const artifactKey = resolvePerFileArtifactKey(
+        file,
+        duplicateSpecBasenames,
+      );
+      result = await run(runFlags, configPath, [file], false, {
+        reporter,
+        webSession,
+        suiteSelectors,
+        emitRunStart: false,
+        emitRunComplete: false,
+        logFileName: `test.${artifactKey}.log.json`,
+        coverageFileName: `coverage.${artifactKey}.log.json`,
+        buildCommand: formatBuildInvocation(buildInvocation),
+        modeName,
+      });
+    } catch (error) {
+      const buildFailure = getBuildFailureErrorLike(error);
+      if (!buildFailure) throw error;
+      result = createBuildFailureRunResult(buildFailure);
+    }
     results.push(result);
     if (result?.failed) failed = true;
   }
@@ -1859,7 +1862,7 @@ async function runRuntimeMatrix(
 
   for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
     const file = files[fileIndex]!;
-    const fileName = path.basename(file);
+    const fileName = formatSpecDisplayPath(file);
     const fileResults: RunResult[] = [];
     const modeTimes = modes.map(() => "...");
     if (liveMatrix) {
@@ -2052,60 +2055,60 @@ async function runTestModes(
   );
   try {
     for (const modeName of modes) {
-    const reporterSession = await createRunReporter(
-      configPath,
-      effectiveRunFlags.reporterPath,
-      modeName,
-    );
-    const modeResult = await runTestSequential(
-      effectiveRunFlags,
-      configPath,
-      selectors,
-      suiteSelectors,
-      buildFeatureToggles,
-      modeSummaryTotal,
-      fileSummaryTotal,
-      fuzzEnabled,
-      modeName,
-      reporterSession.reporter,
-      sharedWebSession,
-      !fuzzEnabled,
-    );
-    if (modeResult.failed) failed = true;
-    if (fuzzEnabled) {
-      if (reporterSession.reporterKind == "default") {
-        process.stdout.write("\n");
-      }
-      const fuzzResults = await runFuzzMatrixResults(
+      const reporterSession = await createRunReporter(
+        configPath,
+        effectiveRunFlags.reporterPath,
+        modeName,
+      );
+      const modeResult = await runTestSequential(
+        effectiveRunFlags,
         configPath,
         selectors,
-        fuzzerSelectors,
-        [modeName],
-        fuzzOverrides,
+        suiteSelectors,
+        buildFeatureToggles,
+        modeSummaryTotal,
+        fileSummaryTotal,
+        fuzzEnabled,
+        modeName,
         reporterSession.reporter,
+        sharedWebSession,
+        !fuzzEnabled,
       );
-      if (fuzzResults.some(hasFuzzFailures)) failed = true;
-      reporterSession.reporter.onRunComplete?.({
-        clean: runFlags.clean,
-        snapshotEnabled: effectiveRunFlags.snapshot !== false,
-        showCoverage: effectiveRunFlags.showCoverage,
-        buildTime:
-          modeResult.summary.buildTime +
-          getMergedIntervalDuration(collectFuzzBuildIntervals(fuzzResults)),
-        snapshotSummary: modeResult.summary.snapshotSummary,
-        coverageSummary: modeResult.summary.coverageSummary,
-        stats: modeResult.summary.stats,
-        reports: modeResult.summary.reports,
-        fuzzSummary: summarizeFuzzExecutions(fuzzResults),
-        modeSummary: buildSingleModeSummary(
-          modeResult.summary.stats,
-          modeResult.summary.snapshotSummary,
-          modeSummaryTotal,
-        ),
-      });
-      reporterSession.reporter.flush?.();
+      if (modeResult.failed) failed = true;
+      if (fuzzEnabled) {
+        if (reporterSession.reporterKind == "default") {
+          process.stdout.write("\n");
+        }
+        const fuzzResults = await runFuzzMatrixResults(
+          configPath,
+          selectors,
+          fuzzerSelectors,
+          [modeName],
+          fuzzOverrides,
+          reporterSession.reporter,
+        );
+        if (fuzzResults.some(hasFuzzFailures)) failed = true;
+        reporterSession.reporter.onRunComplete?.({
+          clean: runFlags.clean,
+          snapshotEnabled: effectiveRunFlags.snapshot !== false,
+          showCoverage: effectiveRunFlags.showCoverage,
+          buildTime:
+            modeResult.summary.buildTime +
+            getMergedIntervalDuration(collectFuzzBuildIntervals(fuzzResults)),
+          snapshotSummary: modeResult.summary.snapshotSummary,
+          coverageSummary: modeResult.summary.coverageSummary,
+          stats: modeResult.summary.stats,
+          reports: modeResult.summary.reports,
+          fuzzSummary: summarizeFuzzExecutions(fuzzResults),
+          modeSummary: buildSingleModeSummary(
+            modeResult.summary.stats,
+            modeResult.summary.snapshotSummary,
+            modeSummaryTotal,
+          ),
+        });
+        reporterSession.reporter.flush?.();
+      }
     }
-  }
   } finally {
     await sharedWebSession?.close();
   }
@@ -2142,7 +2145,11 @@ async function runTestMatrix(
     if (!fuzzEnabled) {
       throw await buildNoTestFilesMatchedError(configPath, selectors);
     }
-    const fuzzFiles = await resolveSelectedFuzzFiles(configPath, selectors, modes);
+    const fuzzFiles = await resolveSelectedFuzzFiles(
+      configPath,
+      selectors,
+      modes,
+    );
     if (!fuzzFiles.length) {
       throw await buildNoTestFilesMatchedError(configPath, selectors, true);
     }
@@ -2178,7 +2185,7 @@ async function runTestMatrix(
 
   for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
     const file = files[fileIndex]!;
-    const fileName = path.basename(file);
+    const fileName = formatSpecDisplayPath(file);
     const fileResults: RunResult[] = [];
     const modeTimes = modes.map(() => "...");
     if (liveMatrix) {
@@ -2186,6 +2193,7 @@ async function runTestMatrix(
     }
     for (let i = 0; i < modes.length; i++) {
       const modeName = modes[i];
+      let result: RunResult;
       try {
         const buildStartedAt = Date.now();
         await buildFileForMode({
@@ -2205,7 +2213,7 @@ async function runTestMatrix(
           file,
           duplicateSpecBasenames,
         );
-        const result = await run(runFlags, configPath, [file], false, {
+        result = await run(runFlags, configPath, [file], false, {
           reporter: silentReporter,
           reporterKind: "default",
           emitRunStart: false,
@@ -2215,26 +2223,25 @@ async function runTestMatrix(
           buildCommand: formatBuildInvocation(buildInvocation),
           modeName,
         });
-        modeTimes[i] = formatMatrixModeTime(result.stats.time);
-        if (liveMatrix) {
-          renderMatrixLiveLine(
-            fileName,
-            modeLabels,
-            modeTimes,
-            showPerModeTimes,
-          );
-        }
-        if (result.failed) {
-          modeState[i]!.failed = true;
-        } else if (result.stats.passedFiles > 0) {
-          modeState[i]!.passed = true;
-        }
-        fileResults.push(result);
-        allResults.push(result);
       } catch (error) {
-        clearLiveLine();
-        throw error;
+        const buildFailure = getBuildFailureErrorLike(error);
+        if (!buildFailure) {
+          clearLiveLine();
+          throw error;
+        }
+        result = createBuildFailureRunResult(buildFailure);
       }
+      modeTimes[i] = formatMatrixModeTime(result.stats.time);
+      if (liveMatrix) {
+        renderMatrixLiveLine(fileName, modeLabels, modeTimes, showPerModeTimes);
+      }
+      if (result.failed) {
+        modeState[i]!.failed = true;
+      } else if (result.stats.passedFiles > 0) {
+        modeState[i]!.passed = true;
+      }
+      fileResults.push(result);
+      allResults.push(result);
     }
     if (reporterSession.reporterKind == "default") {
       renderMatrixFileResult(
@@ -2310,7 +2317,11 @@ async function runFuzzModes(
   const overrides = resolveFuzzOverrides(rawArgs, "fuzz");
   const parallelSettings = resolveFuzzParallelJobs(rawArgs);
   const clean = rawArgs.includes("--clean");
-  const fuzzFiles = await resolveSelectedFuzzFiles(configPath, selectors, modes);
+  const fuzzFiles = await resolveSelectedFuzzFiles(
+    configPath,
+    selectors,
+    modes,
+  );
   const { jobs, buildJobs, runJobs } = resolveEffectiveParallelJobs(
     parallelSettings,
     fuzzFiles.length,
@@ -2406,7 +2417,7 @@ async function runRuntimeSingleParallel(
   const poolWidth = Math.max(runFlags.buildJobs, runFlags.runJobs);
   await runOrderedPool(files, poolWidth, async (file, index) => {
     const token = useQueueDisplay
-      ? renderQueuedFileStart(queueDisplay, path.basename(file))
+      ? renderQueuedFileStart(queueDisplay, formatSpecDisplayPath(file))
       : null;
     const buffered = useQueueDisplay
       ? await createBufferedReporter(
@@ -2415,19 +2426,26 @@ async function runRuntimeSingleParallel(
           modeName,
         )
       : null;
-    const result = await runLimit(() =>
-      run({ ...runFlags, clean: true }, configPath, [file], false, {
-        reporter: buffered?.reporter,
-        reporterKind: buffered?.reporterKind,
-        modeName,
-        suiteSelectors,
-        emitRunComplete: false,
-        fileSummaryTotal: 1,
-        modeSummaryTotal,
-        modeSummaryExecuted: 1,
-        buildCommandsByFile: { [file]: buildCommandsByFile[file] ?? "" },
-      }),
-    );
+    let result: RunResult;
+    try {
+      result = await runLimit(() =>
+        run({ ...runFlags, clean: true }, configPath, [file], false, {
+          reporter: buffered?.reporter,
+          reporterKind: buffered?.reporterKind,
+          modeName,
+          suiteSelectors,
+          emitRunComplete: false,
+          fileSummaryTotal: 1,
+          modeSummaryTotal,
+          modeSummaryExecuted: 1,
+          buildCommandsByFile: { [file]: buildCommandsByFile[file] ?? "" },
+        }),
+      );
+    } catch (error) {
+      const buildFailure = getBuildFailureErrorLike(error);
+      if (!buildFailure) throw error;
+      result = createBuildFailureRunResult(buildFailure);
+    }
     buffered?.reporter.flush?.();
     results[index] = result;
     if (buffered && token != null) {
@@ -2519,7 +2537,7 @@ async function runRuntimeMatrixParallel(
   const buildIntervals: Array<{ start: number; end: number }> = [];
   try {
     await runOrderedPool(files, poolWidth, async (file, fileIndex) => {
-      const fileName = path.basename(file);
+      const fileName = formatSpecDisplayPath(file);
       const token = useQueueDisplay
         ? renderQueuedFileStart(queueDisplay, fileName)
         : null;
@@ -2527,36 +2545,43 @@ async function runRuntimeMatrixParallel(
       const modeTimes = modes.map(() => "...");
       for (let i = 0; i < modes.length; i++) {
         const modeName = modes[i];
-        const buildStartedAt = Date.now();
-        await buildFileForMode({
-          configPath,
-          file,
-          modeName,
-          buildFeatureToggles: {},
-          buildPool,
-        });
-        buildIntervals.push({ start: buildStartedAt, end: Date.now() });
-        const buildInvocation = await getBuildInvocationPreview(
-          configPath,
-          file,
-          modeName,
-          {},
-        );
-        const artifactKey = resolvePerFileArtifactKey(
-          file,
-          duplicateSpecBasenames,
-        );
-        const result = await run(runFlags, configPath, [file], false, {
-          reporter: silentReporter,
-          reporterKind: "default",
-          suiteSelectors,
-          emitRunStart: false,
-          emitRunComplete: false,
-          logFileName: `run.${artifactKey}.log.json`,
-          coverageFileName: `coverage.${artifactKey}.log.json`,
-          buildCommand: formatBuildInvocation(buildInvocation),
-          modeName,
-        });
+        let result: RunResult;
+        try {
+          const buildStartedAt = Date.now();
+          await buildFileForMode({
+            configPath,
+            file,
+            modeName,
+            buildFeatureToggles: {},
+            buildPool,
+          });
+          buildIntervals.push({ start: buildStartedAt, end: Date.now() });
+          const buildInvocation = await getBuildInvocationPreview(
+            configPath,
+            file,
+            modeName,
+            {},
+          );
+          const artifactKey = resolvePerFileArtifactKey(
+            file,
+            duplicateSpecBasenames,
+          );
+          result = await run(runFlags, configPath, [file], false, {
+            reporter: silentReporter,
+            reporterKind: "default",
+            suiteSelectors,
+            emitRunStart: false,
+            emitRunComplete: false,
+            logFileName: `run.${artifactKey}.log.json`,
+            coverageFileName: `coverage.${artifactKey}.log.json`,
+            buildCommand: formatBuildInvocation(buildInvocation),
+            modeName,
+          });
+        } catch (error) {
+          const buildFailure = getBuildFailureErrorLike(error);
+          if (!buildFailure) throw error;
+          result = createBuildFailureRunResult(buildFailure);
+        }
         modeTimes[i] = formatMatrixModeTime(result.stats.time);
         fileResults.push(result);
       }
@@ -2675,27 +2700,8 @@ async function runTestSingleParallel(
     try {
       await runOrderedPool(files, poolWidth, async (file, index) => {
         const token = useQueueDisplay
-          ? renderQueuedFileStart(queueDisplay, path.basename(file))
+          ? renderQueuedFileStart(queueDisplay, formatSpecDisplayPath(file))
           : null;
-        const buildStartedAt = Date.now();
-        await buildFileForMode({
-          configPath,
-          file,
-          modeName,
-          buildFeatureToggles,
-          buildPool,
-        });
-        buildIntervals.push({ start: buildStartedAt, end: Date.now() });
-        const buildInvocation = await getBuildInvocationPreview(
-          configPath,
-          file,
-          modeName,
-          buildFeatureToggles,
-        );
-        const artifactKey = resolvePerFileArtifactKey(
-          file,
-          duplicateSpecBasenames,
-        );
         const buffered = useQueueDisplay
           ? await createBufferedReporter(
               configPath,
@@ -2703,22 +2709,48 @@ async function runTestSingleParallel(
               modeName,
             )
           : null;
-        const result = await run(
-          { ...runFlags, clean: true },
-          configPath,
-          [file],
-          false,
-          {
-            reporter: buffered?.reporter,
-            reporterKind: buffered?.reporterKind,
-            suiteSelectors,
-            emitRunComplete: false,
-            logFileName: `test.${artifactKey}.log.json`,
-            coverageFileName: `coverage.${artifactKey}.log.json`,
-            buildCommand: formatBuildInvocation(buildInvocation),
+        let result: RunResult;
+        try {
+          const buildStartedAt = Date.now();
+          await buildFileForMode({
+            configPath,
+            file,
             modeName,
-          },
-        );
+            buildFeatureToggles,
+            buildPool,
+          });
+          buildIntervals.push({ start: buildStartedAt, end: Date.now() });
+          const buildInvocation = await getBuildInvocationPreview(
+            configPath,
+            file,
+            modeName,
+            buildFeatureToggles,
+          );
+          const artifactKey = resolvePerFileArtifactKey(
+            file,
+            duplicateSpecBasenames,
+          );
+          result = await run(
+            { ...runFlags, clean: true },
+            configPath,
+            [file],
+            false,
+            {
+              reporter: buffered?.reporter,
+              reporterKind: buffered?.reporterKind,
+              suiteSelectors,
+              emitRunComplete: false,
+              logFileName: `test.${artifactKey}.log.json`,
+              coverageFileName: `coverage.${artifactKey}.log.json`,
+              buildCommand: formatBuildInvocation(buildInvocation),
+              modeName,
+            },
+          );
+        } catch (error) {
+          const buildFailure = getBuildFailureErrorLike(error);
+          if (!buildFailure) throw error;
+          result = createBuildFailureRunResult(buildFailure);
+        }
         buffered?.reporter.flush?.();
         results[index] = result;
         if (buffered && token != null) {
@@ -2813,7 +2845,11 @@ async function runTestMatrixParallel(
     if (!fuzzEnabled) {
       throw await buildNoTestFilesMatchedError(configPath, selectors);
     }
-    const fuzzFiles = await resolveSelectedFuzzFiles(configPath, selectors, modes);
+    const fuzzFiles = await resolveSelectedFuzzFiles(
+      configPath,
+      selectors,
+      modes,
+    );
     if (!fuzzFiles.length) {
       throw await buildNoTestFilesMatchedError(configPath, selectors, true);
     }
@@ -2853,7 +2889,7 @@ async function runTestMatrixParallel(
   const buildIntervals: Array<{ start: number; end: number }> = [];
   try {
     await runOrderedPool(files, poolWidth, async (file, fileIndex) => {
-      const fileName = path.basename(file);
+      const fileName = formatSpecDisplayPath(file);
       const token = useQueueDisplay
         ? renderQueuedFileStart(queueDisplay, fileName)
         : null;
@@ -2861,36 +2897,43 @@ async function runTestMatrixParallel(
       const modeTimes = modes.map(() => "...");
       for (let i = 0; i < modes.length; i++) {
         const modeName = modes[i];
-        const buildStartedAt = Date.now();
-        await buildFileForMode({
-          configPath,
-          file,
-          modeName,
-          buildFeatureToggles,
-          buildPool,
-        });
-        buildIntervals.push({ start: buildStartedAt, end: Date.now() });
-        const buildInvocation = await getBuildInvocationPreview(
-          configPath,
-          file,
-          modeName,
-          buildFeatureToggles,
-        );
-        const artifactKey = resolvePerFileArtifactKey(
-          file,
-          duplicateSpecBasenames,
-        );
-        const result = await run(runFlags, configPath, [file], false, {
-          reporter: silentReporter,
-          reporterKind: "default",
-          suiteSelectors,
-          emitRunStart: false,
-          emitRunComplete: false,
-          logFileName: `test.${artifactKey}.log.json`,
-          coverageFileName: `coverage.${artifactKey}.log.json`,
-          buildCommand: formatBuildInvocation(buildInvocation),
-          modeName,
-        });
+        let result: RunResult;
+        try {
+          const buildStartedAt = Date.now();
+          await buildFileForMode({
+            configPath,
+            file,
+            modeName,
+            buildFeatureToggles,
+            buildPool,
+          });
+          buildIntervals.push({ start: buildStartedAt, end: Date.now() });
+          const buildInvocation = await getBuildInvocationPreview(
+            configPath,
+            file,
+            modeName,
+            buildFeatureToggles,
+          );
+          const artifactKey = resolvePerFileArtifactKey(
+            file,
+            duplicateSpecBasenames,
+          );
+          result = await run(runFlags, configPath, [file], false, {
+            reporter: silentReporter,
+            reporterKind: "default",
+            suiteSelectors,
+            emitRunStart: false,
+            emitRunComplete: false,
+            logFileName: `test.${artifactKey}.log.json`,
+            coverageFileName: `coverage.${artifactKey}.log.json`,
+            buildCommand: formatBuildInvocation(buildInvocation),
+            modeName,
+          });
+        } catch (error) {
+          const buildFailure = getBuildFailureErrorLike(error);
+          if (!buildFailure) throw error;
+          result = createBuildFailureRunResult(buildFailure);
+        }
         modeTimes[i] = formatMatrixModeTime(result.stats.time);
         fileResults.push(result);
       }
@@ -3039,7 +3082,9 @@ async function runFuzzMatrixResults(
 ): Promise<FuzzResult[]> {
   const results: FuzzResult[] = [];
   for (const modeName of modes) {
-    const files = await resolveSelectedFuzzFiles(configPath, selectors, [modeName]);
+    const files = await resolveSelectedFuzzFiles(configPath, selectors, [
+      modeName,
+    ]);
     if (!files.length) {
       continue;
     }
@@ -3349,6 +3394,154 @@ function buildSingleModeSummary(
   };
 }
 
+function createBuildFailureRunResult(error: BuildFailureErrorLike): RunResult {
+  const message = formatBuildFailureMessage(error);
+  const report = {
+    file: error.file,
+    modeName: error.mode,
+    suites: [
+      {
+        file: error.file,
+        description: formatSpecDisplayPath(error.file),
+        depth: 0,
+        kind: "build-error",
+        verdict: "fail",
+        time: {
+          start: 0,
+          end: 0,
+        },
+        suites: [],
+        logs: [],
+        tests: [
+          {
+            order: 0,
+            type: "build-error",
+            verdict: "fail",
+            left: null,
+            right: null,
+            instr: "build failed before the test could run",
+            message,
+            location: "",
+          },
+        ],
+        modeName: error.mode,
+        buildCommand: formatBuildInvocation(error.invocation),
+        runCommand: "",
+      },
+    ],
+    coverage: {
+      total: 0,
+      covered: 0,
+      uncovered: 0,
+      percent: 100,
+      points: [],
+    },
+    runCommand: "",
+    buildCommand: formatBuildInvocation(error.invocation),
+    snapshotSummary: {
+      matched: 0,
+      created: 0,
+      updated: 0,
+      failed: 0,
+    },
+  };
+
+  return {
+    failed: true,
+    buildTime: 0,
+    stats: {
+      passedFiles: 0,
+      failedFiles: 1,
+      skippedFiles: 0,
+      passedSuites: 0,
+      failedSuites: 1,
+      skippedSuites: 0,
+      passedTests: 0,
+      failedTests: 1,
+      skippedTests: 0,
+      time: 0,
+      failedEntries: [
+        {
+          ...report.suites[0],
+          file: error.file,
+          modeName: error.mode,
+          buildCommand: report.buildCommand,
+          runCommand: "",
+        },
+      ],
+    },
+    snapshotSummary: report.snapshotSummary,
+    coverageSummary: {
+      enabled: false,
+      showPoints: false,
+      total: 0,
+      covered: 0,
+      uncovered: 0,
+      percent: 100,
+      files: [],
+    },
+    reports: [report],
+  };
+}
+
+function formatBuildFailureMessage(error: BuildFailureErrorLike): string {
+  const parts: string[] = [];
+  const stderr = error.stderr.trim();
+  const stdout = error.stdout.trim();
+  if (stderr.length) {
+    parts.push(`stderr:\n${stderr}`);
+  }
+  if (stdout.length) {
+    parts.push(`stdout:\n${stdout}`);
+  }
+  if (error.crashLogPath.length) {
+    parts.push(`Crash log:\n${error.crashLogPath}`);
+  }
+  return parts.join("\n\n") || "build failed with no compiler output";
+}
+
+type BuildFailureErrorLike = {
+  name?: string;
+  file: string;
+  mode: string;
+  invocation: {
+    command: string;
+    args: string[];
+  };
+  stdout: string;
+  stderr: string;
+  crashLogPath: string;
+};
+
+function getBuildFailureErrorLike(
+  error: unknown,
+): BuildFailureErrorLike | null {
+  if (error instanceof BuildFailureError) {
+    return error;
+  }
+  if (!error || typeof error != "object") {
+    return null;
+  }
+  const candidate = error as Partial<BuildFailureErrorLike>;
+  if (candidate.name != "BuildFailureError") {
+    return null;
+  }
+  if (
+    typeof candidate.file != "string" ||
+    typeof candidate.mode != "string" ||
+    typeof candidate.stdout != "string" ||
+    typeof candidate.stderr != "string" ||
+    typeof candidate.crashLogPath != "string" ||
+    !candidate.invocation ||
+    typeof candidate.invocation != "object" ||
+    typeof candidate.invocation.command != "string" ||
+    !Array.isArray(candidate.invocation.args)
+  ) {
+    return null;
+  }
+  return candidate as BuildFailureErrorLike;
+}
+
 function applyConfiguredFileTotalToStats(
   stats: RunStats,
   fileSummaryTotal: number,
@@ -3516,7 +3709,7 @@ async function buildNoTestFilesMatchedError(
   if (configuredFiles.length) {
     const sample = configuredFiles
       .slice(0, 5)
-      .map((file) => path.basename(file))
+      .map((file) => formatSpecDisplayPath(file))
       .join(", ");
     lines.push(
       `Configured specs (${configuredFiles.length}): ${sample}${configuredFiles.length > 5 ? ", ..." : ""}`,
@@ -3886,7 +4079,7 @@ async function handleMissingWebBrowsers(
   const selected = choosePreferredBrowserInstall(missing);
   const installCommand =
     selected == "webkit"
-      ? 'npx -y playwright install webkit'
+      ? "npx -y playwright install webkit"
       : `npx -y playwright install ${selected}`;
 
   if (!canPromptForWebInstall()) {
@@ -4056,11 +4249,11 @@ function extractPlaywrightDepsSummary(result: {
   const stdout =
     typeof result.stdout == "string"
       ? result.stdout
-      : result.stdout?.toString("utf8") ?? "";
+      : (result.stdout?.toString("utf8") ?? "");
   const stderr =
     typeof result.stderr == "string"
       ? result.stderr
-      : result.stderr?.toString("utf8") ?? "";
+      : (result.stderr?.toString("utf8") ?? "");
   return [stdout.trim(), stderr.trim()].filter(Boolean).join("\n");
 }
 
@@ -4110,9 +4303,7 @@ function getPlaywrightCacheRoots(): string[] {
     }
     const userProfile = process.env.USERPROFILE?.trim() ?? "";
     if (userProfile.length) {
-      roots.add(
-        path.join(userProfile, "AppData", "Local", "ms-playwright"),
-      );
+      roots.add(path.join(userProfile, "AppData", "Local", "ms-playwright"));
     }
   } else if (home.length) {
     roots.add(path.join(home, ".cache", "ms-playwright"));
@@ -4198,9 +4389,7 @@ function resolveSystemBrowserExecutable(browser: string): string | null {
         "Firefox.app/Contents/MacOS/firefox",
         "Firefox Developer Edition.app/Contents/MacOS/firefox",
       ],
-      msedge: [
-        "Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-      ],
+      msedge: ["Microsoft Edge.app/Contents/MacOS/Microsoft Edge"],
       webkit: [],
     };
     for (const root of macSearchRoots) {

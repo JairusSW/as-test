@@ -106,7 +106,9 @@ async function instantiateModule(ctx, hooks) {
 
 const wasmPathArg = process.argv[2];
 if (!wasmPathArg) {
-  process.stderr.write("usage: node ./.as-test/runners/default.bindings.js <file.wasm>\n");
+  process.stderr.write(
+    "usage: node ./.as-test/runners/default.bindings.js <file.wasm>\n",
+  );
   process.exit(1);
 }
 
@@ -121,6 +123,8 @@ try {
   const exports = await instantiateModule(ctx, hooks);
   await hooks.runModule(exports, ctx);
 } catch (error) {
-  process.stderr.write("failed to run bindings module: " + String(error) + "\n");
+  process.stderr.write(
+    "failed to run bindings module: " + String(error) + "\n",
+  );
   process.exit(1);
 }

@@ -107,7 +107,8 @@ export function resolveCoverageHighlightSpan(
   let start = index;
   let end = index + 1;
   while (start > 0 && !isCoverageBoundary(visible.charAt(start - 1))) start--;
-  while (end < visible.length && !isCoverageBoundary(visible.charAt(end))) end++;
+  while (end < visible.length && !isCoverageBoundary(visible.charAt(end)))
+    end++;
   return [start, end];
 }
 
@@ -135,9 +136,7 @@ function getCoverageSourceContext(
   return { visible, focus };
 }
 
-function detectCoverageDeclaration(
-  visible: string,
-): {
+function detectCoverageDeclaration(visible: string): {
   type: string;
   name: string | null;
 } | null {
@@ -157,12 +156,12 @@ function detectCoverageDeclaration(
   }
 
   match = trimmed.match(
-    /^(?:export\s+)?(?:public\s+|private\s+|protected\s+)?(?:static\s+)?([A-Za-z_]\w*)(?:<[^>]+>)?\([^)]*\)\s*:\s*[^{=]+[{]?$/
+    /^(?:export\s+)?(?:public\s+|private\s+|protected\s+)?(?:static\s+)?([A-Za-z_]\w*)(?:<[^>]+>)?\([^)]*\)\s*:\s*[^{=]+[{]?$/,
   );
   if (match) return { type: "Method", name: match[1] ?? null };
 
   match = trimmed.match(
-    /^(?:public\s+|private\s+|protected\s+)?(?:readonly\s+)?([A-Za-z_]\w*)(?:<[^>]+>)?\s*:\s*[^=;{]+(?:=.*)?;?$/
+    /^(?:public\s+|private\s+|protected\s+)?(?:readonly\s+)?([A-Za-z_]\w*)(?:<[^>]+>)?\s*:\s*[^=;{]+(?:=.*)?;?$/,
   );
   if (match) return { type: "Property", name: match[1] ?? null };
 

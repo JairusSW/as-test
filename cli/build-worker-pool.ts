@@ -10,6 +10,7 @@ type BuildTask = {
   configPath?: string;
   file: string;
   modeName?: string;
+  buildCommand?: string;
   featureToggles: BuildFeatureToggles;
   overrides: BuildConfigOverrides;
   resolve: () => void;
@@ -57,6 +58,7 @@ export class BuildWorkerPool {
     configPath?: string;
     file: string;
     modeName?: string;
+    buildCommand?: string;
     featureToggles?: BuildFeatureToggles;
     overrides?: BuildConfigOverrides;
   }): Promise<void> {
@@ -73,6 +75,7 @@ export class BuildWorkerPool {
         configPath: args.configPath,
         file: args.file,
         modeName: args.modeName,
+        buildCommand: args.buildCommand,
         featureToggles,
         overrides,
         resolve,
@@ -140,7 +143,16 @@ export class BuildWorkerPool {
       worker.busy = false;
       worker.task = null;
       if (failedTask) {
-        failedTask.reject(new Error("build worker exited unexpectedly"));
+        const modeLabel = failedTask.modeName ?? "default";
+        const fileLabel = failedTask.file;
+        const commandText = failedTask.buildCommand?.trim().length
+          ? `\nBuild command: ${failedTask.buildCommand}`
+          : "";
+        failedTask.reject(
+          new Error(
+            `build worker exited unexpectedly while building ${fileLabel} in mode ${modeLabel}${commandText}`,
+          ),
+        );
       }
       if (!pool || this.closed) return;
       const index = pool.workers.indexOf(worker);

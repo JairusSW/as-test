@@ -1,5 +1,10 @@
 # Change Log
 
+## Unreleased
+
+- update build and run faliures to provide helpful error messages and reproduction commands and instructions
+- remove confirmation from ast clean
+
 ## v1.1.1
 
 - add `ast clean` command to remove build outputs, coverage outputs, crash reports, and logs.
@@ -46,7 +51,7 @@
 
 - feat: add per-mode `default: boolean` selection so modes can be included in implicit runs or kept manual-only.
 - feat: add `ast clean` to remove configured build outputs, coverage outputs, crash reports, and logs.
-- feat: make `ast clean` remove everything by default, prompt with `[Y/n]` before a full clean, and allow `-f` / `--force` to skip that confirmation.
+- feat: make `ast clean` remove everything by default without prompting.
 - fix: restore unnamed root-config execution alongside named default modes when `--mode` is omitted.
 - fix: make `ast clean` ignore mode `default: false` flags and treat an omitted `--mode` as a full clean across every configured mode.
 - fix: make `ast clean --mode ...` stay scoped to the selected mode(s) and skip shared output paths that are still owned by unselected modes instead of deleting them.

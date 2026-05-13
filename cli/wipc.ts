@@ -44,10 +44,7 @@ export class Channel {
       const idx = this.buffer.indexOf(Channel.MAGIC);
 
       if (idx === -1) {
-        const keep = Math.min(
-          this.buffer.length,
-          Channel.MAGIC_PREFIX_MAX,
-        );
+        const keep = Math.min(this.buffer.length, Channel.MAGIC_PREFIX_MAX);
         const flushLength = this.buffer.length - keep;
         if (flushLength > 0) {
           this.onPassthrough(this.buffer.subarray(0, flushLength));

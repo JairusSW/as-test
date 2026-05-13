@@ -44,13 +44,14 @@ export type BuildReuseInfo = {
 
 export type { BuildInvocation };
 
-class BuildFailureError extends Error {
+export class BuildFailureError extends Error {
   file: string;
   mode: string;
   invocation: BuildInvocation;
   stdout: string;
   stderr: string;
   kind: "test" | "fuzz";
+  crashLogPath: string;
 
   constructor(args: {
     file: string;
@@ -59,6 +60,7 @@ class BuildFailureError extends Error {
     stdout: string;
     stderr: string;
     kind: "test" | "fuzz";
+    crashLogPath: string;
     message: string;
   }) {
     super(args.message);
@@ -69,6 +71,7 @@ class BuildFailureError extends Error {
     this.stdout = args.stdout;
     this.stderr = args.stderr;
     this.kind = args.kind;
+    this.crashLogPath = args.crashLogPath;
   }
 }
 
@@ -125,10 +128,25 @@ export async function build(
   ) {
     const pool = getSerialBuildWorkerPool();
     for (const file of inputFiles) {
+      const outFile = `${config.outDir}/${resolveArtifactFileName(
+        file,
+        config.buildOptions.target,
+        modeName,
+        duplicateSpecBasenames,
+      )}`;
+      const invocation = getBuildCommand(
+        config,
+        pkgRunner,
+        file,
+        outFile,
+        modeName,
+        featureToggles,
+      );
       await pool.buildFileMode({
         configPath,
         file,
         modeName,
+        buildCommand: formatInvocation(invocation),
         featureToggles,
         overrides,
       });
@@ -178,6 +196,7 @@ export async function build(
         stdout,
         stderr,
         kind,
+        crashLogPath: crash.logPath,
         message:
           `Failed to build ${path.basename(file)} in mode ${modeLabel} with ${stderr || stdout || "unknown build error"}\n` +
           `Build command: ${buildCommand}\n` +

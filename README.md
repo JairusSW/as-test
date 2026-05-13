@@ -253,18 +253,25 @@ fuzz("bounded integer addition", (left: i32, right: i32): bool => {
 Pass a third argument to override the operation count for one target without changing the global fuzz config:
 
 ```ts
-fuzz("hot path stays stable", (): void => {
-  expect(1 + 1).toBe(2);
-}, 250);
+fuzz(
+  "hot path stays stable",
+  (): void => {
+    expect(1 + 1).toBe(2);
+  },
+  250,
+);
 ```
 
 Or pass it as the second argument to `.generate(...)`:
 
 ```ts
-fuzz("ascii strings survive concatenation boundaries", (input: string): bool => {
-  expect(input.length <= 40).toBe(true);
-  return true;
-}).generate((seed: FuzzSeed, run: (input: string) => bool): void => {
+fuzz(
+  "ascii strings survive concatenation boundaries",
+  (input: string): bool => {
+    expect(input.length <= 40).toBe(true);
+    return true;
+  },
+).generate((seed: FuzzSeed, run: (input: string) => bool): void => {
   run(seed.string({ charset: "ascii", min: 0, max: 40 }));
 }, 250);
 ```

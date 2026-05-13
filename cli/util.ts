@@ -12,7 +12,15 @@ import {
 } from "./types.js";
 import chalk from "chalk";
 import { createRequire } from "module";
-import { delimiter, dirname, join, resolve } from "path";
+import {
+  basename,
+  delimiter,
+  dirname,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "path";
 import { fileURLToPath } from "url";
 
 type ConfigMeta = {
@@ -51,6 +59,22 @@ export function formatTime(ms: number): string {
   }
 
   return `${us}us`;
+}
+
+export function formatSpecDisplayPath(file: string): string {
+  const resolved = resolve(file);
+  const parts = resolved.split(/[/\\]+/);
+  const testsIndex = parts.lastIndexOf("__tests__");
+  if (testsIndex >= 0 && testsIndex < parts.length - 1) {
+    return parts.slice(testsIndex + 1).join("/");
+  }
+
+  const rel = relative(process.cwd(), resolved).split(sep).join("/");
+  if (rel.length && rel != "." && rel != ".." && !rel.startsWith("../")) {
+    return rel;
+  }
+
+  return basename(resolved);
 }
 
 export function loadConfig(CONFIG_PATH: string, warn: boolean = false): Config {
@@ -160,9 +184,7 @@ function parseConfigRaw(
   const cmd =
     runtimeRaw && typeof runtimeRaw.cmd == "string" && runtimeRaw.cmd.length
       ? runtimeRaw.cmd
-      : runtimeRaw &&
-          typeof runtimeRaw.run == "string" &&
-          runtimeRaw.run.length
+      : runtimeRaw && typeof runtimeRaw.run == "string" && runtimeRaw.run.length
         ? runtimeRaw.run
         : legacyRun
           ? legacyRun
@@ -459,7 +481,11 @@ function validateCoverageValue(
   validateStringArrayField(obj, "include", path, issues);
   validateStringArrayField(obj, "exclude", path, issues);
   if ("ignore" in obj && obj.ignore != undefined) {
-    if (!obj.ignore || typeof obj.ignore != "object" || Array.isArray(obj.ignore)) {
+    if (
+      !obj.ignore ||
+      typeof obj.ignore != "object" ||
+      Array.isArray(obj.ignore)
+    ) {
       issues.push({
         path: `${path}.ignore`,
         message: "must be an object",
@@ -1144,10 +1170,7 @@ function cloneCoverageOptions(
   const cloned = Object.assign(new CoverageOptions(), coverage);
   cloned.include = [...(coverage.include ?? [])];
   cloned.exclude = [...(coverage.exclude ?? [])];
-  cloned.ignore = Object.assign(
-    new CoverageIgnoreOptions(),
-    coverage.ignore,
-  );
+  cloned.ignore = Object.assign(new CoverageIgnoreOptions(), coverage.ignore);
   cloned.ignore.labels = [...(coverage.ignore.labels ?? [])];
   cloned.ignore.names = [...(coverage.ignore.names ?? [])];
   cloned.ignore.locations = [...(coverage.ignore.locations ?? [])];
@@ -1205,7 +1228,10 @@ function cloneConfig(config: Config): Config {
   cloned.fuzz = cloneFuzzConfig(config.fuzz);
   cloned.coverage = cloneCoverageOptions(config.coverage);
   cloned.modes = Object.fromEntries(
-    Object.entries(config.modes).map(([name, mode]) => [name, cloneModeConfig(mode)]),
+    Object.entries(config.modes).map(([name, mode]) => [
+      name,
+      cloneModeConfig(mode),
+    ]),
   );
   CONFIG_META.set(cloned, getConfigMeta(config));
   return cloned;
@@ -1216,12 +1242,18 @@ function outputOverridesField(
   field: "outDir" | "logs" | "coverageDir" | "snapshotDir",
 ): boolean {
   if (field in raw) return true;
-  if (!raw.output || typeof raw.output != "object" || Array.isArray(raw.output)) {
+  if (
+    !raw.output ||
+    typeof raw.output != "object" ||
+    Array.isArray(raw.output)
+  ) {
     return false;
   }
   const output = raw.output as Record<string, unknown>;
-  if (field == "outDir") return typeof output.build == "string" && output.build.length > 0;
-  if (field == "logs") return typeof output.logs == "string" && output.logs.length > 0;
+  if (field == "outDir")
+    return typeof output.build == "string" && output.build.length > 0;
+  if (field == "logs")
+    return typeof output.logs == "string" && output.logs.length > 0;
   if (field == "coverageDir") {
     return typeof output.coverage == "string" && output.coverage.length > 0;
   }
@@ -1251,21 +1283,29 @@ function mergeCoverageConfig(
   raw: unknown,
 ): boolean | CoverageOptions {
   if (typeof raw == "boolean") return override;
-  if (!raw || typeof raw != "object" || Array.isArray(raw)) return cloneCoverageOptions(base);
+  if (!raw || typeof raw != "object" || Array.isArray(raw))
+    return cloneCoverageOptions(base);
 
-  const mergedBase: CoverageOptions = typeof base == "boolean"
-    ? Object.assign(new CoverageOptions(), { enabled: base })
-    : cloneCoverageOptions(base) as CoverageOptions;
-  const overrideOptions: CoverageOptions = typeof override == "boolean"
-    ? Object.assign(new CoverageOptions(), { enabled: override })
-    : cloneCoverageOptions(override) as CoverageOptions;
+  const mergedBase: CoverageOptions =
+    typeof base == "boolean"
+      ? Object.assign(new CoverageOptions(), { enabled: base })
+      : (cloneCoverageOptions(base) as CoverageOptions);
+  const overrideOptions: CoverageOptions =
+    typeof override == "boolean"
+      ? Object.assign(new CoverageOptions(), { enabled: override })
+      : (cloneCoverageOptions(override) as CoverageOptions);
   const rawObject = raw as Record<string, unknown>;
 
   if ("enabled" in rawObject) mergedBase.enabled = overrideOptions.enabled;
-  if ("includeSpecs" in rawObject) mergedBase.includeSpecs = overrideOptions.includeSpecs;
+  if ("includeSpecs" in rawObject)
+    mergedBase.includeSpecs = overrideOptions.includeSpecs;
   if ("include" in rawObject) mergedBase.include = [...overrideOptions.include];
   if ("exclude" in rawObject) mergedBase.exclude = [...overrideOptions.exclude];
-  if (rawObject.ignore && typeof rawObject.ignore == "object" && !Array.isArray(rawObject.ignore)) {
+  if (
+    rawObject.ignore &&
+    typeof rawObject.ignore == "object" &&
+    !Array.isArray(rawObject.ignore)
+  ) {
     mergedBase.ignore = mergeCoverageIgnoreOptions(
       mergedBase.ignore,
       overrideOptions.ignore,
@@ -1285,12 +1325,14 @@ function mergeReporterConfigByRaw(
     return cloneReporterConfig(base);
   }
 
-  const mergedBase: ReporterConfig = typeof base == "string"
-    ? new ReporterConfig()
-    : cloneReporterConfig(base) as ReporterConfig;
-  const overrideConfig: ReporterConfig = typeof override == "string"
-    ? new ReporterConfig()
-    : cloneReporterConfig(override) as ReporterConfig;
+  const mergedBase: ReporterConfig =
+    typeof base == "string"
+      ? new ReporterConfig()
+      : (cloneReporterConfig(base) as ReporterConfig);
+  const overrideConfig: ReporterConfig =
+    typeof override == "string"
+      ? new ReporterConfig()
+      : (cloneReporterConfig(override) as ReporterConfig);
   const rawObject = raw as Record<string, unknown>;
 
   if ("name" in rawObject) mergedBase.name = overrideConfig.name;
@@ -1323,7 +1365,10 @@ function mergeRunOptions(
   const merged = cloneRunOptions(base);
   if ("runtime" in raw || "run" in raw) {
     const runtimeRaw = raw.runtime as Record<string, unknown> | undefined;
-    if ("run" in raw || (runtimeRaw && ("cmd" in runtimeRaw || "run" in runtimeRaw))) {
+    if (
+      "run" in raw ||
+      (runtimeRaw && ("cmd" in runtimeRaw || "run" in runtimeRaw))
+    ) {
       merged.runtime.cmd = override.runtime.cmd;
     }
     if (runtimeRaw && "browser" in runtimeRaw) {
@@ -1384,14 +1429,22 @@ function mergeRootConfig(base: Config, override: Config): Config {
   if ("env" in raw) {
     merged.env = { ...override.env };
   }
-  if (raw.buildOptions && typeof raw.buildOptions == "object" && !Array.isArray(raw.buildOptions)) {
+  if (
+    raw.buildOptions &&
+    typeof raw.buildOptions == "object" &&
+    !Array.isArray(raw.buildOptions)
+  ) {
     merged.buildOptions = mergeBuildOptions(
       merged.buildOptions,
       override.buildOptions,
       raw.buildOptions as Record<string, unknown>,
     );
   }
-  if (raw.runOptions && typeof raw.runOptions == "object" && !Array.isArray(raw.runOptions)) {
+  if (
+    raw.runOptions &&
+    typeof raw.runOptions == "object" &&
+    !Array.isArray(raw.runOptions)
+  ) {
     merged.runOptions = mergeRunOptions(
       merged.runOptions,
       override.runOptions,

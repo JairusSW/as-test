@@ -137,12 +137,21 @@ describe("Expectation helpers", () => {
     expect(10, "math should still work").toBe(10);
     expect(10).toBe(10, "matcher message should compile");
     expect(10).toBeGreaterThan(5, "greater-than message should compile");
-    expect(10).toBeGreaterOrEqualTo(10, "greater-or-equal message should compile");
+    expect(10).toBeGreaterOrEqualTo(
+      10,
+      "greater-or-equal message should compile",
+    );
     expect(5).toBeLessThan(10, "less-than message should compile");
     expect(5).toBeLessThanOrEqualTo(5, "less-or-equal message should compile");
     expect(3.14159).toBeCloseTo(3.14, 2, "close-to message should compile");
-    expect("AssemblyScript testing").toMatch("testing", "match message should compile");
-    expect("AssemblyScript testing").toContain("testing", "contain message should compile");
+    expect("AssemblyScript testing").toMatch(
+      "testing",
+      "match message should compile",
+    );
+    expect("AssemblyScript testing").toContain(
+      "testing",
+      "contain message should compile",
+    );
     expect("as-test").toStartWith("as", "starts-with message should compile");
     expect("as-test").toEndWith("test", "ends-with message should compile");
     expect([1, 2, 3]).toHaveLength(3, "length message should compile");
@@ -157,7 +166,10 @@ describe("Expectation helpers", () => {
     expect<f64>(3.14).toBeFinite("finite message should compile");
     expect<Point | null>(null).toBeNull("null message should compile");
     expect([1, 2, 3]).toEqual([1, 2, 3], "equal message should compile");
-    expect([1, 2, 3]).toStrictEqual([1, 2, 3], "strict-equal message should compile");
+    expect([1, 2, 3]).toStrictEqual(
+      [1, 2, 3],
+      "strict-equal message should compile",
+    );
   });
 
   test("toBe uses identity for arrays and managed references", () => {

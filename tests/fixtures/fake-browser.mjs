@@ -17,9 +17,7 @@ if (!page.ok) {
   throw new Error(`failed to fetch runner page: ${page.status}`);
 }
 const html = await page.text();
-const envMatch = html.match(
-  /window\.__AS_TEST_ENV__ = (\{.*?\});<\/script>/s,
-);
+const envMatch = html.match(/window\.__AS_TEST_ENV__ = (\{.*?\});<\/script>/s);
 if (!envMatch) {
   throw new Error("failed to locate injected runtime env");
 }
@@ -40,7 +38,9 @@ if (runtimeEnv.AS_TEST_HELPER_PATH) {
     new URL(runtimeEnv.AS_TEST_HELPER_PATH, url),
   );
   if (!helperResponse.ok) {
-    throw new Error(`failed to fetch helper artifact: ${helperResponse.status}`);
+    throw new Error(
+      `failed to fetch helper artifact: ${helperResponse.status}`,
+    );
   }
   helperPath = path.join(
     tempRoot,

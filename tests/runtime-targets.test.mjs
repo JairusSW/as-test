@@ -16,9 +16,7 @@ test("bindings runner supports raw, esm, and none", async (t) => {
   for (const kind of ["raw", "esm", "none"]) {
     await t.test(kind, async () => {
       const fixture = await createBindingsFixture(kind);
-      const result = await runNode([
-        ".as-test/runners/default.bindings.js",
-      ], {
+      const result = await runNode([".as-test/runners/default.bindings.js"], {
         AS_TEST_RUNTIME_TARGET: "bindings",
         AS_TEST_WASM_PATH: fixture.wasmPath,
         ...(fixture.helperPath
@@ -33,6 +31,23 @@ test("bindings runner supports raw, esm, and none", async (t) => {
   }
 });
 
+test("generated runners can be invoked directly with a wasm path argument", async () => {
+  const bindingsFixture = await createBindingsFixture("raw");
+  const wasiFixture = await createWasiFixture();
+
+  const bindingsResult = await runNode([
+    ".as-test/runners/default.bindings.js",
+    bindingsFixture.wasmPath,
+  ]);
+  assert.equal(bindingsResult.code, 0, bindingsResult.stderr);
+
+  const wasiResult = await runNode([
+    ".as-test/runners/default.wasi.js",
+    wasiFixture.wasmPath,
+  ]);
+  assert.equal(wasiResult.code, 0, wasiResult.stderr);
+});
+
 test("wasi runner supports wasi artifacts", async () => {
   const fixture = await createWasiFixture();
   const result = await runNode([".as-test/runners/default.wasi.js"], {
@@ -40,6 +55,91 @@ test("wasi runner supports wasi artifacts", async () => {
     AS_TEST_WASM_PATH: fixture.wasmPath,
   });
   assert.equal(result.code, 0, result.stderr);
+});
+
+test("runtime failures print repro and resolved commands", async () => {
+  const badSpecPath = path.join(
+    repoRoot,
+    "assembly",
+    "__tests__",
+    "__tmp_runtime_fail.spec.ts",
+  );
+  await fs.writeFile(
+    badSpecPath,
+    'import { test } from "..";\nthrow new Error("lol");\ntest("never runs", () => {});\n',
+    "utf8",
+  );
+  try {
+    const result = await runNode(
+      [
+        "./bin/index.js",
+        "test",
+        "assembly/__tests__/__tmp_runtime_fail.spec.ts",
+        "--mode",
+        "node:wasi",
+        "--no-parallel",
+      ],
+      {},
+    );
+    const output = result.stdout + result.stderr;
+    assert.notEqual(
+      result.code,
+      0,
+      "expected temp runtime-fail spec to fail before reporting",
+    );
+    assert.match(output, /FAIL\s+__tmp_runtime_fail\.spec\.ts#1/);
+    assert.match(output, /Oops! Looks like the runtime crashed!/);
+    assert.match(output, /Mode\(s\): node:wasi/);
+    assert.match(output, /To reproduce, run the following commands:/);
+    assert.match(output, /Mode: node:wasi/);
+    assert.match(output, /Build: .*__tmp_runtime_fail\.node:wasi\.wasi\.wasm/);
+    assert.match(
+      output,
+      /Run: .*default\.wasi\.js .*__tmp_runtime_fail\.node:wasi\.wasi\.wasm/,
+    );
+    assert.match(output, /Here's a log dump too:/);
+  } finally {
+    await fs.rm(badSpecPath, { force: true });
+  }
+});
+
+test("parallel test mode reports build failures after other files finish", async () => {
+  const badSpecPath = path.join(
+    repoRoot,
+    "assembly",
+    "__tests__",
+    "__tmp_build_fail.spec.ts",
+  );
+  await fs.writeFile(
+    badSpecPath,
+    'import { test } from "..";\n\ntest("broken build", () => {\n  const value =\n});\n',
+    "utf8",
+  );
+
+  try {
+    const result = await runNode(
+      [
+        "./bin/index.js",
+        "test",
+        "assembly/__tests__/math.spec.ts",
+        "assembly/__tests__/__tmp_build_fail.spec.ts",
+        "--parallel",
+        "--mode",
+        "node:wasi",
+      ],
+      {},
+    );
+    const output = result.stdout + result.stderr;
+    assert.notEqual(result.code, 0, "expected malformed spec build to fail");
+    assert.match(output, /PASS\s+math\.spec\.ts/);
+    assert.match(output, /FAIL\s+__tmp_build_fail\.spec\.ts#1/);
+    assert.match(output, /Oops! Looks like the test failed to build!/);
+    assert.match(output, /Mode\(s\): node:wasi/);
+    assert.match(output, /Build: .*__tmp_build_fail\.node:wasi\.wasi\.wasm/);
+    assert.match(output, /Crash log:/);
+  } finally {
+    await fs.rm(badSpecPath, { force: true });
+  }
 });
 
 test("web runner supports raw, esm, and none", async (t) => {
@@ -74,7 +174,10 @@ test("web mode fails when the browser side closes early", async (t) => {
   }
 
   const browserShim = path.join(repoRoot, "tests/fixtures/fake-browser.mjs");
-  const launcherPath = path.join(os.tmpdir(), `as-test-browser-close-${Date.now()}.mjs`);
+  const launcherPath = path.join(
+    os.tmpdir(),
+    `as-test-browser-close-${Date.now()}.mjs`,
+  );
   await fs.writeFile(
     launcherPath,
     `#!/usr/bin/env node
@@ -97,7 +200,11 @@ await import(${JSON.stringify(pathToFileURL(browserShim).href)});
     ],
     {},
   );
-  assert.notEqual(result.code, 0, "expected web mode to fail when browser closes early");
+  assert.notEqual(
+    result.code,
+    0,
+    "expected web mode to fail when browser closes early",
+  );
   assert.match(
     result.stderr + result.stdout,
     /web browser (disconnected|process exited)/i,
@@ -165,7 +272,9 @@ test("macOS web mode resolves Firefox from Applications when requested by name",
     return;
   }
 
-  const tempHome = await fs.mkdtemp(path.join(os.tmpdir(), "as-test-firefox-home-"));
+  const tempHome = await fs.mkdtemp(
+    path.join(os.tmpdir(), "as-test-firefox-home-"),
+  );
   const executablePath = path.join(
     tempHome,
     "Applications",
@@ -239,7 +348,10 @@ async function createWasiFixture() {
         return files.has(name) ? files.get(name) : null;
       },
       writeFile(name, data) {
-        return fs.writeFile(name, Buffer.isBuffer(data) ? data : Buffer.from(data));
+        return fs.writeFile(
+          name,
+          Buffer.isBuffer(data) ? data : Buffer.from(data),
+        );
       },
       listFiles() {
         return [...files.keys()];

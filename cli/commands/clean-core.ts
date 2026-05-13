@@ -43,7 +43,9 @@ export async function clean(
   )) {
     if (!fullClean) {
       const allOwners = ownership.get(targetPath) ?? owners;
-      const unselectedOwners = allOwners.filter((owner) => !owners.includes(owner));
+      const unselectedOwners = allOwners.filter(
+        (owner) => !owners.includes(owner),
+      );
       if (unselectedOwners.length) {
         continue;
       }
@@ -140,7 +142,11 @@ function pruneNestedTargets(targets: Map<string, string[]>): void {
     for (const otherPath of paths) {
       if (targetPath == otherPath) continue;
       const relative = path.relative(targetPath, otherPath);
-      if (!relative.length || relative == ".." || relative.startsWith(`..${path.sep}`)) {
+      if (
+        !relative.length ||
+        relative == ".." ||
+        relative.startsWith(`..${path.sep}`)
+      ) {
         continue;
       }
       targets.delete(otherPath);

@@ -2,7 +2,7 @@ import chalk from "chalk";
 import { diff } from "typer-diff";
 import { readFileSync } from "fs";
 import * as path from "path";
-import { formatTime } from "../util.js";
+import { formatSpecDisplayPath, formatTime } from "../util.js";
 import {
   describeCoveragePoint,
   readCoverageSourceLine,
@@ -82,7 +82,9 @@ class DefaultReporter implements TestReporter {
 
   private renderLiveState(): void {
     if (!this.canRewriteLine() || !this.currentFile) return;
-    const lines = [`${this.badgeRunning()} ${this.currentFile}`];
+    const lines = [
+      `${this.badgeRunning()} ${formatSpecDisplayPath(this.currentFile)}`,
+    ];
     for (const suite of this.openSuites) {
       lines.push(
         `${"  ".repeat(suite.depth + 1)}${this.badgeRunning()} ${suite.description}`,
@@ -96,7 +98,7 @@ class DefaultReporter implements TestReporter {
     const lines = [
       fileEnd
         ? this.renderFileResult(fileEnd)
-        : `${this.badgeRunning()} ${this.currentFile}`,
+        : `${this.badgeRunning()} ${formatSpecDisplayPath(this.currentFile)}`,
     ];
     for (const suite of this.verboseSuites) {
       const badge =
@@ -159,13 +161,14 @@ class DefaultReporter implements TestReporter {
   private renderFileResult(event: ProgressEvent): string {
     const verdict = event.verdict ?? "none";
     const time = event.time ? ` ${chalk.dim(event.time)}` : "";
+    const file = formatSpecDisplayPath(event.file);
     if (verdict == "fail")
-      return `${chalk.bgRed.white(" FAIL ")} ${event.file}${time}`;
+      return `${chalk.bgRed.white(" FAIL ")} ${file}${time}`;
     if (this.fileHasWarning)
-      return `${chalk.bgYellow.black(" WARN ")} ${event.file}${time}`;
+      return `${chalk.bgYellow.black(" WARN ")} ${file}${time}`;
     if (verdict == "ok")
-      return `${chalk.bgGreenBright.black(" PASS ")} ${event.file}${time}`;
-    return `${chalk.bgBlackBright.white(" SKIP ")} ${event.file}${time}`;
+      return `${chalk.bgGreenBright.black(" PASS ")} ${file}${time}`;
+    return `${chalk.bgBlackBright.white(" SKIP ")} ${file}${time}`;
   }
 
   onRunStart(event: {
@@ -193,16 +196,22 @@ class DefaultReporter implements TestReporter {
     }
     if (!this.verboseMode) {
       if (!this.canRewriteLine()) {
-        this.context.stdout.write(`${this.badgeRunning()} ${event.file}\n`);
+        this.context.stdout.write(
+          `${this.badgeRunning()} ${formatSpecDisplayPath(event.file)}\n`,
+        );
         return;
       }
       this.clearRenderedBlock();
-      this.context.stdout.write(`${this.badgeRunning()} ${event.file}`);
+      this.context.stdout.write(
+        `${this.badgeRunning()} ${formatSpecDisplayPath(event.file)}`,
+      );
       this.renderedLines = 1;
       return;
     }
     if (!this.canRewriteLine()) {
-      this.context.stdout.write(`${this.badgeRunning()} ${event.file}\n`);
+      this.context.stdout.write(
+        `${this.badgeRunning()} ${formatSpecDisplayPath(event.file)}\n`,
+      );
       return;
     }
     this.renderLiveState();
@@ -386,7 +395,7 @@ function renderFuzzFileSummary(
   const crashSuffix =
     crashFile != null ? ` ${chalk.dim(`-> ${crashFile}`)}` : "";
   context.stdout.write(
-    `${itemBadge} ${path.basename(file)} ${chalk.dim(detail)}${crashSuffix}\n`,
+    `${itemBadge} ${formatSpecDisplayPath(file)} ${chalk.dim(detail)}${crashSuffix}\n`,
   );
   renderFailedFuzzers(groupFuzzResultsByFile(results));
 }
@@ -422,14 +431,16 @@ function renderFailedFuzzers(
           rendered = true;
         }
         console.log(
-          `${chalk.bgRed(" FAIL ")} ${chalk.dim(path.basename(modeResult.file))} ${chalk.dim("(crash)")}`,
+          `${chalk.bgRed(" FAIL ")} ${chalk.dim(formatSpecDisplayPath(modeResult.file))} ${chalk.dim("(crash)")}`,
         );
         console.log(chalk.dim(`Mode: ${modeResult.modeName}`));
         console.log(chalk.dim(`Runs: ${modeResult.runs} configured`));
         console.log(chalk.dim(`Repro: ${repro}`));
         console.log(chalk.dim(`Seed: ${modeResult.seed}`));
         if (modeResult.crashFiles.length) {
-          console.log(chalk.dim(`Crash: ${modeResult.crashFiles[0] as string}`));
+          console.log(
+            chalk.dim(`Crash: ${modeResult.crashFiles[0] as string}`),
+          );
         }
         console.log("");
         continue;
@@ -470,7 +481,9 @@ function renderFailedFuzzers(
         console.log(chalk.dim(`Repro: ${fuzzerRepro}`));
         console.log(chalk.dim(`Seed: ${modeResult.seed}`));
         if (fuzzer.failures?.length) {
-          console.log(chalk.dim(`Failing seeds: ${formatFailingSeeds(fuzzer)}`));
+          console.log(
+            chalk.dim(`Failing seeds: ${formatFailingSeeds(fuzzer)}`),
+          );
           for (const failure of fuzzer.failures) {
             console.log(
               chalk.dim(
@@ -542,10 +555,10 @@ function buildFuzzReproCommand(
   return `ast fuzz ${file}${modeArg}${fuzzerArg} --seed ${seed}${runsArg}`;
 }
 
-function formatFailingSeeds(
-  fuzzer: FuzzResult["fuzzers"][number],
-): string {
-  return (fuzzer.failures ?? []).map((failure) => String(failure.seed)).join(", ");
+function formatFailingSeeds(fuzzer: FuzzResult["fuzzers"][number]): string {
+  return (fuzzer.failures ?? [])
+    .map((failure) => String(failure.seed))
+    .join(", ");
 }
 
 function toRelativeResultPath(file: string): string {
@@ -559,8 +572,8 @@ function toRelativeResultPath(file: string): string {
 function formatFuzzFailureTitle(file: string, name: string): string {
   const location = findFuzzLocation(file, name);
   const suffix = location
-    ? ` (${path.basename(file)}:${location})`
-    : ` (${path.basename(file)})`;
+    ? ` (${formatSpecDisplayPath(file)}:${location})`
+    : ` (${formatSpecDisplayPath(file)})`;
   return `${chalk.dim(name)}${chalk.dim(suffix)}`;
 }
 
@@ -595,25 +608,45 @@ function findFuzzLocation(file: string, name: string): string | null {
 function renderFailedSuites(failedEntries: unknown[]): void {
   if (!failedEntries.length) return;
   console.log("");
-  const printed = new Set<string>();
+  const grouped = new Map<string, FailureDisplay>();
   for (const failed of failedEntries) {
     const failedAny = failed as Record<string, unknown>;
     if (!failedAny?.file) continue;
     const file = String(failedAny.file);
-    collectSuiteFailures(failed, file, [], printed);
+    collectSuiteFailures(failed, file, [], grouped);
+  }
+  for (const failure of grouped.values()) {
+    renderCollectedFailure(failure);
   }
 }
+
+type FailureDisplay = {
+  title: string;
+  where: string;
+  file: string;
+  suitePath: string;
+  left: unknown;
+  right: unknown;
+  message: string;
+  isRuntimeError: boolean;
+  isBuildError: boolean;
+  modes: Set<string>;
+  runCommands: Map<string, string>;
+  buildCommands: Map<string, string>;
+};
 
 function collectSuiteFailures(
   suite: unknown,
   file: string,
   path: string[],
-  printed: Set<string>,
+  grouped: Map<string, FailureDisplay>,
   inheritedModeName: string = "",
 ): void {
   const suiteAny = suite as Record<string, unknown>;
   const nextPath = [...path, String(suiteAny.description ?? "unknown")];
   const modeName = String(suiteAny.modeName ?? inheritedModeName);
+  const isRuntimeErrorSuite = String(suiteAny.kind ?? "") == "runtime-error";
+  const isBuildErrorSuite = String(suiteAny.kind ?? "") == "build-error";
   const tests = Array.isArray(suiteAny.tests)
     ? (suiteAny.tests as Record<string, unknown>[])
     : [];
@@ -627,36 +660,136 @@ function collectSuiteFailures(
     const where = loc.length ? `${file}:${loc}` : file;
     const suitePath = String(suiteAny.path ?? "");
     const message = String(test.message ?? "");
-    const dedupeKey = `${file}::${modeName}::${title}::${String(test.left)}::${String(test.right)}::${message}`;
-    if (printed.has(dedupeKey)) continue;
-    printed.add(dedupeKey);
-
-    console.log(
-      `${chalk.bgRed(" FAIL ")} ${chalk.dim(title)} ${chalk.dim("(" + where + ")")}`,
-    );
+    const left = test.left;
+    const right = test.right;
+    const dedupeKey = `${file}::${title}::${String(left)}::${String(right)}::${message}`;
+    let failure = grouped.get(dedupeKey);
+    if (!failure) {
+      failure = {
+        title,
+        where,
+        file,
+        suitePath,
+        left,
+        right,
+        message,
+        isRuntimeError:
+          isRuntimeErrorSuite || String(test.type ?? "") == "runtime-error",
+        isBuildError:
+          isBuildErrorSuite || String(test.type ?? "") == "build-error",
+        modes: new Set<string>(),
+        runCommands: new Map<string, string>(),
+        buildCommands: new Map<string, string>(),
+      };
+      grouped.set(dedupeKey, failure);
+    }
     if (modeName.length) {
-      console.log(chalk.dim(`Mode: ${modeName}`));
+      failure.modes.add(modeName);
     }
-    if (suitePath.length) {
-      console.log(
-        chalk.dim(
-          `Repro: ${buildSuiteReproCommand(
-            toRelativeResultPath(file),
-            suitePath,
-            modeName,
-          )}`,
-        ),
-      );
+    const runCommand = String(suiteAny.runCommand ?? "");
+    if (modeName.length && runCommand.length) {
+      failure.runCommands.set(modeName, runCommand);
     }
-    renderAssertionFailureDetails(test.left, test.right, message);
+    const buildCommand = String(suiteAny.buildCommand ?? "");
+    if (modeName.length && buildCommand.length) {
+      failure.buildCommands.set(modeName, buildCommand);
+    }
   }
 
   const suites = Array.isArray(suiteAny.suites)
     ? (suiteAny.suites as unknown[])
     : [];
   for (const sub of suites) {
-    collectSuiteFailures(sub, file, nextPath, printed, modeName);
+    collectSuiteFailures(sub, file, nextPath, grouped, modeName);
   }
+}
+
+function renderCollectedFailure(failure: FailureDisplay): void {
+  console.log(
+    `${chalk.bgRed(" FAIL ")} ${chalk.dim(failure.title)} ${chalk.dim("(" + failure.where + ")")}`,
+  );
+  const modes = [...failure.modes].filter(Boolean).sort();
+  if (failure.isBuildError) {
+    renderBuildFailureDetails(failure, modes);
+  } else if (failure.isRuntimeError) {
+    renderRuntimeFailureDetails(failure, modes);
+  } else {
+    if (modes.length == 1) {
+      console.log(chalk.dim(`Mode: ${modes[0]}`));
+    } else if (modes.length > 1) {
+      console.log(chalk.dim(`Modes: ${modes.join(", ")}`));
+    }
+
+    const relativeFile = toRelativeResultPath(failure.file);
+    const repro =
+      failure.suitePath.length && modes.length == 1
+        ? buildSuiteReproCommand(relativeFile, failure.suitePath, modes[0])
+        : buildFileReproCommand(relativeFile, modes);
+    console.log(chalk.dim(`Repro: ${repro}`));
+
+    renderModeCommands("Build", failure.buildCommands, modes);
+    renderModeCommands("Run", failure.runCommands, modes);
+  }
+  renderAssertionFailureDetails(failure.left, failure.right, failure.message);
+}
+
+function renderBuildFailureDetails(
+  failure: FailureDisplay,
+  modes: string[],
+): void {
+  console.log("");
+  console.log(chalk.bold(" Oops! Looks like the test failed to build!"));
+  console.log(
+    chalk.dim(
+      " Here's some details and reproduction instructions if that helps:",
+    ),
+  );
+  console.log("");
+  console.log(chalk.dim(` Mode(s): ${modes.join(", ") || "default"}`));
+  console.log("");
+  console.log(chalk.dim(" To reproduce, run the following commands:"));
+  for (const mode of modes.length ? modes : ["default"]) {
+    console.log(chalk.dim(` Mode: ${mode}`));
+    const buildCommand = failure.buildCommands.get(mode);
+    if (buildCommand?.length) {
+      console.log(chalk.dim(`  Build: ${buildCommand}`));
+    }
+  }
+  console.log("");
+  console.log(chalk.dim(" Here's a log dump too:"));
+}
+
+function renderRuntimeFailureDetails(
+  failure: FailureDisplay,
+  modes: string[],
+): void {
+  console.log("");
+  console.log(chalk.bold(" Oops! Looks like the runtime crashed!"));
+  console.log(
+    chalk.dim(
+      " Here's some details and reproduction instructions if that helps:",
+    ),
+  );
+  console.log("");
+  console.log(chalk.dim(` Mode(s): ${modes.join(", ") || "default"}`));
+  console.log("");
+  console.log(chalk.dim(" To reproduce, run the following commands:"));
+  for (const mode of modes.length ? modes : ["default"]) {
+    console.log(chalk.dim(` Mode: ${mode}`));
+    const buildCommand = failure.buildCommands.get(mode);
+    if (buildCommand?.length) {
+      console.log(chalk.dim(`  Build: ${buildCommand}`));
+    }
+    const runCommand = buildRuntimeReproRunCommand(
+      failure.runCommands.get(mode) ?? "",
+      buildCommand ?? "",
+    );
+    if (runCommand.length) {
+      console.log(chalk.dim(`  Run: ${runCommand}`));
+    }
+  }
+  console.log("");
+  console.log(chalk.dim(" Here's a log dump too:"));
 }
 
 function buildSuiteReproCommand(
@@ -664,8 +797,64 @@ function buildSuiteReproCommand(
   suitePath: string,
   modeName?: string,
 ): string {
-  const modeArg = modeName && modeName != "default" ? ` --mode ${modeName}` : "";
+  const modeArg =
+    modeName && modeName != "default" ? ` --mode ${modeName}` : "";
   return `ast run ${file}${modeArg} --suite ${suitePath}`;
+}
+
+function buildFileReproCommand(file: string, modes: string[]): string {
+  const normalizedModes = modes.filter(Boolean).sort();
+  if (normalizedModes.length == 1 && normalizedModes[0] != "default") {
+    return `ast run ${file} --mode ${normalizedModes[0]}`;
+  }
+  if (
+    normalizedModes.length > 1 &&
+    normalizedModes.every((mode) => mode != "default")
+  ) {
+    return `ast run ${file} --mode ${normalizedModes.join(",")}`;
+  }
+  return `ast run ${file}`;
+}
+
+function renderModeCommands(
+  label: string,
+  commands: Map<string, string>,
+  modes: string[],
+): void {
+  if (!commands.size) return;
+  const uniqueCommands = new Set([...commands.values()].filter(Boolean));
+  if (uniqueCommands.size == 1) {
+    console.log(chalk.dim(`${label}: ${[...uniqueCommands][0]}`));
+    return;
+  }
+  console.log(chalk.dim(`${label} commands:`));
+  for (const mode of modes) {
+    const command = commands.get(mode);
+    if (!command) continue;
+    console.log(chalk.dim(`  [${mode}] ${command}`));
+  }
+}
+
+function buildRuntimeReproRunCommand(
+  runCommand: string,
+  buildCommand: string,
+): string {
+  if (!runCommand.length) return "";
+  const artifactPath = extractBuildArtifactPath(buildCommand);
+  if (!artifactPath) {
+    return runCommand;
+  }
+  if (runCommand.includes(".as-test/runners/default.")) {
+    return `${runCommand} ${artifactPath}`;
+  }
+  return runCommand;
+}
+
+function extractBuildArtifactPath(buildCommand: string): string | null {
+  const outMatch = buildCommand.match(
+    /(?:^|\s)(?:-o|--outFile)\s+(?:"([^"]+)"|'([^']+)'|(\S+))/,
+  );
+  return outMatch?.[1] ?? outMatch?.[2] ?? outMatch?.[3] ?? null;
 }
 
 function normalizeFailureMessage(message: string): string {
@@ -683,10 +872,12 @@ function renderAssertionFailureDetails(
   if (left == "null" && right == "null") {
     const normalizedMessage = normalizeFailureMessage(message);
     if (normalizedMessage.length) {
+      console.log("");
       for (const line of normalizedMessage.split("\n")) {
         console.log(chalk.dim(line));
       }
     } else {
+      console.log("");
       console.log(chalk.dim("runtime error"));
     }
     return;
@@ -889,20 +1080,21 @@ function renderSummaryLine(
   process.stdout.write(totalText.padStart(layout.totalWidth) + "\n");
 }
 
-function renderCoverageSummary(summary: {
-  files: {
-    file: string;
+function renderCoverageSummary(
+  summary: {
+    files: {
+      file: string;
+      total: number;
+      covered: number;
+      uncovered: number;
+      percent: number;
+    }[];
     total: number;
     covered: number;
     uncovered: number;
     percent: number;
-  }[];
-  total: number;
-  covered: number;
-  uncovered: number;
-  percent: number;
-},
-showCoverage: boolean,
+  },
+  showCoverage: boolean,
 ): void {
   console.log("");
   const shouldShowCoverageHint =
@@ -922,7 +1114,10 @@ showCoverage: boolean,
   const pct = summary.total
     ? ((summary.covered * 100) / summary.total).toFixed(2)
     : "100.00";
-  const missingLabel = summary.uncovered == 1 ? "1 point missing" : `${summary.uncovered} points missing`;
+  const missingLabel =
+    summary.uncovered == 1
+      ? "1 point missing"
+      : `${summary.uncovered} points missing`;
   const fileLabel =
     summary.files.length == 1 ? "1 file" : `${summary.files.length} files`;
   const color =
@@ -952,9 +1147,7 @@ showCoverage: boolean,
           ? chalk.yellowBright
           : chalk.redBright;
     const suffix =
-      file.uncovered > 0
-        ? `${file.uncovered} missing`
-        : "fully covered";
+      file.uncovered > 0 ? `${file.uncovered} missing` : "fully covered";
     console.log(
       `    ${fileColor(filePct.padStart(6) + "%")}  ${toRelativeResultPath(file.file).padEnd(36)} ${chalk.dim(`${file.covered}/${file.total} covered, ${suffix}`)}`,
     );
@@ -1007,7 +1200,11 @@ function renderCoveragePoints(
     for (const point of points) {
       if (point.executed) continue;
       const location = `${toRelativeResultPath(point.file)}:${point.line}:${point.column}`;
-      const snippet = formatCoverageSnippet(point.file, point.line, point.column);
+      const snippet = formatCoverageSnippet(
+        point.file,
+        point.line,
+        point.column,
+      );
       const typeLabel = describeCoveragePoint(
         point.file,
         point.line,
@@ -1026,7 +1223,10 @@ function renderCoverageBar(percent: number): string {
   const slots = 12;
   const filled = Math.max(
     0,
-    Math.min(slots, Math.round((Math.max(0, Math.min(100, percent)) / 100) * slots)),
+    Math.min(
+      slots,
+      Math.round((Math.max(0, Math.min(100, percent)) / 100) * slots),
+    ),
   );
   return `[${"=".repeat(filled)}${"-".repeat(slots - filled)}]`;
 }
@@ -1048,7 +1248,8 @@ function createCoverageGapLayout(
     locationWidth: Math.max(
       ...points.map(
         (point) =>
-          `${toRelativeResultPath(point.file)}:${point.line}:${point.column}`.length,
+          `${toRelativeResultPath(point.file)}:${point.line}:${point.column}`
+            .length,
       ),
       1,
     ),
@@ -1081,10 +1282,7 @@ function formatCoverageSnippet(
 
   const start = Math.max(
     0,
-    Math.min(
-      visible.length - maxWidth,
-      focus - Math.floor(maxWidth / 2),
-    ),
+    Math.min(visible.length - maxWidth, focus - Math.floor(maxWidth / 2)),
   );
   const end = Math.min(visible.length, start + maxWidth);
   return styleCoverageSnippetWindow(visible, start, end, focus);
@@ -1104,8 +1302,14 @@ function styleCoverageSnippetWindow(
     visible,
     focus,
   );
-  const localStart = Math.max(0, Math.min(slice.length, highlightStart - start));
-  const localEnd = Math.max(localStart + 1, Math.min(slice.length, highlightEnd - start));
+  const localStart = Math.max(
+    0,
+    Math.min(slice.length, highlightStart - start),
+  );
+  const localEnd = Math.max(
+    localStart + 1,
+    Math.min(slice.length, highlightEnd - start),
+  );
 
   if (!slice.length) return "";
   if (localStart >= slice.length) {
