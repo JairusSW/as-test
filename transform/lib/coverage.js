@@ -57,7 +57,9 @@ export class CoverageTransform extends Visitor {
     globalStatements = [];
     scopeStack = [];
     getCurrentScope() {
-        return this.scopeStack.length ? this.scopeStack[this.scopeStack.length - 1] : null;
+        return this.scopeStack.length
+            ? this.scopeStack[this.scopeStack.length - 1]
+            : null;
     }
     withScope(point, callback) {
         this.scopeStack.push(point);
