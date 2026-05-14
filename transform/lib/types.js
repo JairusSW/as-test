@@ -1,5 +1,6 @@
 import * as asc from "assemblyscript/dist/assemblyscript.js";
-export const NodeKind = asc.NodeKind;
+export const NodeKind = asc
+    .NodeKind;
 export var PropertyFlags;
 (function (PropertyFlags) {
     PropertyFlags[PropertyFlags["OmitNull"] = 0] = "OmitNull";

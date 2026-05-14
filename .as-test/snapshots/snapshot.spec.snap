@@ -3,9 +3,3 @@
 
 === Snapshot support > named snapshot [named] ===
 "named-value"
-
-=== assembly/__tests__/snapshot.spec.ts [Snapshot support > string snapshot] ===
-"snapshot-value-v1"
-
-=== assembly/__tests__/snapshot.spec.ts [Snapshot support > named snapshot [named]] ===
-"named-value"

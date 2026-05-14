@@ -30,6 +30,7 @@ class SnapshotStore {
     this.matched = 0;
     this.failed = 0;
     this.warnedMissing = new Set();
+    this.specBasename = path.basename(specFile);
     const dir = path.join(process.cwd(), snapshotDir);
     const relative = resolveArtifactRelativePath(specFile, "__tests__").replace(
       /\.ts$/,
@@ -55,6 +56,7 @@ class SnapshotStore {
   }
   assert(key, actual, allowSnapshot, createSnapshots, overwriteSnapshots) {
     key = canonicalizeSnapshotKey(key);
+    key = normalizeSnapshotKeyPrefix(key, this.specBasename);
     if (!allowSnapshot)
       return { ok: true, expected: actual, warnMissing: false };
     if (!(key in this.data)) {
@@ -280,6 +282,11 @@ function resolveSnapshotSpecFile(filePath) {
 function localizeSnapshotKey(specFile, key) {
   const prefix = `${path.basename(specFile)}::`;
   return key.startsWith(prefix) ? key.slice(prefix.length) : key;
+}
+function normalizeSnapshotKeyPrefix(key, specBasename) {
+  const sep = key.indexOf("::");
+  if (sep < 0) return key;
+  return `${specBasename}::${key.slice(sep + 2)}`;
 }
 function qualifySnapshotKey(specFile, key) {
   return `${path.basename(specFile)}::${key}`;

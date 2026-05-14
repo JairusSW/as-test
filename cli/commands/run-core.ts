@@ -159,6 +159,7 @@ type SnapshotReply = {
 
 class SnapshotStore {
   private readonly filePath: string;
+  private readonly specBasename: string;
   private readonly data: Record<string, string>;
   private readonly preamble: string;
   private readonly existed: boolean;
@@ -174,6 +175,7 @@ class SnapshotStore {
     snapshotDir: string,
     duplicateSpecBasenames: Set<string> = new Set<string>(),
   ) {
+    this.specBasename = path.basename(specFile);
     const dir = path.join(process.cwd(), snapshotDir);
     const relative = resolveArtifactRelativePath(specFile, "__tests__").replace(
       /\.ts$/,
@@ -206,6 +208,7 @@ class SnapshotStore {
     overwriteSnapshots: boolean,
   ): SnapshotReply {
     key = canonicalizeSnapshotKey(key);
+    key = normalizeSnapshotKeyPrefix(key, this.specBasename);
     if (!allowSnapshot)
       return { ok: true, expected: actual, warnMissing: false };
     if (!(key in this.data)) {
@@ -457,6 +460,12 @@ function resolveSnapshotSpecFile(filePath: string): string {
 function localizeSnapshotKey(specFile: string, key: string): string {
   const prefix = `${path.basename(specFile)}::`;
   return key.startsWith(prefix) ? key.slice(prefix.length) : key;
+}
+
+function normalizeSnapshotKeyPrefix(key: string, specBasename: string): string {
+  const sep = key.indexOf("::");
+  if (sep < 0) return key;
+  return `${specBasename}::${key.slice(sep + 2)}`;
 }
 
 function qualifySnapshotKey(specFile: string, key: string): string {

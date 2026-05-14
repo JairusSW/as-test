@@ -27,7 +27,9 @@ export default class Transformer extends Transform {
             }
         });
         const entrySource = sources.find((v) => v.sourceKind == 1);
-        const entryFile = entrySource ? entrySource.normalizedPath.replace(/\.ts$/, "") : "unknown";
+        const entryFile = entrySource
+            ? entrySource.normalizedPath.replace(/\.ts$/, "")
+            : "unknown";
         const mockedImportTargets = collectMockImportTargets(sources);
         for (const target of mockedImportTargets) {
             mock.importMocked.add(target);
