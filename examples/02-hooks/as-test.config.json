@@ -1,16 +1,11 @@
 {
   "$schema": "./node_modules/as-test/as-test.config.schema.json",
   "input": ["./assembly/__tests__/*.spec.ts"],
-  "outDir": "./.as-test/build",
-  "logs": "./.as-test/logs",
-  "coverageDir": "./.as-test/coverage",
-  "snapshotDir": "./.as-test/snapshots",
+  "output": ".as-test/",
   "config": "./asconfig.json",
   "coverage": true,
   "env": {},
   "buildOptions": {
-    "cmd": "",
-    "args": [],
     "target": "wasi"
   },
   "modes": {
@@ -20,7 +15,7 @@
       },
       "runOptions": {
         "runtime": {
-          "cmd": "node ./.as-test/runners/default.wasi.js <file>"
+          "cmd": "node .as-test/runners/default.wasi.js"
         }
       }
     },
@@ -30,14 +25,14 @@
       },
       "runOptions": {
         "runtime": {
-          "cmd": "node ./.as-test/runners/default.bindings.js <file>"
+          "cmd": "node .as-test/runners/default.bindings.js"
         }
       }
     }
   },
   "runOptions": {
     "runtime": {
-      "cmd": "node ./.as-test/runners/default.wasi.js <file>"
+      "cmd": "node .as-test/runners/default.wasi.js"
     }
   }
 }

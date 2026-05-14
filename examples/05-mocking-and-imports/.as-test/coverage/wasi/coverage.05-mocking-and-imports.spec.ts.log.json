@@ -1,33 +1,77 @@
 {
   "enabled": true,
   "showPoints": false,
-  "total": 2,
-  "covered": 2,
+  "total": 5,
+  "covered": 5,
   "uncovered": 0,
   "percent": 100,
   "files": [
     {
       "file": "assembly/__tests__/clock.ts",
-      "total": 2,
-      "covered": 2,
+      "total": 5,
+      "covered": 5,
       "uncovered": 0,
       "percent": 100,
       "points": [
         {
-          "hash": "35fa82394",
+          "hash": "9f47168",
+          "file": "assembly/__tests__/clock.ts",
+          "line": 2,
+          "column": 1,
+          "type": "Function",
+          "executed": true,
+          "parentHash": "",
+          "scopeKind": "Function",
+          "scopeName": "now",
+          "depth": 0
+        },
+        {
+          "hash": "1d355ec0",
+          "file": "assembly/__tests__/clock.ts",
+          "line": 2,
+          "column": 1,
+          "type": "Return",
+          "executed": true,
+          "parentHash": "9f47168",
+          "scopeKind": "Function",
+          "scopeName": "now",
+          "depth": 1
+        },
+        {
+          "hash": "3192f3b3b",
+          "file": "assembly/__tests__/clock.ts",
+          "line": 5,
+          "column": 1,
+          "type": "Function",
+          "executed": true,
+          "parentHash": "",
+          "scopeKind": "Function",
+          "scopeName": "clockLabel",
+          "depth": 0
+        },
+        {
+          "hash": "31a265f4b",
           "file": "assembly/__tests__/clock.ts",
           "line": 5,
           "column": 45,
-          "type": "Expression",
-          "executed": true
+          "type": "DefaultValue",
+          "executed": true,
+          "parentHash": "3192f3b3b",
+          "scopeKind": "Function",
+          "scopeName": "clockLabel",
+          "depth": 1
         },
         {
-          "hash": "35fa81f56",
+          "hash": "34d4b85ec",
           "file": "assembly/__tests__/clock.ts",
-          "line": 5,
-          "column": 59,
-          "type": "Block",
-          "executed": true
+          "line": 6,
+          "column": 10,
+          "type": "Return",
+          "executed": true,
+          "parentHash": "3192f3b3b",
+          "scopeKind": "Function",
+          "scopeName": "clockLabel",
+          "depth": 1
         }
       ]
     }
