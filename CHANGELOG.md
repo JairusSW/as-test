@@ -1,20 +1,30 @@
 # Change Log
 
-## 2026-05-13 - v1.1.2
+## 2026-05-14 - v1.1.4
 
-- update build and run faliures to provide helpful error messages and reproduction commands and instructions
-- remove confirmation from ast clean
+- feat: add `coverage.mode` (`project` or `all`) plus `coverage.dependencies` package allowlisting so dependency coverage can include normal or pnpm-installed packages without raw path globs.
+
+## 2026-05-13 - v1.1.3
+
+### Coverage
+
 - feat: make coverage gaps hierarchical and easier to scan, with parent-before-child grouping, tree-style connectors, collapsed nested gaps by default, and `--show-coverage=all` / `--verbose` expansion.
 - feat: add richer coverage point names including `DefaultValue`, `Ternary`, `IfBranch`, `Assignment`, `Loop`, `Return`, and `Throw` so uncovered points describe the actual construct instead of falling back to broad labels.
-- feat: add `coverage.mode` (`project` or `all`) plus `coverage.dependencies` package allowlisting so dependency coverage can include normal or pnpm-installed packages without raw path globs.
 - fix: make coverage snippets underline the emitted construct span instead of recomputing from the raw column, so cases like inline `if (...) ...` and assignments highlight the right text.
 
-## 2026-05-12 -v1.1.1
+## 2026-05-13 - v1.1.2
+
+### Reporting & CLI
+
+- fix: update build and run failures to provide clearer error messages plus reproduction commands and instructions.
+- fix: remove the confirmation prompt from `ast clean`.
+
+## 2026-05-12 - v1.1.1
 
 - add `ast clean` command to remove build outputs, coverage outputs, crash reports, and logs.
 - remove deps
 
-## 2026-05-12 -v1.1.0
+## 2026-05-12 - v1.1.0
 
 ### Upgrading to 1.1.0
 
@@ -82,7 +92,7 @@
 - feat: make integer `FuzzSeed` helpers default to the full range of their target type when no options are provided, instead of collapsing to `0`.
 - perf: add unchecked full-range fast paths for default integer seed generation while keeping explicit user-provided ranges validated.
 
-## 2025-05-03 - v1.0.13
+## 2026-05-03 - v1.0.13
 
 - feat: add `--fuzzer` / `--fuzzers` filtering for `ast fuzz` and `ast test --fuzz`, accept `--suite` / `--suites` as fuzz aliases, and include target-specific repro commands in fuzz failure output.
 - feat: add `--suite` / `--suites` filtering for `ast run` and `ast test`, and print suite-specific repro commands on failing test assertions.
