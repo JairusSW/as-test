@@ -62,7 +62,6 @@ import {
   VariableDeclaration,
   VariableStatement,
   WhileStatement,
-  NodeKind,
   TypeNode,
   Expression,
   LiteralKind,
@@ -82,6 +81,7 @@ import {
   ForOfStatement,
   ModuleDeclaration,
 } from "assemblyscript/dist/assemblyscript.js";
+import { NodeKind } from "./types.js";
 
 export class Visitor {
   public currentSource: Source | null = null;
@@ -106,6 +106,8 @@ export class Visitor {
         break;
       case NodeKind.FunctionType:
         this.visitFunctionTypeNode(node as FunctionTypeNode, ref);
+        break;
+      case NodeKind.TupleType:
         break;
       case NodeKind.TypeName:
         this.visitTypeName(node as TypeName, ref);

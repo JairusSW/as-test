@@ -23,13 +23,13 @@ import {
   TernaryExpression,
   ThrowStatement,
   WhileStatement,
-  NodeKind,
   ArrowKind,
   Node,
 } from "assemblyscript/dist/assemblyscript.js";
 import { RangeTransform } from "./range.js";
 import { isStdlib, SimpleParser } from "./util.js";
 import { Visitor } from "./visitor.js";
+import { NodeKind } from "./types.js";
 import { DecoratorNode } from "types:assemblyscript/src/ast";
 
 const COVERAGE_IGNORED_CALLS = new Set([

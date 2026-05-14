@@ -3,6 +3,10 @@
 ## 2026-05-14 - v1.1.4
 
 - feat: add `coverage.mode` (`project` or `all`) plus `coverage.dependencies` package allowlisting so dependency coverage can include normal or pnpm-installed packages without raw path globs.
+- fix: coverage `mode` and `dependencies` filtering now correctly handles AssemblyScript-normalized `~lib/<pkg>/...` paths, which are the actual runtime paths emitted for `node_modules` imports.
+- fix: `ENTRY_FILE` injected by the transform now uses the full relative path instead of the basename, preventing snapshot key collisions between specs with the same filename in different directories.
+- fix: transform visitor and coverage instrumentation now resolve `NodeKind` values at runtime instead of relying on compile-time const enum inlining, so they remain correct across AssemblyScript versions.
+- fix: add a no-op `TupleType` case to the transform visitor so files using tuple types no longer throw during instrumentation.
 
 ## 2026-05-13 - v1.1.3
 

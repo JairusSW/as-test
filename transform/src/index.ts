@@ -39,7 +39,9 @@ export default class Transformer extends Transform {
     const entrySource = sources.find(
       (v) => v.sourceKind == SourceKind.UserEntry,
     );
-    const entryFile = entrySource ? entrySource.simplePath : "unknown";
+    const entryFile = entrySource
+      ? entrySource.normalizedPath.replace(/\.ts$/, "")
+      : "unknown";
 
     // Gather mocked import targets across all sources before transform rewrite pass.
     const mockedImportTargets = collectMockImportTargets(sources);

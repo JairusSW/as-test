@@ -1184,15 +1184,16 @@ function cloneCoverageOptions(
 ): boolean | CoverageOptions {
   if (typeof coverage == "boolean") return coverage;
   const cloned = Object.assign(new CoverageOptions(), coverage);
+  const ignore = coverage.ignore ?? new CoverageIgnoreOptions();
   cloned.mode = coverage.mode ?? "project";
   cloned.dependencies = [...(coverage.dependencies ?? [])];
   cloned.include = [...(coverage.include ?? [])];
   cloned.exclude = [...(coverage.exclude ?? [])];
-  cloned.ignore = Object.assign(new CoverageIgnoreOptions(), coverage.ignore);
-  cloned.ignore.labels = [...(coverage.ignore.labels ?? [])];
-  cloned.ignore.names = [...(coverage.ignore.names ?? [])];
-  cloned.ignore.locations = [...(coverage.ignore.locations ?? [])];
-  cloned.ignore.snippets = [...(coverage.ignore.snippets ?? [])];
+  cloned.ignore = Object.assign(new CoverageIgnoreOptions(), ignore);
+  cloned.ignore.labels = [...(ignore.labels ?? [])];
+  cloned.ignore.names = [...(ignore.names ?? [])];
+  cloned.ignore.locations = [...(ignore.locations ?? [])];
+  cloned.ignore.snippets = [...(ignore.snippets ?? [])];
   return cloned;
 }
 
@@ -1613,8 +1614,8 @@ function appendPathSegment(basePath: string, segment: string): string {
 
 export function getCliVersion(): string {
   const candidates = [
-    join(process.cwd(), "package.json"),
     join(dirname(fileURLToPath(import.meta.url)), "..", "package.json"),
+    join(process.cwd(), "package.json"),
   ];
   for (const pkgPath of candidates) {
     if (!existsSync(pkgPath)) continue;

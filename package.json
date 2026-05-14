@@ -94,7 +94,7 @@
     "docs:preview": "vitepress preview docs",
     "format": "prettier -w .",
     "release:check": "npm run build:cli && npm run build:lib && npm run build:transform && npm run test && npm run test:integration && npm run test:examples && npm pack --dry-run --cache /tmp/as-test-npm-cache",
-    "prepublishOnly": "npm run build:cli && npm run build:lib && npm run build:transform && npm run test && npm run test:integration"
+    "prepublishOnly": "npm run build:cli && npm run build:lib && npm run build:transform && npm run format && npm run test && npm run test:integration"
   },
   "type": "module"
 }

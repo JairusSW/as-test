@@ -3,6 +3,9 @@ import {
   Expression,
   FieldDeclaration,
 } from "assemblyscript/dist/assemblyscript.js";
+import * as asc from "assemblyscript/dist/assemblyscript.js";
+export const NodeKind = (asc as unknown as { NodeKind: Record<string, number> })
+  .NodeKind;
 
 export enum PropertyFlags {
   OmitNull,

@@ -2,6 +2,7 @@ import { BlockStatement, ExpressionStatement, Node, } from "assemblyscript/dist/
 import { RangeTransform } from "./range.js";
 import { isStdlib, SimpleParser } from "./util.js";
 import { Visitor } from "./visitor.js";
+import { NodeKind } from "./types.js";
 const COVERAGE_IGNORED_CALLS = new Set([
     "beforeAll",
     "afterAll",
@@ -114,7 +115,7 @@ export class CoverageTransform extends Visitor {
         const coverStmt = createCoverStatement(point.hash, node);
         replacer.visit(coverStmt);
         this.globalStatements.push(registerStmt);
-        if (node.kind == 31) {
+        if (node.kind == NodeKind.Block) {
             const block = node;
             block.statements.unshift(coverStmt);
             return block;
@@ -150,7 +151,7 @@ export class CoverageTransform extends Visitor {
             this.visit(node.expression, node);
             this.visit(node.typeArguments, node);
             for (const arg of node.args) {
-                if (arg.kind == 15)
+                if (arg.kind == NodeKind.Function)
                     continue;
                 this.visit(arg, node);
             }
@@ -278,7 +279,7 @@ export class CoverageTransform extends Visitor {
             const registerStmt = createRegisterStatement(point);
             replacer.visit(registerStmt);
             this.globalStatements.push(registerStmt);
-            if (node.body.kind === 36) {
+            if (node.body.kind === NodeKind.Export) {
                 const coverStmt = SimpleParser.parseStatement(`{
                 __COVER("${point.hash}")
                 return $$REPLACE_ME
@@ -327,14 +328,14 @@ export class CoverageTransform extends Visitor {
         const ifFalse = node.ifFalse;
         const path = node.range.source.normalizedPath;
         if (ifTrue &&
-            ifTrue.kind !== 31 &&
+            ifTrue.kind !== NodeKind.Block &&
             !isBuiltinStatement(ifTrue)) {
             node.ifTrue = this.instrumentStatementBody(path, ifTrue, "IfBranch");
             visitIfTrue = true;
             visitIfFalse = !!ifFalse;
         }
         if (ifFalse &&
-            ifFalse.kind !== 31 &&
+            ifFalse.kind !== NodeKind.Block &&
             !isBuiltinStatement(ifFalse)) {
             node.ifFalse = this.instrumentStatementBody(path, ifFalse, "IfBranch");
             visitIfTrue = true;
@@ -533,35 +534,35 @@ function getCallName(node) {
     return getExpressionName(node.expression);
 }
 function isBuiltinStatement(node) {
-    if (node.kind !== 39)
+    if (node.kind !== NodeKind.Expression)
         return false;
     return isBuiltinCallExpression(node.expression);
 }
 function isBuiltinCallExpression(node) {
     const unwrapped = unwrapParenthesized(node);
-    if (unwrapped.kind !== 10)
+    if (unwrapped.kind !== NodeKind.Call)
         return false;
     const call = unwrapped;
     const expression = unwrapParenthesized(call.expression);
-    if (expression.kind !== 7)
+    if (expression.kind !== NodeKind.Identifier)
         return false;
     const name = expression.text;
     return COVERAGE_IGNORED_BUILTINS.has(name);
 }
 function unwrapParenthesized(node) {
     let current = node;
-    while (current.kind === 21) {
+    while (current.kind === NodeKind.Parenthesized) {
         current = current.expression;
     }
     return current;
 }
 function getExpressionName(node) {
     switch (node.kind) {
-        case 7:
+        case NodeKind.Identifier:
             return node.text;
-        case 22:
+        case NodeKind.PropertyAccess:
             return node.property.text;
-        case 21:
+        case NodeKind.Parenthesized:
             return getExpressionName(node.expression);
         default:
             return null;

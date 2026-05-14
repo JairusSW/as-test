@@ -1524,8 +1524,52 @@ function isAllowedCoverageSourceFile(file) {
   const lower = file.toLowerCase();
   return lower.endsWith(".ts") || lower.endsWith(".as");
 }
+// AssemblyScript normalizes node_modules/<pkg>/... to ~lib/<pkg>/... in Source.normalizedPath.
+// This set contains the root names that are actual AS stdlib modules, so we can distinguish
+// real stdlib (~lib/array.ts) from third-party packages (~lib/json-as/assembly/index.ts).
+const AS_STDLIB_ROOT_NAMES = new Set([
+  "array",
+  "arraybuffer",
+  "atomics",
+  "bindings",
+  "builtins",
+  "compat",
+  "console",
+  "crypto",
+  "dataview",
+  "date",
+  "diagnostics",
+  "error",
+  "function",
+  "iterator",
+  "map",
+  "math",
+  "memory",
+  "number",
+  "object",
+  "polyfills",
+  "process",
+  "reference",
+  "regexp",
+  "rt",
+  "set",
+  "shared",
+  "staticarray",
+  "string",
+  "symbol",
+  "table",
+  "typedarray",
+  "uri",
+  "util",
+  "vector",
+]);
 function isAssemblyScriptStdlibFile(file) {
-  if (file.startsWith("~lib/")) return true;
+  if (file.startsWith("~lib/")) {
+    // Extract the first path segment after ~lib/ (strip any file extension)
+    const after = file.slice("~lib/".length);
+    const root = (after.split("/")[0] ?? "").replace(/\.[^.]+$/, "");
+    return AS_STDLIB_ROOT_NAMES.has(root);
+  }
   if (file.includes("/~lib/")) return true;
   if (file.startsWith("assemblyscript/std/")) return true;
   if (file.includes("/assemblyscript/std/")) return true;
@@ -1540,6 +1584,19 @@ function classifyCoverageFile(file) {
 }
 function resolveCoverageDependencyPackage(file) {
   const normalized = file.replace(/\\/g, "/");
+  // AssemblyScript normalizes node_modules/<pkg>/... to ~lib/<pkg>/... at compile time.
+  // Handle that path format so coverage.mode and coverage.dependencies work at runtime.
+  if (normalized.startsWith("~lib/")) {
+    const after = normalized.slice("~lib/".length);
+    const segments = after.split("/").filter(Boolean);
+    if (!segments.length) return null;
+    if (segments[0].startsWith("@")) {
+      if (segments.length < 2) return null;
+      return `${segments[0]}/${segments[1]}`;
+    }
+    // Strip file extension for bare module entries like ~lib/json-as.ts (unusual but safe)
+    return segments[0].replace(/\.[^.]+$/, "") || null;
+  }
   const marker = "/node_modules/";
   const prefixed = normalized.startsWith("node_modules/")
     ? `/${normalized}`
