@@ -6,6 +6,8 @@
 - fix: `ENTRY_FILE` injected by the transform now uses the full relative path instead of the basename, preventing snapshot key collisions between specs with the same filename in different directories; snapshot lookup normalizes the file prefix to maintain backward compatibility with existing `.snap` files.
 - fix: transform visitor and coverage instrumentation now resolve `NodeKind` values at runtime instead of relying on compile-time const enum inlining, so they remain correct across AssemblyScript versions.
 - fix: add a no-op `TupleType` case to the transform visitor so files using tuple types no longer throw during instrumentation.
+- fix: coverage transform no longer wraps `return this` in constructors, preventing AS231 ("A class with a constructor explicitly returning something else than 'this' must be '@final'").
+- fix: coverage transform preserves expression-body arrows instead of converting them to block bodies, preventing TS1140 ("Type argument expected") on typed arrow parameters such as `[1,2,3].map((x: i32) => x + 1)`.
 
 ## 2026-05-14 - v1.1.4
 

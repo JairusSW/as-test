@@ -298,10 +298,8 @@ export class CoverageTransform extends Visitor {
                     node.body.statements.unshift(coverStmt);
                 }
                 else if (node.body instanceof ExpressionStatement) {
-                    const expression = node.body.expression;
-                    node.body = Node.createBlockStatement([Node.createReturnStatement(expression, expression.range)], expression.range);
-                    const bodyBlock = node.body;
-                    bodyBlock.statements.unshift(coverStmt);
+                    const exprBody = node.body;
+                    exprBody.expression = createCoverExpression(point.hash, exprBody.expression, node);
                 }
                 this.withScope(point, () => {
                     this.visit(node.name, node);
@@ -444,6 +442,8 @@ export class CoverageTransform extends Visitor {
         node.visited = true;
         super.visitReturnStatement(node);
         if (!node.value || isBuiltinCallExpression(node.value))
+            return;
+        if (node.value.kind === NodeKind.This)
             return;
         const path = node.range.source.normalizedPath;
         const point = this.createPoint(path, node.value, "Return");
