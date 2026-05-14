@@ -1,6 +1,6 @@
 # Change Log
 
-## 2026-05-15 - v1.1.5
+## 2026-05-14 - v1.1.6
 
 - fix: coverage `mode` and `dependencies` filtering now correctly handles AssemblyScript-normalized `~lib/<pkg>/...` paths, which are the actual runtime paths emitted for `node_modules` imports.
 - fix: `ENTRY_FILE` injected by the transform now uses the full relative path instead of the basename, preventing snapshot key collisions between specs with the same filename in different directories; snapshot lookup normalizes the file prefix to maintain backward compatibility with existing `.snap` files.
