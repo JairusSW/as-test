@@ -18,7 +18,9 @@ export class Config {
 export class CoverageOptions {
   constructor() {
     this.enabled = false;
+    this.mode = "project";
     this.includeSpecs = false;
+    this.dependencies = [];
     this.include = [];
     this.exclude = [];
     this.ignore = new CoverageIgnoreOptions();

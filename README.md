@@ -16,12 +16,13 @@
 - [Why as-test](#why-as-test)
 - [Installation](#installation)
 - [Docs](#docs)
-- [Project Layout](#project-layout)
 - [Writing Tests](#writing-tests)
 - [Mocking](#mocking)
 - [Snapshots](#snapshots)
-- [Fuzzing](#fuzzing)
 - [Runtimes](#runtimes)
+- [Modes](#modes)
+- [Coverage](#coverage)
+- [Fuzzing](#fuzzing)
 - [Examples](#examples)
 - [License](#license)
 
@@ -32,15 +33,6 @@
 Most AssemblyScript testing tools are tied to a single runtime, usually Node.js. This works for development, but it doesn’t reflect how your code runs in production.
 If you deploy to WASI, Wazero, or a custom runtime, you often end up mocking everything and maintaining parallel logic just for tests.
 as-test solves this by letting you run tests on your actual target runtime, while only mocking what’s necessary.
-
-Key benefits
-
-- Runtime-agnostic: test on WASI, bindings, or custom runners
-- Minimal mocking: keep real imports when possible
-- Production-like testing: catch runtime-specific issues early
-- Inline mocking and snapshots
-- Custom reporters and coverage
-- Integrated fuzzing support
 
 ## Installation
 
@@ -64,50 +56,6 @@ Full documentation lives at:
 
 <https://docs.jairus.dev/as-test>
 
-## Project Layout
-
-By default, `as-test` looks for:
-
-- tests in `assembly/__tests__`
-- fuzzers in `assembly/__fuzz__`
-- config in `as-test.config.json`
-
-Generated files go into `.as-test/`.
-
-Minimal `as-test.config.json`:
-
-```json
-{
-  "input": ["assembly/__tests__/*.spec.ts"],
-  "output": ".as-test/",
-  "buildOptions": {
-    "target": "wasi"
-  },
-  "runOptions": {
-    "runtime": {
-      "cmd": "node .as-test/runners/default.wasi.js"
-    }
-  }
-}
-```
-
-Coverage point filtering is configurable when you want to ignore known-noisy gaps:
-
-```json
-{
-  "coverage": {
-    "enabled": true,
-    "include": ["assembly/src/**/*.ts"],
-    "ignore": {
-      "labels": ["Call"],
-      "names": ["panic", "serialize"],
-      "locations": ["assembly/src/fuzz.ts:38:*"],
-      "snippets": ["*message: string*"]
-    }
-  }
-}
-```
-
 ## Writing Tests
 
 Tests usually live in `assembly/__tests__/*.spec.ts`.
@@ -119,7 +67,7 @@ import { describe, expect, test } from "as-test";
 
 describe("math", () => {
   test("adds numbers", () => {
-    expect(1 + 2).toBe(3);
+    expect(1 + 2).toBe(3, "should add two numbers");
   });
 });
 ```
@@ -145,8 +93,8 @@ npx ast test math
 Re-run one suite inside a matching file:
 
 ```bash
-npx ast run math --suite array-check
-npx ast run math --suite array-manipulation/array-check
+npx ast run math --suite math
+npx ast run math --suite math/adds-numbers
 ```
 
 You do not need to learn every CLI flag to get started. Most projects can begin with `npx ast test`, then add more configuration only when they need it.
@@ -231,6 +179,192 @@ If an existing snapshot legitimately changed, overwrite it with:
 ```bash
 npx ast test --overwrite-snapshots
 ```
+
+## Runtimes
+
+One of the main reasons to use `as-test` is that you are not locked into a single runtime.
+
+If your project runs under WASI, bindings, or a custom runner, you can point your tests at that environment instead of treating Node.js as the only way to execute them.
+
+For example, a simple WASI setup in `as-test.config.json` can look like this:
+
+```json
+{
+  "input": ["./assembly/__tests__/*.spec.ts"],
+  "buildOptions": {
+    "target": "wasi"
+  },
+  "runOptions": {
+    "runtime": {
+      "cmd": "node ./.as-test/runners/default.wasi.js"
+    }
+  }
+}
+```
+
+Then run your tests normally:
+
+```bash
+npx ast test
+```
+
+If you want to keep a single runtime, one config is enough. If you want to fan out across multiple runtimes, use modes.
+
+## Modes
+
+Modes let one project keep more than one runtime or build target available at the same time.
+
+For example:
+
+```json
+{
+  "input": ["./assembly/__tests__/*.spec.ts"],
+  "modes": {
+    "wasi": {
+      "default": true,
+      "buildOptions": {
+        "target": "wasi"
+      },
+      "runOptions": {
+        "runtime": {
+          "cmd": "node ./.as-test/runners/default.wasi.js"
+        }
+      }
+    },
+    "bindings": {
+      "default": true,
+      "buildOptions": {
+        "target": "bindings"
+      },
+      "runOptions": {
+        "runtime": {
+          "cmd": "node ./.as-test/runners/default.bindings.js"
+        }
+      }
+    }
+  }
+}
+```
+
+Set `"default": false` on a mode when you want to keep it available for explicit `--mode ...` runs without including it in normal runs:
+
+```json
+{
+  "modes": {
+    "web": {
+      "default": false,
+      "buildOptions": {
+        "target": "web"
+      },
+      "runOptions": {
+        "runtime": {
+          "cmd": "node ./.as-test/runners/default.web.js",
+          "browser": "chromium"
+        }
+      }
+    }
+  }
+}
+```
+
+With that setup:
+
+```bash
+npx ast test
+```
+
+runs the root/default config plus any modes whose `"default"` flag is not `false`, while:
+
+```bash
+npx ast test --mode web
+```
+
+still runs the `web` mode explicitly.
+
+Modes can also be full config objects. That means a mode can override fuzzing, input globs, output aliases, runtime, build flags, and the rest of the normal config surface:
+
+```json
+{
+  "modes": {
+    "web": {
+      "fuzz": {
+        "input": ["./assembly/__fuzz__/web/*.fuzz.ts"],
+        "runs": 200
+      },
+      "buildOptions": {
+        "target": "web"
+      },
+      "runOptions": {
+        "runtime": {
+          "cmd": "node ./.as-test/runners/default.web.js",
+          "browser": "chromium"
+        }
+      }
+    }
+  }
+}
+```
+
+If you prefer to keep one mode in a separate file, point the mode directly at that config file:
+
+```json
+{
+  "modes": {
+    "simd": "./as-test.config.simd.json"
+  }
+}
+```
+
+Run a specific mode with:
+
+```bash
+npx ast test --mode wasi
+```
+
+or
+
+```bash
+npx ast test --mode wasi,bindings
+```
+
+## Coverage
+
+Coverage is opt-in.
+
+Enable it from the CLI:
+
+```bash
+npx ast test --enable coverage
+npx ast test --enable coverage --show-coverage
+npx ast test --enable coverage --show-coverage=all
+```
+
+Or from config:
+
+```json
+{
+  "coverage": {
+    "enabled": true,
+    "mode": "project",
+    "dependencies": ["json-as"],
+    "includeSpecs": false
+  }
+}
+```
+
+Coverage modes:
+
+- `project`
+  - covers project files only
+  - excludes dependency files by default
+- `all`
+  - covers project files and dependency files
+  - still excludes AssemblyScript stdlib files
+
+If you only want specific dependencies, keep `mode: "project"` and list package names in `dependencies`.
+That works for both normal installs and `pnpm` layouts.
+
+`--show-coverage` prints uncovered point details. `--show-coverage=all` and `--verbose` expand nested uncovered gaps instead of collapsing them.
 
 ## Fuzzing
 
@@ -321,139 +455,6 @@ npx ast test --fuzz
 ```
 
 Fuzzing is there when you want broader input coverage, but it does not get in the way of the normal test flow. You can start with ordinary specs and add fuzzers later.
-
-## Runtimes
-
-One of the main reasons to use `as-test` is that you are not locked into a single runtime.
-
-If your project runs under WASI, bindings, or a custom runner, you can point your tests at that environment instead of treating Node.js as the only way to execute them.
-
-For example, a simple WASI setup in `as-test.config.json` can look like this:
-
-```json
-{
-  "input": ["./assembly/__tests__/*.spec.ts"],
-  "buildOptions": {
-    "target": "wasi"
-  },
-  "runOptions": {
-    "runtime": {
-      "cmd": "node ./.as-test/runners/default.wasi.js"
-    }
-  }
-}
-```
-
-Then run your tests normally:
-
-```bash
-npx ast test
-```
-
-If you want to keep more than one runtime around, use modes:
-
-```json
-{
-  "input": ["./assembly/__tests__/*.spec.ts"],
-  "modes": {
-    "wasi": {
-      "default": true,
-      "buildOptions": {
-        "target": "wasi"
-      },
-      "runOptions": {
-        "runtime": {
-          "cmd": "node ./.as-test/runners/default.wasi.js"
-        }
-      }
-    },
-    "bindings": {
-      "default": true,
-      "buildOptions": {
-        "target": "bindings"
-      },
-      "runOptions": {
-        "runtime": {
-          "cmd": "node ./.as-test/runners/default.bindings.js"
-        }
-      }
-    }
-  }
-}
-```
-
-Set `"default": false` on a mode when you want to keep it available for explicit `--mode ...` runs without including it in normal runs:
-
-```json
-{
-  "modes": {
-    "web": {
-      "default": false,
-      "runOptions": {
-        "runtime": {
-          "browser": "chromium"
-        }
-      }
-    }
-  }
-}
-```
-
-With that setup:
-
-```bash
-npx ast test
-```
-
-runs the root/default config plus any modes whose `"default"` flag is not `false`, while:
-
-```bash
-npx ast test --mode web
-```
-
-still runs the `web` mode explicitly.
-
-Modes can also be full config objects. That means a mode can override fuzzing, input globs, output aliases, runtime, build flags, and the rest of the normal config surface:
-
-```json
-{
-  "modes": {
-    "web": {
-      "fuzz": {
-        "input": ["./assembly/__fuzz__/web/*.fuzz.ts"],
-        "runs": 200
-      },
-      "runOptions": {
-        "runtime": {
-          "browser": "chromium"
-        }
-      }
-    }
-  }
-}
-```
-
-If you prefer to keep one mode in a separate file, point the mode directly at that config file:
-
-```json
-{
-  "modes": {
-    "simd": "./as-test.config.simd.json"
-  }
-}
-```
-
-Run a specific mode with:
-
-```bash
-npx ast test --mode wasi
-```
-
-or
-
-```bash
-npx ast test --mode wasi,bindings
-```
 
 This is the general idea throughout the project: write tests once, then choose the runtime that matches how your code actually runs.
 

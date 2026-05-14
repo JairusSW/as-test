@@ -459,7 +459,7 @@ function validateCoverageValue(
     issues.push({
       path,
       message: "must be a boolean or object",
-      fix: 'use true/false or { "enabled": true, "includeSpecs": false, "include": ["assembly/**/*.ts"], "exclude": ["assembly/__tests__/**/*.spec.ts"] }',
+      fix: 'use true/false or { "enabled": true, "mode": "project", "includeSpecs": false, "dependencies": ["json-as"], "include": ["assembly/**/*.ts"], "exclude": ["assembly/__tests__/**/*.spec.ts"] }',
     });
     return;
   }
@@ -471,6 +471,21 @@ function validateCoverageValue(
       fix: "set to true or false",
     });
   }
+  if ("mode" in obj && obj.mode != undefined) {
+    if (typeof obj.mode != "string") {
+      issues.push({
+        path: `${path}.mode`,
+        message: 'must be "project" or "all"',
+        fix: 'set "mode" to "project" or "all"',
+      });
+    } else if (obj.mode != "project" && obj.mode != "all") {
+      issues.push({
+        path: `${path}.mode`,
+        message: 'must be "project" or "all"',
+        fix: 'set "mode" to "project" or "all"',
+      });
+    }
+  }
   if ("includeSpecs" in obj && typeof obj.includeSpecs != "boolean") {
     issues.push({
       path: `${path}.includeSpecs`,
@@ -478,6 +493,7 @@ function validateCoverageValue(
       fix: "set to true or false",
     });
   }
+  validateStringArrayField(obj, "dependencies", path, issues);
   validateStringArrayField(obj, "include", path, issues);
   validateStringArrayField(obj, "exclude", path, issues);
   if ("ignore" in obj && obj.ignore != undefined) {
@@ -1168,6 +1184,8 @@ function cloneCoverageOptions(
 ): boolean | CoverageOptions {
   if (typeof coverage == "boolean") return coverage;
   const cloned = Object.assign(new CoverageOptions(), coverage);
+  cloned.mode = coverage.mode ?? "project";
+  cloned.dependencies = [...(coverage.dependencies ?? [])];
   cloned.include = [...(coverage.include ?? [])];
   cloned.exclude = [...(coverage.exclude ?? [])];
   cloned.ignore = Object.assign(new CoverageIgnoreOptions(), coverage.ignore);
@@ -1297,8 +1315,11 @@ function mergeCoverageConfig(
   const rawObject = raw as Record<string, unknown>;
 
   if ("enabled" in rawObject) mergedBase.enabled = overrideOptions.enabled;
+  if ("mode" in rawObject) mergedBase.mode = overrideOptions.mode;
   if ("includeSpecs" in rawObject)
     mergedBase.includeSpecs = overrideOptions.includeSpecs;
+  if ("dependencies" in rawObject)
+    mergedBase.dependencies = [...overrideOptions.dependencies];
   if ("include" in rawObject) mergedBase.include = [...overrideOptions.include];
   if ("exclude" in rawObject) mergedBase.exclude = [...overrideOptions.exclude];
   if (

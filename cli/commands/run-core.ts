@@ -138,7 +138,9 @@ type FileCoverage = {
 
 type CoverageOptions = {
   enabled: boolean;
+  mode: "project" | "all";
   includeSpecs: boolean;
+  dependencies: string[];
   include: string[];
   exclude: string[];
   ignore: {
@@ -1869,9 +1871,18 @@ function isIgnoredCoverageFile(
 ): boolean {
   const normalized = file.replace(/\\/g, "/");
   if (!isAllowedCoverageSourceFile(normalized)) return true;
-  if (normalized.startsWith("node_modules/")) return true;
-  if (normalized.includes("/node_modules/")) return true;
   if (isAssemblyScriptStdlibFile(normalized)) return true;
+  const classification = classifyCoverageFile(normalized);
+  if (classification.kind == "dependency") {
+    if (coverage.mode != "all" && !coverage.dependencies.length) return true;
+    if (
+      coverage.dependencies.length &&
+      (!classification.packageName ||
+        !coverage.dependencies.includes(classification.packageName))
+    ) {
+      return true;
+    }
+  }
   if (!coverage.includeSpecs && normalized.endsWith(".spec.ts")) return true;
   if (
     coverage.include.length &&
@@ -1943,11 +1954,43 @@ function isAssemblyScriptStdlibFile(file: string): boolean {
   return false;
 }
 
+function classifyCoverageFile(file: string): {
+  kind: "project" | "dependency";
+  packageName: string | null;
+} {
+  const packageName = resolveCoverageDependencyPackage(file);
+  if (packageName) {
+    return { kind: "dependency", packageName };
+  }
+  return { kind: "project", packageName: null };
+}
+
+function resolveCoverageDependencyPackage(file: string): string | null {
+  const normalized = file.replace(/\\/g, "/");
+  const marker = "/node_modules/";
+  const prefixed = normalized.startsWith("node_modules/")
+    ? `/${normalized}`
+    : normalized;
+  const index = prefixed.lastIndexOf(marker);
+  if (index == -1) return null;
+  const after = prefixed.slice(index + marker.length);
+  if (!after.length) return null;
+  const segments = after.split("/").filter(Boolean);
+  if (!segments.length) return null;
+  if (segments[0]!.startsWith("@")) {
+    if (segments.length < 2) return null;
+    return `${segments[0]}/${segments[1]}`;
+  }
+  return segments[0]!;
+}
+
 function resolveCoverageOptions(raw: unknown): CoverageOptions {
   if (typeof raw == "boolean") {
     return {
       enabled: raw,
+      mode: "project",
       includeSpecs: false,
+      dependencies: [],
       include: [],
       exclude: [],
       ignore: {
@@ -1966,7 +2009,13 @@ function resolveCoverageOptions(raw: unknown): CoverageOptions {
         : null;
     return {
       enabled: obj.enabled == null ? false : Boolean(obj.enabled),
+      mode: obj.mode == "all" ? "all" : "project",
       includeSpecs: Boolean(obj.includeSpecs),
+      dependencies: Array.isArray(obj.dependencies)
+        ? obj.dependencies.filter(
+            (item): item is string => typeof item == "string",
+          )
+        : [],
       include: Array.isArray(obj.include)
         ? obj.include.filter((item): item is string => typeof item == "string")
         : [],
@@ -1999,7 +2048,9 @@ function resolveCoverageOptions(raw: unknown): CoverageOptions {
   }
   return {
     enabled: false,
+    mode: "project",
     includeSpecs: false,
+    dependencies: [],
     include: [],
     exclude: [],
     ignore: {
@@ -3421,3 +3472,10 @@ function resolveReporterFactory(mod: Record<string, unknown>): ReporterFactory {
     `reporter module must export a factory as "createReporter" or default`,
   );
 }
+
+export const __coverageInternals = {
+  classifyCoverageFile,
+  resolveCoverageDependencyPackage,
+  isIgnoredCoverageFile,
+  resolveCoverageOptions,
+};

@@ -101,10 +101,24 @@
               "type": "boolean",
               "default": false
             },
+            "mode": {
+              "type": "string",
+              "enum": ["project", "all"],
+              "description": "Broad coverage eligibility. \"project\" covers project sources only. \"all\" also includes dependency sources.",
+              "default": "project"
+            },
             "includeSpecs": {
               "type": "boolean",
               "description": "Include *.spec.ts files in coverage collection.",
               "default": false
+            },
+            "dependencies": {
+              "type": "array",
+              "description": "Package-name allowlist for dependency coverage, including pnpm-installed packages.",
+              "items": {
+                "type": "string"
+              },
+              "default": []
             },
             "include": {
               "type": "array",
@@ -369,8 +383,18 @@
                       "enabled": {
                         "type": "boolean"
                       },
+                      "mode": {
+                        "type": "string",
+                        "enum": ["project", "all"]
+                      },
                       "includeSpecs": {
                         "type": "boolean"
+                      },
+                      "dependencies": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
                       }
                     }
                   }

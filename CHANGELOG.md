@@ -6,6 +6,7 @@
 - remove confirmation from ast clean
 - feat: make coverage gaps hierarchical and easier to scan, with parent-before-child grouping, tree-style connectors, collapsed nested gaps by default, and `--show-coverage=all` / `--verbose` expansion.
 - feat: add richer coverage point names including `DefaultValue`, `Ternary`, `IfBranch`, `Assignment`, `Loop`, `Return`, and `Throw` so uncovered points describe the actual construct instead of falling back to broad labels.
+- feat: add `coverage.mode` (`project` or `all`) plus `coverage.dependencies` package allowlisting so dependency coverage can include normal or pnpm-installed packages without raw path globs.
 - fix: make coverage snippets underline the emitted construct span instead of recomputing from the raw column, so cases like inline `if (...) ...` and assignments highlight the right text.
 
 ## 2026-05-12 -v1.1.1

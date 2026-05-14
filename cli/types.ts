@@ -16,7 +16,9 @@ export class Config {
 
 export class CoverageOptions {
   enabled: boolean = false;
+  mode: string = "project";
   includeSpecs: boolean = false;
+  dependencies: string[] = [];
   include: string[] = [];
   exclude: string[] = [];
   ignore: CoverageIgnoreOptions = new CoverageIgnoreOptions();
