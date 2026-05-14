@@ -80,7 +80,11 @@ test("coverage transform: constructor with 'return this' builds without AS231", 
       {},
     );
     const output = result.stdout + result.stderr;
-    assert.equal(result.code, 0, `Expected exit 0 but got ${result.code}:\n${output}`);
+    assert.equal(
+      result.code,
+      0,
+      `Expected exit 0 but got ${result.code}:\n${output}`,
+    );
     assert.doesNotMatch(output, /AS231/, "AS231 must not appear in output");
   } finally {
     await fs.rm(specPath, { force: true });
@@ -128,7 +132,11 @@ test("coverage transform: typed arrow parameters inside map() build without TS11
       {},
     );
     const output = result.stdout + result.stderr;
-    assert.equal(result.code, 0, `Expected exit 0 but got ${result.code}:\n${output}`);
+    assert.equal(
+      result.code,
+      0,
+      `Expected exit 0 but got ${result.code}:\n${output}`,
+    );
     assert.doesNotMatch(output, /TS1140/, "TS1140 must not appear in output");
   } finally {
     await fs.rm(specPath, { force: true });
