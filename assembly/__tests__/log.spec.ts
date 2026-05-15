@@ -1,20 +1,20 @@
-import { __as_test_json_value, describe, expect, log, run, test } from "..";
+import { describe, expect, log, run, test } from "..";
+// Import JSON directly so json-as transform does not add broken pnpm paths.
+import { JSON } from "json-as/assembly";
 
+
+@json
 class Address {
   line1: string = "42 Binary Lane";
   zip: i32 = 90210;
 
   __as_test_json(): string {
-    return (
-      '{"line1":' +
-      __as_test_json_value<string>(this.line1) +
-      ',"zip":' +
-      __as_test_json_value<i32>(this.zip) +
-      "}"
-    );
+    return JSON.stringify(this);
   }
 }
 
+
+@json
 class UserProfile {
   id: i32 = 7;
   active: bool = true;
@@ -23,19 +23,7 @@ class UserProfile {
   address: Address = new Address();
 
   __as_test_json(): string {
-    return (
-      '{"id":' +
-      __as_test_json_value<i32>(this.id) +
-      ',"active":' +
-      __as_test_json_value<bool>(this.active) +
-      ',"rating":' +
-      __as_test_json_value<f64>(this.rating) +
-      ',"tags":' +
-      __as_test_json_value<string[]>(this.tags) +
-      ',"address":' +
-      __as_test_json_value<Address>(this.address) +
-      "}"
-    );
+    return JSON.stringify(this);
   }
 }
 

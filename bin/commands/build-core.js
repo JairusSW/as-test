@@ -575,6 +575,10 @@ function getDefaultBuildArgs(config, featureToggles) {
   const buildArgs = [];
   const tryAsEnabled = resolveTryAsEnabled(featureToggles.tryAs);
   buildArgs.push("--transform", "as-test/transform");
+  const jsonAsTransform = resolveProjectModule("json-as/transform");
+  if (jsonAsTransform) {
+    buildArgs.push("--transform", jsonAsTransform);
+  }
   if (tryAsEnabled) {
     buildArgs.push("--transform", "try-as/transform");
   }

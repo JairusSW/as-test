@@ -12,6 +12,14 @@
     "typer-diff": "^1.1.1",
     "wipc-js": "^0.1.1"
   },
+  "peerDependencies": {
+    "json-as": ">=1.3.5"
+  },
+  "peerDependenciesMeta": {
+    "json-as": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@assemblyscript/wasi-shim": "^0.1.0",
     "@eslint/js": "^10.0.1",

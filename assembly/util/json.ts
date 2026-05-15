@@ -33,7 +33,7 @@ export function stringifyValue<T>(value: T): string {
 
   if (isManaged<T>()) {
     // @ts-expect-error: method exists
-    return value.__as_test_json();
+    if (isDefined(value.__as_test_json)) return value.__as_test_json();
   }
 
   const formatted = formatValue<T>(value);

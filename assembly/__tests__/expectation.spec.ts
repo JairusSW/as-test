@@ -1,19 +1,15 @@
-import {
-  __as_test_json_value,
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  run,
-  test,
-} from "..";
+import { afterEach, beforeEach, describe, expect, run, test } from "..";
+// Import JSON directly so json-as transform does not add broken pnpm paths.
+import { JSON } from "json-as/assembly";
 
 let beforeCount = 0;
 let afterCount = 0;
 
+
+@json
 class Point {
-  x: i32;
-  y: i32;
+  x: i32 = 0;
+  y: i32 = 0;
 
   constructor(x: i32, y: i32) {
     this.x = x;
@@ -25,18 +21,14 @@ class Point {
   }
 
   __as_test_json(): string {
-    return (
-      '{"x":' +
-      __as_test_json_value<i32>(this.x) +
-      ',"y":' +
-      __as_test_json_value<i32>(this.y) +
-      "}"
-    );
+    return JSON.stringify(this);
   }
 }
 
+
+@json
 class Shape {
-  size: i32;
+  size: i32 = 0;
 
   constructor(size: i32) {
     this.size = size;
@@ -47,17 +39,23 @@ class Shape {
   }
 
   __as_test_json(): string {
-    return '{"size":' + __as_test_json_value<i32>(this.size) + "}";
+    return JSON.stringify(this);
   }
 }
 
+
+@json
 class Circle extends Shape {}
 
+
+@json
 class Square extends Shape {}
 
+
+@json
 class LabelledPoint {
-  point: Point;
-  label: string;
+  point: Point = new Point(0, 0);
+  label: string = "";
 
   constructor(point: Point, label: string) {
     this.point = point;
@@ -65,13 +63,7 @@ class LabelledPoint {
   }
 
   __as_test_json(): string {
-    return (
-      '{"point":' +
-      __as_test_json_value<Point>(this.point) +
-      ',"label":' +
-      __as_test_json_value<string>(this.label) +
-      "}"
-    );
+    return JSON.stringify(this);
   }
 }
 
