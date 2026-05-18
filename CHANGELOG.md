@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-05-18 - v1.1.8
+
+- chore: `ast init` now writes `json-as` (`^1.3.6`) into the consumer's `devDependencies` so a fresh project installs everything it needs in one step.
+
 ## 2026-05-18 - v1.1.7
 
 ### Modes & CLI
