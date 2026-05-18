@@ -1,4 +1,4 @@
-import { quote, rawOrNull } from "../util/json";
+import { JSON } from "json-as/assembly";
 
 export class Tests {
   public order: i32 = 0;
@@ -15,19 +15,19 @@ export class Tests {
       '{"order":' +
       this.order.toString() +
       ',"type":' +
-      quote(this.type) +
+      JSON.stringify<string>(this.type) +
       ',"verdict":' +
-      quote(this.verdict) +
+      JSON.stringify<string>(this.verdict) +
       ',"left":' +
-      rawOrNull(this.left) +
+      (this.left.length ? this.left : "null") +
       ',"right":' +
-      rawOrNull(this.right) +
+      (this.right.length ? this.right : "null") +
       ',"instr":' +
-      quote(this.instr) +
+      JSON.stringify<string>(this.instr) +
       ',"message":' +
-      quote(this.message) +
+      JSON.stringify<string>(this.message) +
       ',"location":' +
-      quote(this.location) +
+      JSON.stringify<string>(this.location) +
       "}"
     );
   }

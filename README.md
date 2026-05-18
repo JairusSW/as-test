@@ -2,14 +2,6 @@
 ╠═╣ ╚═╗ ══  ║  ╠═  ╚═╗  ║ 
 ╩ ╩ ╚═╝     ╩  ╚═╝ ╚═╝  ╩ </pre></h1>
 
-> **Upgrading to 1.1.0**
->
-> See [CHANGELOG.md](./CHANGELOG.md) for upgrade notes. In most projects, refreshing generated runners is enough:
->
-> ```bash
-> rm -rf .as-test/runners && npx as-test init
-> ```
-
 <details>
 <summary>Table of Contents</summary>
 
@@ -47,8 +39,11 @@ That gives you a basic config file, a sample test, and optionally a sample fuzze
 If you already have a project and just want the package:
 
 ```bash
-npm install --save-dev as-test
+npm install --save-dev as-test json-as
 ```
+
+`json-as` is a required peer dependency (used for value serialization in
+assertions, snapshots, and `log()`)
 
 ## Docs
 

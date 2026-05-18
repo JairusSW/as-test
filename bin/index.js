@@ -28,7 +28,7 @@ import * as path from "path";
 import { spawnSync } from "child_process";
 import { glob } from "glob";
 import { createInterface } from "readline";
-import { existsSync } from "fs";
+import { existsSync, watch as fsWatch } from "fs";
 import { availableParallelism, cpus } from "os";
 import { BuildWorkerPool } from "./build-worker-pool.js";
 import { PersistentWebSessionHost } from "./commands/web-session.js";
@@ -470,6 +470,9 @@ function printCommandHelp(command) {
     process.stdout.write(
       "  --list-modes             Preview configured and selected mode names\n",
     );
+    process.stdout.write(
+      "  --watch                  Re-run on source or spec changes\n",
+    );
     process.stdout.write("  --help, -h               Show this help\n");
     return;
   }
@@ -678,6 +681,9 @@ function resolveCommandArgs(rawArgs, command) {
       continue;
     }
     if (arg == "--parallel") {
+      continue;
+    }
+    if (arg == "--watch") {
       continue;
     }
     if (
@@ -1715,7 +1721,7 @@ async function runRuntimeMatrix(
   });
   return allResults.some((result) => result.failed);
 }
-async function runTestModes(
+async function runTestModesCore(
   runFlags,
   configPath,
   selectors,
@@ -1758,8 +1764,7 @@ async function runTestModes(
         fuzzEnabled,
         fuzzOverrides,
       );
-      process.exit(failed ? 1 : 0);
-      return;
+      return failed;
     }
     let failed = false;
     for (const modeName of modes) {
@@ -1778,8 +1783,7 @@ async function runTestModes(
       );
       if (modeFailed) failed = true;
     }
-    process.exit(failed ? 1 : 0);
-    return;
+    return failed;
   }
   if (modes.length > 1) {
     const failed = await runTestMatrix(
@@ -1795,8 +1799,7 @@ async function runTestModes(
       fuzzEnabled,
       fuzzOverrides,
     );
-    process.exit(failed ? 1 : 0);
-    return;
+    return failed;
   }
   let failed = false;
   const sharedWebSession = await createSharedHeadfulWebSession(
@@ -1864,7 +1867,175 @@ async function runTestModes(
   } finally {
     await sharedWebSession?.close();
   }
+  return failed;
+}
+async function runTestModes(
+  runFlags,
+  configPath,
+  selectors,
+  suiteSelectors,
+  fuzzerSelectors,
+  modes,
+  buildFeatureToggles,
+  fuzzEnabled,
+  fuzzOverrides,
+) {
+  if (runFlags.watch) {
+    await runWatchLoop(
+      runFlags,
+      configPath,
+      selectors,
+      suiteSelectors,
+      fuzzerSelectors,
+      modes,
+      buildFeatureToggles,
+      fuzzEnabled,
+      fuzzOverrides,
+    );
+    return;
+  }
+  const failed = await runTestModesCore(
+    runFlags,
+    configPath,
+    selectors,
+    suiteSelectors,
+    fuzzerSelectors,
+    modes,
+    buildFeatureToggles,
+    fuzzEnabled,
+    fuzzOverrides,
+  );
   process.exit(failed ? 1 : 0);
+}
+async function runWatchLoop(
+  runFlags,
+  configPath,
+  selectors,
+  suiteSelectors,
+  fuzzerSelectors,
+  modes,
+  buildFeatureToggles,
+  fuzzEnabled,
+  fuzzOverrides,
+) {
+  const resolvedConfigPath =
+    configPath ?? path.join(process.cwd(), "./as-test.config.json");
+  const config = loadConfig(resolvedConfigPath, false);
+  const watchDirs = resolveWatchDirectories(config);
+  let isRunning = false;
+  let pendingFile = null;
+  let debounceTimer = null;
+  async function doRun(changedFile) {
+    if (changedFile) {
+      console.clear();
+      process.stdout.write(
+        chalk.dim(`[${new Date().toLocaleTimeString()}] `) +
+          chalk.yellow("Change detected: ") +
+          chalk.bold(changedFile) +
+          "\n\n",
+      );
+    }
+    try {
+      await runTestModesCore(
+        runFlags,
+        configPath,
+        selectors,
+        suiteSelectors,
+        fuzzerSelectors,
+        modes,
+        buildFeatureToggles,
+        fuzzEnabled,
+        fuzzOverrides,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(chalk.red("Error: ") + message + "\n");
+    }
+    process.stdout.write(
+      "\n" + chalk.dim("Watching for changes. Press Ctrl+C to stop.\n"),
+    );
+  }
+  async function triggerRerun() {
+    const changedFile = pendingFile ?? undefined;
+    pendingFile = null;
+    isRunning = true;
+    try {
+      await doRun(changedFile);
+    } finally {
+      isRunning = false;
+      if (pendingFile) {
+        void triggerRerun();
+      }
+    }
+  }
+  function scheduleRerun(filename) {
+    pendingFile = filename;
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      if (isRunning) return;
+      void triggerRerun();
+    }, 150);
+  }
+  // Initial run
+  await doRun();
+  // Set up file watchers
+  const watchers = [];
+  for (const dir of watchDirs) {
+    if (!existsSync(dir)) continue;
+    try {
+      const w = fsWatch(dir, { recursive: true }, (_evt, filename) => {
+        if (!filename) return;
+        const full = path.join(dir, filename);
+        if (shouldIgnoreWatchPath(full, config)) return;
+        scheduleRerun(path.relative(process.cwd(), full));
+      });
+      watchers.push(w);
+    } catch {
+      // directory may not support recursive watching; skip
+    }
+  }
+  if (existsSync(resolvedConfigPath)) {
+    try {
+      const w = fsWatch(resolvedConfigPath, () => {
+        scheduleRerun(path.relative(process.cwd(), resolvedConfigPath));
+      });
+      watchers.push(w);
+    } catch {}
+  }
+  process.on("SIGINT", () => {
+    for (const w of watchers) w.close();
+    process.exit(0);
+  });
+  // Keep the process alive
+  await new Promise(() => {});
+}
+function resolveWatchDirectories(config) {
+  const cwd = process.cwd();
+  const dirs = new Set();
+  for (const pattern of config.input) {
+    const starIdx = pattern.indexOf("*");
+    const base = starIdx >= 0 ? pattern.slice(0, starIdx) : pattern;
+    let dir = path.resolve(cwd, base);
+    while (!existsSync(dir) && dir !== path.dirname(dir)) {
+      dir = path.dirname(dir);
+    }
+    if (existsSync(dir)) dirs.add(dir);
+  }
+  const assemblyDir = path.resolve(cwd, "assembly");
+  if (existsSync(assemblyDir)) dirs.add(assemblyDir);
+  if (dirs.size === 0) dirs.add(cwd);
+  return [...dirs];
+}
+function shouldIgnoreWatchPath(filePath, config) {
+  const cwd = process.cwd();
+  const rel = path.relative(cwd, filePath);
+  if (rel.startsWith("node_modules") || rel.startsWith(".git")) return true;
+  const outRel = path.normalize(
+    path.relative(cwd, path.resolve(cwd, config.outDir)),
+  );
+  if (rel.startsWith(outRel + path.sep) || rel === outRel) return true;
+  if (!rel.endsWith(".ts") && !rel.endsWith("as-test.config.json")) return true;
+  return false;
 }
 async function runTestMatrix(
   runFlags,
@@ -3183,8 +3354,9 @@ function resolveExecutionModes(configPath, selectedModes) {
   const resolvedConfigPath =
     configPath ?? path.join(process.cwd(), "./as-test.config.json");
   const config = loadConfig(resolvedConfigPath, false);
-  const defaultModes = getDefaultModeNames(config);
-  return [undefined, ...defaultModes];
+  const hasDeclaredModes = Object.keys(config.modes).length > 0;
+  if (!hasDeclaredModes) return [undefined];
+  return getDefaultModeNames(config);
 }
 async function resolveSelectedFiles(configPath, selectors, warn = true) {
   const resolvedConfigPath =

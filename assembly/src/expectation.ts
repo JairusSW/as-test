@@ -1,6 +1,6 @@
 import { visualize } from "../util/helpers";
 import { Tests } from "./tests";
-import { quote, stringifyValue } from "../util/json";
+import { JSON } from "json-as/assembly";
 import { namedSnapshotKey, nextUnnamedSnapshotKey } from "..";
 import {
   sendAssertionFailure,
@@ -425,8 +425,8 @@ export class Expectation<T> extends Tests {
       this._resolve(
         passed,
         "toContain",
-        stringifyValue<T>(this._left),
-        stringifyValue<valueof<T>>(value),
+        JSON.stringify<T>(this._left),
+        JSON.stringify<valueof<T>>(value),
         message,
       );
       return;
@@ -451,7 +451,7 @@ export class Expectation<T> extends Tests {
       ? namedSnapshotKey(this._snapshotKey, name)
       : nextUnnamedSnapshotKey(this._snapshotKey);
 
-    const actual = stringifyValue<T>(this._left);
+    const actual = JSON.stringify<T>(this._left);
     const res = snapshotAssert(key, actual);
     this._resolve(res.ok, "toMatchSnapshot", actual, res.expected, message);
   }
@@ -491,8 +491,8 @@ export class Expectation<T> extends Tests {
     this._resolve(
       passed,
       "toBe",
-      stringifyValue<T>(this._left),
-      stringifyValue<T>(equals),
+      JSON.stringify<T>(this._left),
+      JSON.stringify<T>(equals),
       message,
     );
   }
@@ -505,8 +505,8 @@ export class Expectation<T> extends Tests {
     this._resolve(
       passed,
       "toEqual",
-      stringifyValue<T>(this._left),
-      stringifyValue<T>(equals),
+      JSON.stringify<T>(this._left),
+      JSON.stringify<T>(equals),
       message,
     );
   }
@@ -519,8 +519,8 @@ export class Expectation<T> extends Tests {
     this._resolve(
       passed,
       "toStrictEqual",
-      stringifyValue<T>(this._left),
-      stringifyValue<T>(equals),
+      JSON.stringify<T>(this._left),
+      JSON.stringify<T>(equals),
       message,
     );
   }
@@ -606,5 +606,5 @@ function isTruthy<T>(value: T): bool {
 }
 
 function q(value: string): string {
-  return quote(value);
+  return JSON.stringify<string>(value);
 }

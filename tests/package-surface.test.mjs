@@ -35,6 +35,10 @@ test("packed as-test compiles from a clean consumer without extra AssemblyScript
     path.join(repoRoot, "node_modules", "assemblyscript"),
     path.join(consumerDir, "node_modules", "assemblyscript"),
   );
+  await fs.symlink(
+    path.join(repoRoot, "node_modules", "json-as"),
+    path.join(consumerDir, "node_modules", "json-as"),
+  );
 
   const pack = await run("npm", ["pack", "--json", "--cache", cacheDir], {
     cwd: repoRoot,
@@ -67,6 +71,10 @@ test("packed as-test compiles from a clean consumer without extra AssemblyScript
       "--target",
       "debug",
       "--exportRuntime",
+      "--transform",
+      "./node_modules/as-test/transform",
+      "--transform",
+      "./node_modules/json-as/transform",
     ],
     { cwd: consumerDir },
   );

@@ -4,7 +4,7 @@ import { Tests } from "./tests";
 import { Log } from "./log";
 import { after_each_callback, before_each_callback } from "..";
 import { sendSuiteEnd, sendSuiteStart } from "../util/wipc";
-import { quote } from "../util/json";
+import { JSON } from "json-as/assembly";
 
 export class Suite {
   public file: string = "unknown";
@@ -175,17 +175,17 @@ export class Suite {
   serialize(): string {
     let out = "{";
     if (this.depth <= 0) {
-      out += '"file":' + quote(this.file) + ",";
+      out += '"file":' + JSON.stringify<string>(this.file) + ",";
     }
     out += '"order":' + this.order.toString();
     out += ',"time":' + this.time.serialize();
-    out += ',"description":' + quote(this.description);
+    out += ',"description":' + JSON.stringify<string>(this.description);
     out += ',"depth":' + this.depth.toString();
     out += ',"suites":' + serializeSuites(this.suites);
     out += ',"tests":' + serializeTests(this.tests);
     out += ',"logs":' + serializeLogs(this.logs);
-    out += ',"kind":' + quote(this.kind);
-    out += ',"verdict":' + quote(this.verdict);
+    out += ',"kind":' + JSON.stringify<string>(this.kind);
+    out += ',"verdict":' + JSON.stringify<string>(this.verdict);
     out += "}";
     return out;
   }

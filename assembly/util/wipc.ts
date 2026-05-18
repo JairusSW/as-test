@@ -1,4 +1,8 @@
-import { quote as q } from "./json";
+import { JSON } from "json-as/assembly";
+
+function q(s: string): string {
+  return JSON.stringify<string>(s);
+}
 
 // @ts-ignore
 @external("env", "process.stdout.write")

@@ -1,5 +1,18 @@
 # Change Log
 
+## 2026-05-18 - v1.1.7
+
+### Modes & CLI
+
+- fix: when a config declares named modes, the implicit base config no longer runs alongside them; only modes with `default !== false` are selected. Configs without any declared modes still fall back to the base mode.
+- feat: add `--watch` to `ast test` to re-run on source or spec changes (150ms debounce, clear-screen, `Ctrl+C` to stop). Watches all base directories derived from `input` patterns plus `assembly/` and the resolved config file; ignores `node_modules`, `.git`, and the configured `outDir`.
+
+### Runtime
+
+- chore: replace the homegrown JSON serialization helpers (`quote`, `rawOrNull`, `stringifyValue`, `escape`, `unicodeEscape`, `stringifyArray`) with `json-as` across the AssemblyScript runtime and transform, and delete `assembly/util/json.ts`. The `LogTransform` now injects `import { JSON } from "json-as/assembly"` per instrumented source and inlines `JSON.stringify<T>()` into the log helper.
+- chore: promote `json-as` to a required peer dependency (`>=1.0.0`). npm 7+ installs it automatically; pnpm and yarn users must add `json-as` to their own `devDependencies` alongside `as-test`.
+- chore: remove the unused `__as_test_log_default` and `__as_test_json_value` exports.
+
 ## 2026-05-14 - v1.1.6
 
 - fix: coverage `mode` and `dependencies` filtering now correctly handles AssemblyScript-normalized `~lib/<pkg>/...` paths, which are the actual runtime paths emitted for `node_modules` imports.

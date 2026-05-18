@@ -22,4 +22,5 @@ export type RunFlags = {
   coverage?: boolean;
   browser?: string;
   reporterPath?: string;
+  watch?: boolean;
 };

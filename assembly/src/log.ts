@@ -1,4 +1,4 @@
-import { quote } from "../util/json";
+import { JSON } from "json-as/assembly";
 
 import { sendLog } from "../util/wipc";
 
@@ -21,7 +21,7 @@ export class Log {
       ',"depth":' +
       this.depth.toString() +
       ',"text":' +
-      quote(this.text) +
+      JSON.stringify<string>(this.text) +
       "}"
     );
   }

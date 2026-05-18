@@ -4,7 +4,7 @@ import { toString } from "./util.js";
 const LOG_CALL_FN = "__as_test_log_call";
 const LOG_ENABLED_IMPORT = "__as_test_log_is_enabled_internal";
 const LOG_SERIALIZED_IMPORT = "__as_test_log_serialized_internal";
-const LOG_DEFAULT_IMPORT = "__as_test_log_default_internal";
+const LOG_JSON_IMPORT = "__as_test_log_json_internal";
 export class LogTransform extends Visitor {
     parser;
     activeSource = null;
@@ -27,11 +27,15 @@ export class LogTransform extends Visitor {
             return;
         }
         const asTestPath = detectAsTestImportPath(node.text) ?? "as-test";
-        const tokenizer = new Tokenizer(new Source(0, node.normalizedPath, `import { __as_test_log_is_enabled as ${LOG_ENABLED_IMPORT}, __as_test_log_serialized as ${LOG_SERIALIZED_IMPORT}, __as_test_log_default as ${LOG_DEFAULT_IMPORT} } from "${asTestPath}";`));
-        this.parser.currentSource = tokenizer.source;
-        node.statements.unshift(this.parser.parseTopLevelStatement(tokenizer));
+        const asTestTokenizer = new Tokenizer(new Source(0, node.normalizedPath, `import { __as_test_log_is_enabled as ${LOG_ENABLED_IMPORT}, __as_test_log_serialized as ${LOG_SERIALIZED_IMPORT} } from "${asTestPath}";`));
+        this.parser.currentSource = asTestTokenizer.source;
+        node.statements.unshift(this.parser.parseTopLevelStatement(asTestTokenizer));
         this.parser.currentSource = node;
-        const callTokenizer = new Tokenizer(new Source(0, node.normalizedPath, `function ${LOG_CALL_FN}<T>(value: T): void { if (!${LOG_ENABLED_IMPORT}()) return; ${LOG_SERIALIZED_IMPORT}(${LOG_DEFAULT_IMPORT}<T>(value)); }`));
+        const jsonTokenizer = new Tokenizer(new Source(0, node.normalizedPath, `import { JSON as ${LOG_JSON_IMPORT} } from "json-as/assembly";`));
+        this.parser.currentSource = jsonTokenizer.source;
+        node.statements.unshift(this.parser.parseTopLevelStatement(jsonTokenizer));
+        this.parser.currentSource = node;
+        const callTokenizer = new Tokenizer(new Source(0, node.normalizedPath, `function ${LOG_CALL_FN}<T>(value: T): void { if (!${LOG_ENABLED_IMPORT}()) return; ${LOG_SERIALIZED_IMPORT}(${LOG_JSON_IMPORT}.stringify<T>(value)); }`));
         this.parser.currentSource = callTokenizer.source;
         node.statements.push(this.parser.parseTopLevelStatement(callTokenizer));
         this.parser.currentSource = node;

@@ -14,8 +14,8 @@ import {
   sendFileStart,
   sendReport,
 } from "./util/wipc";
-import { quote } from "./util/json";
-import { bold, formatValue, green, red } from "./util/format";
+import { JSON } from "json-as/assembly";
+import { bold, green, red } from "./util/format";
 import {
   createFuzzer,
   FuzzerBase,
@@ -37,7 +37,6 @@ export {
   StringOptions,
 } from "./src/fuzz";
 export { __as_test_deep_equal } from "./src/expectation";
-export { __as_test_json_value } from "./util/json";
 
 let entrySuites: Suite[] = [];
 let entryFuzzers: FuzzerBase[] = [];
@@ -241,11 +240,7 @@ export function xexpect<T>(
  */
 export function log<T>(data: T): void {
   if (!__as_test_log_is_enabled()) return;
-  __as_test_log_serialized(__as_test_log_default<T>(data));
-}
-
-export function __as_test_log_default<T>(data: T): string {
-  return formatValue(data);
+  __as_test_log_serialized(JSON.stringify<T>(data));
 }
 
 export function __as_test_log_is_enabled(): bool {
@@ -556,23 +551,23 @@ class CoveragePointReport {
   serialize(): string {
     return (
       '{"hash":' +
-      quote(this.hash) +
+      JSON.stringify<string>(this.hash) +
       ',"file":' +
-      quote(this.file) +
+      JSON.stringify<string>(this.file) +
       ',"line":' +
       this.line.toString() +
       ',"column":' +
       this.column.toString() +
       ',"type":' +
-      quote(this.type) +
+      JSON.stringify<string>(this.type) +
       ',"executed":' +
       (this.executed ? "true" : "false") +
       ',"parentHash":' +
-      quote(this.parentHash) +
+      JSON.stringify<string>(this.parentHash) +
       ',"scopeKind":' +
-      quote(this.scopeKind) +
+      JSON.stringify<string>(this.scopeKind) +
       ',"scopeName":' +
-      quote(this.scopeName) +
+      JSON.stringify<string>(this.scopeName) +
       ',"depth":' +
       this.depth.toString() +
       "}"
@@ -698,7 +693,7 @@ export class Result {
   serialize(): string {
     return (
       '{"name":' +
-      quote(this.name) +
+      JSON.stringify<string>(this.name) +
       ',"arg1":' +
       this.arg1.toString() +
       ',"arg2":' +

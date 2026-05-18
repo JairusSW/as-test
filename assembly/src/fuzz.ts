@@ -1,4 +1,8 @@
-import { quote, rawOrNull, stringifyValue } from "../util/json";
+import { JSON } from "json-as/assembly";
+
+function quote(s: string): string {
+  return JSON.stringify<string>(s);
+}
 
 export class StringOptions {
   charset: string = "ascii";
@@ -656,7 +660,7 @@ export class FuzzFailure {
       ',"seed":' +
       this.seed.toString() +
       ',"input":' +
-      rawOrNull(this.input) +
+      (this.input.length ? this.input : "null") +
       "}"
     );
   }
@@ -877,7 +881,7 @@ export class Fuzzer1<A, R> extends FuzzerBase {
         );
       } else {
         this.generator(seed, (a: A): R => {
-          __as_test_fuzz_input = "[" + stringifyValue<A>(a) + "]";
+          __as_test_fuzz_input = "[" + JSON.stringify<A>(a) + "]";
           return changetype<(a: A) => R>(__fuzz_run1)(a);
         });
       }
@@ -948,7 +952,7 @@ export class Fuzzer2<A, B, R> extends FuzzerBase {
       } else {
         this.generator(seed, (a: A, b: B): R => {
           __as_test_fuzz_input =
-            "[" + stringifyValue<A>(a) + "," + stringifyValue<B>(b) + "]";
+            "[" + JSON.stringify<A>(a) + "," + JSON.stringify<B>(b) + "]";
           return changetype<(a: A, b: B) => R>(__fuzz_run2)(a, b);
         });
       }
@@ -1022,11 +1026,11 @@ export class Fuzzer3<A, B, C, R> extends FuzzerBase {
         )(seed, (a: A, b: B, c: C): R => {
           __as_test_fuzz_input =
             "[" +
-            stringifyValue<A>(a) +
+            JSON.stringify<A>(a) +
             "," +
-            stringifyValue<B>(b) +
+            JSON.stringify<B>(b) +
             "," +
-            stringifyValue<C>(c) +
+            JSON.stringify<C>(c) +
             "]";
           return changetype<(a: A, b: B, c: C) => R>(__fuzz_run3)(a, b, c);
         });
