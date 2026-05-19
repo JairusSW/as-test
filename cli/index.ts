@@ -792,7 +792,24 @@ function resolveFeatureToggles(
       }
     }
   }
+  if (out.coverage === undefined && hasShowCoverageFlag(rawArgs, command)) {
+    out.coverage = true;
+  }
   return out;
+}
+
+function hasShowCoverageFlag(rawArgs: string[], command: string): boolean {
+  let seenCommand = false;
+  for (const arg of rawArgs) {
+    if (!seenCommand) {
+      if (arg == command) seenCommand = true;
+      continue;
+    }
+    if (arg == "--show-coverage" || arg.startsWith("--show-coverage=")) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function resolveFuzzOverrides(
@@ -1586,7 +1603,8 @@ async function runTestSequential(
   const results: RunResult[] = [];
   let failed = false;
   const buildIntervals: Array<{ start: number; end: number }> = [];
-  const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
+  const duplicateSpecBasenames =
+    await resolveAllConfiguredDuplicateSpecBasenames(configPath);
   for (const file of files) {
     const buildStartedAt = Date.now();
     let result: RunResult;
@@ -1913,7 +1931,8 @@ async function runRuntimeMatrix(
     failed: false,
     passed: false,
   }));
-  const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
+  const duplicateSpecBasenames =
+    await resolveAllConfiguredDuplicateSpecBasenames(configPath);
   const buildIntervals: Array<{ start: number; end: number }> = [];
 
   for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
@@ -2456,7 +2475,8 @@ async function runTestMatrix(
     failed: false,
     passed: false,
   }));
-  const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
+  const duplicateSpecBasenames =
+    await resolveAllConfiguredDuplicateSpecBasenames(configPath);
   const buildIntervals: Array<{ start: number; end: number }> = [];
 
   for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
@@ -2800,7 +2820,8 @@ async function runRuntimeMatrixParallel(
   const silentReporter: TestReporter = {};
   const modeLabels = modes.map((modeName) => modeName ?? "default");
   const showPerModeTimes = Boolean(runFlags.verbose);
-  const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
+  const duplicateSpecBasenames =
+    await resolveAllConfiguredDuplicateSpecBasenames(configPath);
   const ordered = new Array<{
     fileName: string;
     fileResults: RunResult[];
@@ -2968,7 +2989,8 @@ async function runTestSingleParallel(
     snapshotEnabled,
     createSnapshots: runFlags.createSnapshots,
   });
-  const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
+  const duplicateSpecBasenames =
+    await resolveAllConfiguredDuplicateSpecBasenames(configPath);
   const results = new Array<RunResult>(files.length);
   const useQueueDisplay = reporterSession.reporterKind == "default";
   const queueDisplay = new ParallelQueueDisplay(
@@ -3158,7 +3180,8 @@ async function runTestMatrixParallel(
   const silentReporter: TestReporter = {};
   const modeLabels = modes.map((modeName) => modeName ?? "default");
   const showPerModeTimes = Boolean(runFlags.verbose);
-  const duplicateSpecBasenames = resolveDuplicateSpecBasenames(files);
+  const duplicateSpecBasenames =
+    await resolveAllConfiguredDuplicateSpecBasenames(configPath);
   const ordered = new Array<{
     fileName: string;
     fileResults: RunResult[];
@@ -4190,6 +4213,35 @@ function resolveDuplicateSpecBasenames(files: string[]): Set<string> {
   return duplicates;
 }
 
+// Disambiguation must consider the full configured input set, not the
+// selector-filtered subset, otherwise running a single spec writes/looks up an
+// artifact name that the rest of the toolchain doesn't agree on.
+async function resolveAllConfiguredDuplicateSpecBasenames(
+  configPath: string | undefined,
+): Promise<Set<string>> {
+  const resolvedConfigPath =
+    configPath ?? path.join(process.cwd(), "./as-test.config.json");
+  const config = loadConfig(resolvedConfigPath, false);
+  return resolveDuplicateBasenamesForPatterns(config.input);
+}
+
+async function resolveAllConfiguredDuplicateFuzzBasenames(
+  configPath: string | undefined,
+): Promise<Set<string>> {
+  const resolvedConfigPath =
+    configPath ?? path.join(process.cwd(), "./as-test.config.json");
+  const config = loadConfig(resolvedConfigPath, false);
+  return resolveDuplicateBasenamesForPatterns(config.fuzz.input);
+}
+
+async function resolveDuplicateBasenamesForPatterns(
+  configured: string[] | string,
+): Promise<Set<string>> {
+  const patterns = Array.isArray(configured) ? configured : [configured];
+  const files = await glob(patterns);
+  return resolveDuplicateSpecBasenames(files);
+}
+
 function resolvePerFileArtifactKey(
   file: string,
   duplicateSpecBasenames: Set<string>,
@@ -4816,8 +4868,10 @@ async function listExecutionPlan(
         : `No test files matched: ${scope}`,
     );
   }
-  const duplicateSpecBasenames = resolveDuplicateSpecBasenames(specFiles);
-  const duplicateFuzzBasenames = resolveDuplicateSpecBasenames(fuzzFiles);
+  const duplicateSpecBasenames =
+    await resolveAllConfiguredDuplicateSpecBasenames(configPath);
+  const duplicateFuzzBasenames =
+    await resolveAllConfiguredDuplicateFuzzBasenames(configPath);
 
   if (specFiles.length) {
     process.stdout.write(chalk.bold("Resolved files:\n"));

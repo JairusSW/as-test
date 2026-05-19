@@ -40,6 +40,9 @@ jobs:
       - name: Run Tests
         run: bun run test:ci
 
+      - name: Run integration tests
+        run: bun run test:integration
+
   # Create GitHub Release
   release:
     runs-on: ubuntu-latest

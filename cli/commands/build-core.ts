@@ -105,11 +105,17 @@ export async function build(
   }
 
   const pkgRunner = getPkgRunner();
-  const inputPatterns = resolveInputPatterns(config.input, selectors);
+  const sourceInputPatterns =
+    overrides.kind === "fuzz" ? config.fuzz.input : config.input;
+  const inputPatterns = resolveInputPatterns(sourceInputPatterns, selectors);
   const inputFiles = (await glob(inputPatterns)).sort((a, b) =>
     a.localeCompare(b),
   );
-  const duplicateSpecBasenames = resolveDuplicateBasenames(inputFiles);
+  // Disambiguation must consider the entire configured input set, not just the
+  // selector-filtered subset, otherwise running `ast test <one-spec>` writes
+  // an artifact name the runner won't look up (it always globs full input).
+  const duplicateSpecBasenames =
+    await resolveAllConfiguredDuplicateBasenames(sourceInputPatterns);
 
   const coverageEnabled = resolveCoverageEnabled(
     config.coverage,
@@ -246,7 +252,10 @@ export async function getBuildInvocationPreview(
     config.buildOptions.args = [...config.buildOptions.args, ...overrides.args];
   }
 
-  const duplicateSpecBasenames = resolveDuplicateBasenames([file]);
+  const sourceInputPatterns =
+    overrides.kind === "fuzz" ? config.fuzz.input : config.input;
+  const duplicateSpecBasenames =
+    await resolveAllConfiguredDuplicateBasenames(sourceInputPatterns);
   const outFile = `${config.outDir}/${resolveArtifactFileName(
     file,
     config.buildOptions.target,
@@ -289,7 +298,10 @@ export async function getBuildReuseInfo(
   if (hasCustomBuildCommand(config)) {
     return null;
   }
-  const duplicateSpecBasenames = resolveDuplicateBasenames([file]);
+  const sourceInputPatterns =
+    overrides.kind === "fuzz" ? config.fuzz.input : config.input;
+  const duplicateSpecBasenames =
+    await resolveAllConfiguredDuplicateBasenames(sourceInputPatterns);
   const outFile = `${config.outDir}/${resolveArtifactFileName(
     file,
     config.buildOptions.target,
@@ -465,6 +477,14 @@ function resolveArtifactFileName(
   const ext = path.extname(legacy);
   const stem = ext.length ? legacy.slice(0, -ext.length) : legacy;
   return `${stem}.${disambiguator}${ext}`;
+}
+
+async function resolveAllConfiguredDuplicateBasenames(
+  configured: string[] | string,
+): Promise<Set<string>> {
+  const patterns = Array.isArray(configured) ? configured : [configured];
+  const files = await glob(patterns);
+  return resolveDuplicateBasenames(files);
 }
 
 function resolveDuplicateBasenames(files: string[]): Set<string> {
@@ -715,9 +735,8 @@ function getDefaultBuildArgs(
   const tryAsEnabled = resolveTryAsEnabled(featureToggles.tryAs);
 
   buildArgs.push("--transform", "as-test/transform");
-  const jsonAsTransform = resolveProjectModule("json-as/transform");
-  if (jsonAsTransform) {
-    buildArgs.push("--transform", jsonAsTransform);
+  if (resolveProjectModule("json-as/transform")) {
+    buildArgs.push("--transform", "json-as/transform");
   }
   if (tryAsEnabled) {
     buildArgs.push("--transform", "try-as/transform");
@@ -769,6 +788,7 @@ function resolveTryAsEnabled(override?: boolean): boolean {
       'try-as feature was enabled, but package "try-as" is not installed',
     );
   }
+  if (override === true) return true;
   return false;
 }
 

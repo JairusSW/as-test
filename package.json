@@ -13,7 +13,7 @@
     "wipc-js": "^0.1.1"
   },
   "peerDependencies": {
-    "json-as": ">=1.0.0"
+    "json-as": ">=1.3.5"
   },
   "devDependencies": {
     "@assemblyscript/wasi-shim": "^0.1.0",
@@ -75,7 +75,8 @@
     "access": "public"
   },
   "scripts": {
-    "test": "node ./bin/index.js test --parallel",
+    "test": "npm run test:as && npm run test:integration",
+    "test:as": "node ./bin/index.js test --parallel",
     "test:integration": "npm run build:cli && npm run build:lib && node --test tests/*.test.mjs",
     "test:ci": "node ./bin/index.js test --parallel --tap --config ./as-test.ci.config.json",
     "fuzz": "node ./bin/index.js fuzz",
@@ -96,8 +97,8 @@
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
     "format": "prettier -w .",
-    "release:check": "npm run build:cli && npm run build:lib && npm run build:transform && npm run test && npm run test:integration && npm run test:examples && npm pack --dry-run --cache /tmp/as-test-npm-cache",
-    "prepublishOnly": "npm run build:cli && npm run build:lib && npm run build:transform && npm run test && npm run test:integration && npm run format"
+    "release:check": "npm run build:cli && npm run build:lib && npm run build:transform && npm run test && npm run test:examples && npm pack --dry-run --cache /tmp/as-test-npm-cache",
+    "prepublishOnly": "npm run build:cli && npm run build:lib && npm run build:transform && npm run test && npm run format"
   },
   "type": "module"
 }

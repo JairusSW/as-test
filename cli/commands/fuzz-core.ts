@@ -97,7 +97,13 @@ export async function fuzz(
     );
   }
 
-  const duplicateBasenames = resolveDuplicateBasenames(inputFiles);
+  // Disambiguation must consider the full configured fuzz input set, not the
+  // selector-filtered subset, so artifact names stay consistent across runs.
+  const fullPatterns = Array.isArray(config.input)
+    ? config.input
+    : [config.input];
+  const allFuzzFiles = await glob(fullPatterns);
+  const duplicateBasenames = resolveDuplicateBasenames(allFuzzFiles);
   const results: FuzzResult[] = [];
   for (const file of inputFiles) {
     const buildStartedAt = Date.now();

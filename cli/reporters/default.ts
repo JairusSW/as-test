@@ -1135,7 +1135,12 @@ function renderCoverageSummary(
     return a.file.localeCompare(b.file);
   });
   console.log(chalk.bold("  File Breakdown"));
-  for (const file of ranked.slice(0, 8)) {
+  const displayed = ranked.slice(0, 8);
+  const fileNameWidth = displayed.reduce(
+    (max, file) => Math.max(max, toRelativeResultPath(file.file).length),
+    0,
+  );
+  for (const file of displayed) {
     const filePct = file.total
       ? ((file.covered * 100) / file.total).toFixed(2)
       : "100.00";
@@ -1148,11 +1153,11 @@ function renderCoverageSummary(
     const suffix =
       file.uncovered > 0 ? `${file.uncovered} missing` : "fully covered";
     console.log(
-      `    ${fileColor(filePct.padStart(6) + "%")}  ${toRelativeResultPath(file.file).padEnd(36)} ${chalk.dim(`${file.covered}/${file.total} covered, ${suffix}`)}`,
+      `  ${fileColor(filePct.padStart(6) + "%")}  ${toRelativeResultPath(file.file).padEnd(fileNameWidth)} ${chalk.dim(`${file.covered}/${file.total} covered, ${suffix}`)}`,
     );
   }
   if (ranked.length > 8) {
-    console.log(chalk.dim(`    ... ${ranked.length - 8} more files`));
+    console.log(chalk.dim(`  ... ${ranked.length - 8} more files`));
   }
 }
 

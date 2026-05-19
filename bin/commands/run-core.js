@@ -2,14 +2,7 @@ import chalk from "chalk";
 import { spawn } from "child_process";
 import { glob } from "glob";
 import { Channel, MessageType } from "../wipc.js";
-import {
-  applyMode,
-  formatSpecDisplayPath,
-  formatTime,
-  getExec,
-  loadConfig,
-  tokenizeCommand,
-} from "../util.js";
+import { applyMode, formatSpecDisplayPath, formatTime, getExec, loadConfig, tokenizeCommand, } from "../util.js";
 import * as path from "path";
 import { pathToFileURL } from "url";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
@@ -23,1041 +16,894 @@ import { persistCrashRecord } from "../crash-store.js";
 import { describeCoveragePoint } from "../coverage-points.js";
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 class SnapshotStore {
-  constructor(specFile, snapshotDir, duplicateSpecBasenames = new Set()) {
-    this.dirty = false;
-    this.created = 0;
-    this.updated = 0;
-    this.matched = 0;
-    this.failed = 0;
-    this.warnedMissing = new Set();
-    this.specBasename = path.basename(specFile);
-    const dir = path.join(process.cwd(), snapshotDir);
-    const relative = resolveArtifactRelativePath(specFile, "__tests__").replace(
-      /\.ts$/,
-      ".snap",
-    );
-    this.filePath = path.join(dir, relative);
-    const sourcePath =
-      resolveSnapshotSourcePath(
-        specFile,
-        dir,
-        duplicateSpecBasenames,
-        this.filePath,
-      ) ?? null;
-    const loaded = sourcePath
-      ? readSnapshotFile(sourcePath, specFile)
-      : { data: {}, normalized: false, preamble: "" };
-    this.data = loaded.data;
-    this.preamble = loaded.preamble;
-    this.existed = Boolean(sourcePath && existsSync(sourcePath));
-    this.dirty = Boolean(
-      (sourcePath && sourcePath != this.filePath) || loaded.normalized,
-    );
-  }
-  assert(key, actual, allowSnapshot, createSnapshots, overwriteSnapshots) {
-    key = canonicalizeSnapshotKey(key);
-    key = normalizeSnapshotKeyPrefix(key, this.specBasename);
-    if (!allowSnapshot)
-      return { ok: true, expected: actual, warnMissing: false };
-    if (!(key in this.data)) {
-      if (!createSnapshots) {
-        this.failed++;
-        const warnMissing = !this.warnedMissing.has(key);
-        if (warnMissing) this.warnedMissing.add(key);
-        return {
-          ok: false,
-          expected: JSON.stringify("<missing snapshot>"),
-          warnMissing,
-        };
-      }
-      this.created++;
-      this.dirty = true;
-      this.data[key] = actual;
-      return { ok: true, expected: actual, warnMissing: false };
+    constructor(specFile, snapshotDir, duplicateSpecBasenames = new Set()) {
+        this.dirty = false;
+        this.created = 0;
+        this.updated = 0;
+        this.matched = 0;
+        this.failed = 0;
+        this.warnedMissing = new Set();
+        this.specBasename = path.basename(specFile);
+        const dir = path.join(process.cwd(), snapshotDir);
+        const relative = resolveArtifactRelativePath(specFile, "__tests__").replace(/\.ts$/, ".snap");
+        this.filePath = path.join(dir, relative);
+        const sourcePath = resolveSnapshotSourcePath(specFile, dir, duplicateSpecBasenames, this.filePath) ?? null;
+        const loaded = sourcePath
+            ? readSnapshotFile(sourcePath, specFile)
+            : { data: {}, normalized: false, preamble: "" };
+        this.data = loaded.data;
+        this.preamble = loaded.preamble;
+        this.existed = Boolean(sourcePath && existsSync(sourcePath));
+        this.dirty = Boolean((sourcePath && sourcePath != this.filePath) || loaded.normalized);
     }
-    const expected = this.data[key];
-    if (expected === actual) {
-      this.matched++;
-      return { ok: true, expected, warnMissing: false };
+    assert(key, actual, allowSnapshot, createSnapshots, overwriteSnapshots) {
+        key = canonicalizeSnapshotKey(key);
+        key = normalizeSnapshotKeyPrefix(key, this.specBasename);
+        if (!allowSnapshot)
+            return { ok: true, expected: actual, warnMissing: false };
+        if (!(key in this.data)) {
+            if (!createSnapshots) {
+                this.failed++;
+                const warnMissing = !this.warnedMissing.has(key);
+                if (warnMissing)
+                    this.warnedMissing.add(key);
+                return {
+                    ok: false,
+                    expected: JSON.stringify("<missing snapshot>"),
+                    warnMissing,
+                };
+            }
+            this.created++;
+            this.dirty = true;
+            this.data[key] = actual;
+            return { ok: true, expected: actual, warnMissing: false };
+        }
+        const expected = this.data[key];
+        if (expected === actual) {
+            this.matched++;
+            return { ok: true, expected, warnMissing: false };
+        }
+        if (!overwriteSnapshots) {
+            this.failed++;
+            return { ok: false, expected, warnMissing: false };
+        }
+        this.updated++;
+        this.dirty = true;
+        this.data[key] = actual;
+        return { ok: true, expected: actual, warnMissing: false };
     }
-    if (!overwriteSnapshots) {
-      this.failed++;
-      return { ok: false, expected, warnMissing: false };
+    flush() {
+        if (!this.dirty)
+            return;
+        const outDir = path.dirname(this.filePath);
+        if (!existsSync(outDir))
+            mkdirSync(outDir, { recursive: true });
+        writeFileSync(this.filePath, formatSnapshotFile(this.data, this.filePath, this.existed ? this.preamble : defaultSnapshotPreamble()));
     }
-    this.updated++;
-    this.dirty = true;
-    this.data[key] = actual;
-    return { ok: true, expected: actual, warnMissing: false };
-  }
-  flush() {
-    if (!this.dirty) return;
-    const outDir = path.dirname(this.filePath);
-    if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
-    writeFileSync(
-      this.filePath,
-      formatSnapshotFile(
-        this.data,
-        this.filePath,
-        this.existed ? this.preamble : defaultSnapshotPreamble(),
-      ),
-    );
-  }
 }
-function resolveSnapshotSourcePath(
-  specFile,
-  snapshotDir,
-  duplicateSpecBasenames,
-  preferredPath,
-) {
-  if (existsSync(preferredPath)) return preferredPath;
-  const base = path.basename(specFile, ".ts");
-  const legacyFlat = path.join(snapshotDir, `${base}.snap.json`);
-  if (existsSync(legacyFlat)) return legacyFlat;
-  const disambiguator = resolveDisambiguator(specFile, duplicateSpecBasenames);
-  if (disambiguator.length) {
-    const legacyDisambiguated = path.join(
-      snapshotDir,
-      `${base}.${disambiguator}.snap.json`,
-    );
-    if (existsSync(legacyDisambiguated)) return legacyDisambiguated;
-  }
-  return null;
+function resolveSnapshotSourcePath(specFile, snapshotDir, duplicateSpecBasenames, preferredPath) {
+    if (existsSync(preferredPath))
+        return preferredPath;
+    const base = path.basename(specFile, ".ts");
+    const legacyFlat = path.join(snapshotDir, `${base}.snap.json`);
+    if (existsSync(legacyFlat))
+        return legacyFlat;
+    const disambiguator = resolveDisambiguator(specFile, duplicateSpecBasenames);
+    if (disambiguator.length) {
+        const legacyDisambiguated = path.join(snapshotDir, `${base}.${disambiguator}.snap.json`);
+        if (existsSync(legacyDisambiguated))
+            return legacyDisambiguated;
+    }
+    return null;
 }
 function readSnapshotFile(filePath, specFile) {
-  const raw = readFileSync(filePath, "utf8");
-  if (filePath.endsWith(".json")) {
-    const normalized = normalizeSnapshotRecord(JSON.parse(raw));
-    return { ...normalized, preamble: "" };
-  }
-  return parseSnapshotText(raw, specFile);
+    const raw = readFileSync(filePath, "utf8");
+    if (filePath.endsWith(".json")) {
+        const normalized = normalizeSnapshotRecord(JSON.parse(raw));
+        return { ...normalized, preamble: "" };
+    }
+    return parseSnapshotText(raw, specFile);
 }
 function parseSnapshotText(source, specFile) {
-  const out = {};
-  const lines = source.split(/\r?\n/);
-  let i = 0;
-  let normalized = false;
-  const preambleLines = [];
-  while (i < lines.length) {
-    const header = lines[i] ?? "";
-    if (isSnapshotOuterComment(header) || !header.length) {
-      if (!Object.keys(out).length) preambleLines.push(header);
-      i++;
-      continue;
-    }
-    const match = header.match(/^=== (.+) ===$/);
-    if (!match) {
-      i++;
-      continue;
-    }
-    const localKey = match[1];
-    i++;
-    let value = "";
-    if ((lines[i] ?? "") == "<<<") {
-      i++;
-      const block = [];
-      while (i < lines.length && (lines[i] ?? "") != ">>>") {
-        block.push(lines[i] ?? "");
+    const out = {};
+    const lines = source.split(/\r?\n/);
+    let i = 0;
+    let normalized = false;
+    const preambleLines = [];
+    while (i < lines.length) {
+        const header = lines[i] ?? "";
+        if (isSnapshotOuterComment(header) || !header.length) {
+            if (!Object.keys(out).length)
+                preambleLines.push(header);
+            i++;
+            continue;
+        }
+        const match = header.match(/^=== (.+) ===$/);
+        if (!match) {
+            i++;
+            continue;
+        }
+        const localKey = match[1];
         i++;
-      }
-      value = block.join("\n");
-      if ((lines[i] ?? "") == ">>>") i++;
-    } else {
-      value = lines[i] ?? "";
-      i++;
+        let value = "";
+        if ((lines[i] ?? "") == "<<<") {
+            i++;
+            const block = [];
+            while (i < lines.length && (lines[i] ?? "") != ">>>") {
+                block.push(lines[i] ?? "");
+                i++;
+            }
+            value = block.join("\n");
+            if ((lines[i] ?? "") == ">>>")
+                i++;
+        }
+        else {
+            value = lines[i] ?? "";
+            i++;
+        }
+        while (i < lines.length && !(lines[i] ?? "").startsWith("=== ")) {
+            if (!lines[i]?.length || isSnapshotOuterComment(lines[i] ?? "")) {
+                i++;
+                continue;
+            }
+            break;
+        }
+        while (i < lines.length && isSnapshotOuterComment(lines[i] ?? "")) {
+            i++;
+        }
+        const qualified = qualifySnapshotKey(specFile, localKey);
+        const canonical = canonicalizeSnapshotKey(qualified);
+        if (canonical != qualified)
+            normalized = true;
+        out[canonical] = value;
     }
-    while (i < lines.length && !(lines[i] ?? "").startsWith("=== ")) {
-      if (!lines[i]?.length || isSnapshotOuterComment(lines[i] ?? "")) {
-        i++;
-        continue;
-      }
-      break;
-    }
-    while (i < lines.length && isSnapshotOuterComment(lines[i] ?? "")) {
-      i++;
-    }
-    const qualified = qualifySnapshotKey(specFile, localKey);
-    const canonical = canonicalizeSnapshotKey(qualified);
-    if (canonical != qualified) normalized = true;
-    out[canonical] = value;
-  }
-  return {
-    data: out,
-    normalized,
-    preamble: trimSnapshotPreamble(preambleLines),
-  };
+    return {
+        data: out,
+        normalized,
+        preamble: trimSnapshotPreamble(preambleLines),
+    };
 }
 function normalizeSnapshotRecord(data) {
-  const out = {};
-  let normalized = false;
-  for (const [key, value] of Object.entries(data)) {
-    const canonical = canonicalizeSnapshotKey(key);
-    if (canonical != key) normalized = true;
-    out[canonical] = value;
-  }
-  return { data: out, normalized };
+    const out = {};
+    let normalized = false;
+    for (const [key, value] of Object.entries(data)) {
+        const canonical = canonicalizeSnapshotKey(key);
+        if (canonical != key)
+            normalized = true;
+        out[canonical] = value;
+    }
+    return { data: out, normalized };
 }
 function isSnapshotOuterComment(line) {
-  const trimmed = line.trim();
-  return trimmed.startsWith("#") || trimmed.startsWith("//");
+    const trimmed = line.trim();
+    return trimmed.startsWith("#") || trimmed.startsWith("//");
 }
 function formatSnapshotFile(data, filePath, preamble) {
-  const specFile = resolveSnapshotSpecFile(filePath);
-  const seen = new Set();
-  const sections = [];
-  for (const key of Object.keys(data)) {
-    const localKey = canonicalizeSnapshotLocalKey(
-      localizeSnapshotKey(specFile, key),
-    );
-    if (seen.has(localKey)) continue;
-    seen.add(localKey);
-    const value = data[key] ?? "";
-    if (value.includes("\n")) {
-      sections.push(`=== ${localKey} ===\n<<<\n${value}\n>>>`);
-    } else {
-      sections.push(`=== ${localKey} ===\n${value}`);
+    const specFile = resolveSnapshotSpecFile(filePath);
+    const seen = new Set();
+    const sections = [];
+    for (const key of Object.keys(data)) {
+        const localKey = canonicalizeSnapshotLocalKey(localizeSnapshotKey(specFile, key));
+        if (seen.has(localKey))
+            continue;
+        seen.add(localKey);
+        const value = data[key] ?? "";
+        if (value.includes("\n")) {
+            sections.push(`=== ${localKey} ===\n<<<\n${value}\n>>>`);
+        }
+        else {
+            sections.push(`=== ${localKey} ===\n${value}`);
+        }
     }
-  }
-  if (!sections.length) return "";
-  const prefix = preamble.length ? preamble + "\n\n" : "";
-  return prefix + sections.join("\n\n") + "\n";
+    if (!sections.length)
+        return "";
+    const prefix = preamble.length ? preamble + "\n\n" : "";
+    return prefix + sections.join("\n\n") + "\n";
 }
 function defaultSnapshotPreamble() {
-  return [
-    "# as-test snapshot file",
-    "#",
-    "# IDs use this format:",
-    "#   Suite > test",
-    "#   Suite > test [name]",
-    "#   Suite > test #2",
-    "#",
-    "# Examples:",
-    '#   test("renders card", () => {',
-    "#     expect(view()).toMatchSnapshot();",
-    "#   })",
-    "#   -> renders card",
-    "#",
-    '#   test("renders card", () => {',
-    '#     expect(view()).toMatchSnapshot("mobile");',
-    "#   })",
-    "#   -> renders card [mobile]",
-    "#",
-    '#   test("renders card", () => {',
-    "#     expect(header()).toMatchSnapshot();",
-    "#     expect(body()).toMatchSnapshot();",
-    "#   })",
-    "#   -> renders card",
-    "#   -> renders card #2",
-    "#",
-    '#   describe("Card", () => {',
-    '#     test("renders", () => {',
-    "#       expect(view()).toMatchSnapshot();",
-    "#     })",
-    "#   })",
-    "#   -> Card > renders",
-    "#",
-    "# Single-line values are written directly below the ID.",
-    "# Multi-line values use delimiters:",
-    "#   <<<",
-    "#   ...",
-    "#   >>>",
-  ].join("\n");
+    return [
+        "# as-test snapshot file",
+        "#",
+        "# IDs use this format:",
+        "#   Suite > test",
+        "#   Suite > test [name]",
+        "#   Suite > test #2",
+        "#",
+        "# Examples:",
+        '#   test("renders card", () => {',
+        "#     expect(view()).toMatchSnapshot();",
+        "#   })",
+        "#   -> renders card",
+        "#",
+        '#   test("renders card", () => {',
+        '#     expect(view()).toMatchSnapshot("mobile");',
+        "#   })",
+        "#   -> renders card [mobile]",
+        "#",
+        '#   test("renders card", () => {',
+        "#     expect(header()).toMatchSnapshot();",
+        "#     expect(body()).toMatchSnapshot();",
+        "#   })",
+        "#   -> renders card",
+        "#   -> renders card #2",
+        "#",
+        '#   describe("Card", () => {',
+        '#     test("renders", () => {',
+        "#       expect(view()).toMatchSnapshot();",
+        "#     })",
+        "#   })",
+        "#   -> Card > renders",
+        "#",
+        "# Single-line values are written directly below the ID.",
+        "# Multi-line values use delimiters:",
+        "#   <<<",
+        "#   ...",
+        "#   >>>",
+    ].join("\n");
 }
 function trimSnapshotPreamble(lines) {
-  let end = lines.length;
-  while (end > 0 && !(lines[end - 1] ?? "").trim().length) end--;
-  return lines.slice(0, end).join("\n");
+    let end = lines.length;
+    while (end > 0 && !(lines[end - 1] ?? "").trim().length)
+        end--;
+    return lines.slice(0, end).join("\n");
 }
 function resolveSnapshotSpecFile(filePath) {
-  const normalized = filePath.replace(/\\/g, "/");
-  const marker = "/snapshots/";
-  const markerIndex = normalized.lastIndexOf(marker);
-  const suffix =
-    markerIndex >= 0
-      ? normalized.slice(markerIndex + marker.length)
-      : path.basename(normalized);
-  const withoutMode = suffix.replace(/^default\//, "");
-  const relative = withoutMode.replace(/\.snap$/, ".ts");
-  return `assembly/__tests__/${relative}`;
+    const normalized = filePath.replace(/\\/g, "/");
+    const marker = "/snapshots/";
+    const markerIndex = normalized.lastIndexOf(marker);
+    const suffix = markerIndex >= 0
+        ? normalized.slice(markerIndex + marker.length)
+        : path.basename(normalized);
+    const withoutMode = suffix.replace(/^default\//, "");
+    const relative = withoutMode.replace(/\.snap$/, ".ts");
+    return `assembly/__tests__/${relative}`;
 }
 function localizeSnapshotKey(specFile, key) {
-  const prefix = `${path.basename(specFile)}::`;
-  return key.startsWith(prefix) ? key.slice(prefix.length) : key;
+    const prefix = `${path.basename(specFile)}::`;
+    return key.startsWith(prefix) ? key.slice(prefix.length) : key;
 }
 function normalizeSnapshotKeyPrefix(key, specBasename) {
-  const sep = key.indexOf("::");
-  if (sep < 0) return key;
-  return `${specBasename}::${key.slice(sep + 2)}`;
+    const sep = key.indexOf("::");
+    if (sep < 0)
+        return key;
+    return `${specBasename}::${key.slice(sep + 2)}`;
 }
 function qualifySnapshotKey(specFile, key) {
-  return `${path.basename(specFile)}::${key}`;
+    return `${path.basename(specFile)}::${key}`;
 }
 function canonicalizeSnapshotKey(key) {
-  const sep = key.indexOf("::");
-  if (sep < 0) return canonicalizeSnapshotLocalKey(key);
-  const prefix = key.slice(0, sep + 2);
-  const local = key.slice(sep + 2);
-  return prefix + canonicalizeSnapshotLocalKey(local);
+    const sep = key.indexOf("::");
+    if (sep < 0)
+        return canonicalizeSnapshotLocalKey(key);
+    const prefix = key.slice(0, sep + 2);
+    const local = key.slice(sep + 2);
+    return prefix + canonicalizeSnapshotLocalKey(local);
 }
 function canonicalizeSnapshotLocalKey(localKey) {
-  const named = localKey.match(/^(.*)::\d+::(.+)$/);
-  if (named) {
-    return `${named[1]} [${named[2]}]`;
-  }
-  const simpleNamed = localKey.match(/^(.*)::([^:]+)$/);
-  if (simpleNamed && !/^\d+$/.test(simpleNamed[2])) {
-    return `${simpleNamed[1]} [${simpleNamed[2]}]`;
-  }
-  const unnamed = localKey.match(/^(.*)::(\d+)$/);
-  if (unnamed) {
-    const index = Number(unnamed[2]);
-    if (!Number.isFinite(index) || index < 0) return localKey;
-    return index === 0 ? unnamed[1] : `${unnamed[1]} #${index + 1}`;
-  }
-  return localKey;
+    const named = localKey.match(/^(.*)::\d+::(.+)$/);
+    if (named) {
+        return `${named[1]} [${named[2]}]`;
+    }
+    const simpleNamed = localKey.match(/^(.*)::([^:]+)$/);
+    if (simpleNamed && !/^\d+$/.test(simpleNamed[2])) {
+        return `${simpleNamed[1]} [${simpleNamed[2]}]`;
+    }
+    const unnamed = localKey.match(/^(.*)::(\d+)$/);
+    if (unnamed) {
+        const index = Number(unnamed[2]);
+        if (!Number.isFinite(index) || index < 0)
+            return localKey;
+        return index === 0 ? unnamed[1] : `${unnamed[1]} #${index + 1}`;
+    }
+    return localKey;
 }
 function resolveArtifactRelativePath(sourceFile, segment) {
-  const normalized = sourceFile.replace(/\\/g, "/");
-  const marker = `/${segment}/`;
-  const index = normalized.lastIndexOf(marker);
-  if (index >= 0) return normalized.slice(index + marker.length);
-  return path.basename(normalized);
+    const normalized = sourceFile.replace(/\\/g, "/");
+    const marker = `/${segment}/`;
+    const index = normalized.lastIndexOf(marker);
+    if (index >= 0)
+        return normalized.slice(index + marker.length);
+    return path.basename(normalized);
 }
-function writeReadableLog(
-  logRoot,
-  file,
-  suites,
-  modeName,
-  buildCommand,
-  runCommand,
-  snapshotSummary,
-) {
-  const relative = resolveArtifactRelativePath(file, "__tests__").replace(
-    /\.ts$/,
-    ".log",
-  );
-  const filePath = path.join(logRoot, relative);
-  const dir = path.dirname(filePath);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  writeFileSync(
-    filePath,
-    formatReadableLog(
-      file,
-      suites,
-      modeName,
-      buildCommand,
-      runCommand,
-      snapshotSummary,
-    ),
-  );
+function writeReadableLog(logRoot, file, suites, modeName, buildCommand, runCommand, snapshotSummary) {
+    const relative = resolveArtifactRelativePath(file, "__tests__").replace(/\.ts$/, ".log");
+    const filePath = path.join(logRoot, relative);
+    const dir = path.dirname(filePath);
+    if (!existsSync(dir))
+        mkdirSync(dir, { recursive: true });
+    writeFileSync(filePath, formatReadableLog(file, suites, modeName, buildCommand, runCommand, snapshotSummary));
 }
-function formatReadableLog(
-  file,
-  suites,
-  modeName,
-  buildCommand,
-  runCommand,
-  snapshotSummary,
-) {
-  const stats = collectRunStats([suites]);
-  const verdict = stats.failedFiles
-    ? "FAIL"
-    : stats.passedFiles
-      ? "PASS"
-      : "SKIP";
-  const lines = [
-    `Mode: ${modeName ?? "default"}`,
-    `Build: ${buildCommand || "(unknown)"}`,
-    `Run: ${runCommand}`,
-    "",
-    `${verdict}  ${file}`,
-    "",
-    `Snapshots: ${snapshotSummary.matched} matched, ${snapshotSummary.created} created, ${snapshotSummary.updated} updated, ${snapshotSummary.failed} failed`,
-    "",
-    `Suites: ${stats.passedSuites} passed, ${stats.failedSuites} failed, ${stats.skippedSuites} skipped`,
-    `Tests: ${stats.passedTests} passed, ${stats.failedTests} failed, ${stats.skippedTests} skipped`,
-    `Time: ${formatTime(stats.time)}`,
-  ];
-  const failures = collectReadableFailures(suites, file, []);
-  if (failures.length) {
-    lines.push("", "Failures:");
-    for (const failure of failures) {
-      lines.push(
-        `FAIL  ${failure.title}${failure.where.length ? ` (${failure.where})` : ""}`,
-      );
-      if (failure.suitePath.length) {
-        lines.push(
-          `Repro: ${buildSuiteReproCommand(file, failure.suitePath, modeName)}`,
-        );
-      }
-      if (failure.message.length) lines.push(`Message: ${failure.message}`);
-      if (failure.left.length) lines.push(`Expected: ${failure.right}`);
-      if (failure.right.length) lines.push(`Received: ${failure.left}`);
-      lines.push("");
+function formatReadableLog(file, suites, modeName, buildCommand, runCommand, snapshotSummary) {
+    const stats = collectRunStats([suites]);
+    const verdict = stats.failedFiles
+        ? "FAIL"
+        : stats.passedFiles
+            ? "PASS"
+            : "SKIP";
+    const lines = [
+        `Mode: ${modeName ?? "default"}`,
+        `Build: ${buildCommand || "(unknown)"}`,
+        `Run: ${runCommand}`,
+        "",
+        `${verdict}  ${file}`,
+        "",
+        `Snapshots: ${snapshotSummary.matched} matched, ${snapshotSummary.created} created, ${snapshotSummary.updated} updated, ${snapshotSummary.failed} failed`,
+        "",
+        `Suites: ${stats.passedSuites} passed, ${stats.failedSuites} failed, ${stats.skippedSuites} skipped`,
+        `Tests: ${stats.passedTests} passed, ${stats.failedTests} failed, ${stats.skippedTests} skipped`,
+        `Time: ${formatTime(stats.time)}`,
+    ];
+    const failures = collectReadableFailures(suites, file, []);
+    if (failures.length) {
+        lines.push("", "Failures:");
+        for (const failure of failures) {
+            lines.push(`FAIL  ${failure.title}${failure.where.length ? ` (${failure.where})` : ""}`);
+            if (failure.suitePath.length) {
+                lines.push(`Repro: ${buildSuiteReproCommand(file, failure.suitePath, modeName)}`);
+            }
+            if (failure.message.length)
+                lines.push(`Message: ${failure.message}`);
+            if (failure.left.length)
+                lines.push(`Expected: ${failure.right}`);
+            if (failure.right.length)
+                lines.push(`Received: ${failure.left}`);
+            lines.push("");
+        }
+        if (!lines[lines.length - 1].length)
+            lines.pop();
     }
-    if (!lines[lines.length - 1].length) lines.pop();
-  }
-  const logs = collectReadableLogs(suites);
-  if (logs.length) {
-    lines.push("", "Log:");
-    for (const entry of logs) {
-      lines.push(entry);
+    const logs = collectReadableLogs(suites);
+    if (logs.length) {
+        lines.push("", "Log:");
+        for (const entry of logs) {
+            lines.push(entry);
+        }
     }
-  }
-  return lines.join("\n") + "\n";
+    return lines.join("\n") + "\n";
 }
 function formatInvocation(invocation) {
-  return [invocation.command, ...invocation.args]
-    .map((part) => (/[\s"'\\]/.test(part) ? JSON.stringify(part) : part))
-    .join(" ");
+    return [invocation.command, ...invocation.args]
+        .map((part) => (/[\s"'\\]/.test(part) ? JSON.stringify(part) : part))
+        .join(" ");
 }
 function filterSelectedSuites(suites, selectors, file, modeName) {
-  const annotated = annotateSuitePaths(suites, []);
-  const matches = resolveSuiteSelectionMatches(annotated, selectors, file);
-  const selected = new Set(matches.map((match) => match.resolvedPath));
-  return cloneSelectedSuites(annotated, selected, file, modeName);
+    const annotated = annotateSuitePaths(suites, []);
+    const matches = resolveSuiteSelectionMatches(annotated, selectors, file);
+    const selected = new Set(matches.map((match) => match.resolvedPath));
+    return cloneSelectedSuites(annotated, selected, file, modeName);
 }
 function annotateSuitePaths(suites, pathParts) {
-  return suites.map((suite) => annotateSuiteNode(suite, pathParts));
+    return suites.map((suite) => annotateSuiteNode(suite, pathParts));
 }
 function annotateSuiteNode(suite, pathParts) {
-  const description = String(suite?.description ?? "unknown");
-  const slug = slugifySelectorSegment(description);
-  const nextParts = [...pathParts, slug];
-  const nextSuites = Array.isArray(suite?.suites) ? suite.suites : [];
-  const annotatedSuites = annotateSuitePaths(nextSuites, nextParts);
-  return {
-    ...suite,
-    path: nextParts.join("/"),
-    suites: annotatedSuites,
-  };
+    const description = String(suite?.description ?? "unknown");
+    const slug = slugifySelectorSegment(description);
+    const nextParts = [...pathParts, slug];
+    const nextSuites = Array.isArray(suite?.suites)
+        ? suite.suites
+        : [];
+    const annotatedSuites = annotateSuitePaths(nextSuites, nextParts);
+    return {
+        ...suite,
+        path: nextParts.join("/"),
+        suites: annotatedSuites,
+    };
 }
 function resolveSuiteSelectionMatches(suites, selectors, file) {
-  const matches = [];
-  for (const selector of selectors) {
-    const normalized = selector.trim();
-    if (!normalized.length) continue;
-    if (normalized.includes("/")) {
-      const resolved = resolveExplicitSuitePath(suites, normalized);
-      if (!resolved) {
-        throw new Error(
-          `No suites matched "${selector}" in ${formatSpecDisplayPath(file)}.`,
-        );
-      }
-      matches.push({
-        kind: "path",
-        raw: selector,
-        resolvedPath: resolved.path,
-        depth: resolved.depth,
-      });
-      continue;
+    const matches = [];
+    for (const selector of selectors) {
+        const normalized = selector.trim();
+        if (!normalized.length)
+            continue;
+        if (normalized.includes("/")) {
+            const resolved = resolveExplicitSuitePath(suites, normalized);
+            if (!resolved) {
+                throw new Error(`No suites matched "${selector}" in ${formatSpecDisplayPath(file)}.`);
+            }
+            matches.push({
+                kind: "path",
+                raw: selector,
+                resolvedPath: resolved.path,
+                depth: resolved.depth,
+            });
+            continue;
+        }
+        const resolved = resolveBareSuiteSelector(suites, normalized);
+        if (!resolved) {
+            throw new Error(`No suites matched "${selector}" in ${formatSpecDisplayPath(file)}.`);
+        }
+        matches.push({
+            kind: "bare",
+            raw: selector,
+            resolvedPath: resolved.path,
+            depth: resolved.depth,
+        });
     }
-    const resolved = resolveBareSuiteSelector(suites, normalized);
-    if (!resolved) {
-      throw new Error(
-        `No suites matched "${selector}" in ${formatSpecDisplayPath(file)}.`,
-      );
-    }
-    matches.push({
-      kind: "bare",
-      raw: selector,
-      resolvedPath: resolved.path,
-      depth: resolved.depth,
-    });
-  }
-  return matches;
+    return matches;
 }
 function resolveExplicitSuitePath(suites, selector) {
-  const normalized = selector
-    .split("/")
-    .map((part) => slugifySelectorSegment(part))
-    .filter((part) => part.length)
-    .join("/");
-  if (!normalized.length) return null;
-  let match = null;
-  walkSuites(suites, (suite, depth) => {
-    if (suite.path == normalized) {
-      match = { path: suite.path, depth };
-      return true;
-    }
-    return false;
-  });
-  return match;
+    const normalized = selector
+        .split("/")
+        .map((part) => slugifySelectorSegment(part))
+        .filter((part) => part.length)
+        .join("/");
+    if (!normalized.length)
+        return null;
+    let match = null;
+    walkSuites(suites, (suite, depth) => {
+        if (suite.path == normalized) {
+            match = { path: suite.path, depth };
+            return true;
+        }
+        return false;
+    });
+    return match;
 }
 function resolveBareSuiteSelector(suites, selector) {
-  const slug = slugifySelectorSegment(selector);
-  if (!slug.length) return null;
-  const matches = [];
-  walkSuites(suites, (suite, depth) => {
-    const leaf =
-      String(suite.path ?? "")
-        .split("/")
-        .pop() ?? "";
-    if (leaf == slug) {
-      matches.push({ path: String(suite.path), depth });
+    const slug = slugifySelectorSegment(selector);
+    if (!slug.length)
+        return null;
+    const matches = [];
+    walkSuites(suites, (suite, depth) => {
+        const leaf = String(suite.path ?? "")
+            .split("/")
+            .pop() ?? "";
+        if (leaf == slug) {
+            matches.push({ path: String(suite.path), depth });
+        }
+        return false;
+    });
+    if (!matches.length)
+        return null;
+    matches.sort((a, b) => a.depth - b.depth || a.path.localeCompare(b.path));
+    const shallowest = matches[0];
+    const ambiguous = matches.filter((match) => match.depth == shallowest.depth);
+    if (ambiguous.length > 1) {
+        throw new Error(`Suite selector "${selector}" is ambiguous. Matches: ${ambiguous.map((match) => match.path).join(", ")}`);
     }
-    return false;
-  });
-  if (!matches.length) return null;
-  matches.sort((a, b) => a.depth - b.depth || a.path.localeCompare(b.path));
-  const shallowest = matches[0];
-  const ambiguous = matches.filter((match) => match.depth == shallowest.depth);
-  if (ambiguous.length > 1) {
-    throw new Error(
-      `Suite selector "${selector}" is ambiguous. Matches: ${ambiguous.map((match) => match.path).join(", ")}`,
-    );
-  }
-  return shallowest;
+    return shallowest;
 }
 function walkSuites(suites, visitor, depth = 0) {
-  for (const suite of suites) {
-    if (visitor(suite, depth)) return true;
-    const childSuites = Array.isArray(suite?.suites) ? suite.suites : [];
-    if (walkSuites(childSuites, visitor, depth + 1)) return true;
-  }
-  return false;
+    for (const suite of suites) {
+        if (visitor(suite, depth))
+            return true;
+        const childSuites = Array.isArray(suite?.suites)
+            ? suite.suites
+            : [];
+        if (walkSuites(childSuites, visitor, depth + 1))
+            return true;
+    }
+    return false;
 }
 function cloneSelectedSuites(suites, selected, file, modeName) {
-  const out = [];
-  for (const suite of suites) {
-    const childSuites = Array.isArray(suite.suites) ? suite.suites : [];
-    const selectedChildren = cloneSelectedSuites(
-      childSuites,
-      selected,
-      file,
-      modeName,
-    );
-    const keep =
-      selected.has(String(suite.path ?? "")) || selectedChildren.length > 0;
-    if (!keep) continue;
-    out.push({
-      ...suite,
-      file,
-      modeName,
-      suites: selectedChildren,
-    });
-  }
-  return out;
+    const out = [];
+    for (const suite of suites) {
+        const childSuites = Array.isArray(suite.suites)
+            ? suite.suites
+            : [];
+        const selectedChildren = cloneSelectedSuites(childSuites, selected, file, modeName);
+        const keep = selected.has(String(suite.path ?? "")) || selectedChildren.length > 0;
+        if (!keep)
+            continue;
+        out.push({
+            ...suite,
+            file,
+            modeName,
+            suites: selectedChildren,
+        });
+    }
+    return out;
 }
 function slugifySelectorSegment(value) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+    return value
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
 }
 function buildSuiteReproCommand(file, suitePath, modeName) {
-  const modeArg =
-    modeName && modeName != "default" ? ` --mode ${modeName}` : "";
-  return `ast run ${file}${modeArg} --suite ${suitePath}`;
+    const modeArg = modeName && modeName != "default" ? ` --mode ${modeName}` : "";
+    return `ast run ${file}${modeArg} --suite ${suitePath}`;
 }
 function collectReadableFailures(suites, file, pathParts) {
-  const out = [];
-  for (const suite of suites) {
-    const suiteAny = suite;
-    const nextPath = [...pathParts, String(suiteAny.description ?? "unknown")];
-    const tests = Array.isArray(suiteAny.tests) ? suiteAny.tests : [];
-    for (let i = 0; i < tests.length; i++) {
-      const test = tests[i];
-      if (String(test.verdict ?? "none") != "fail") continue;
-      out.push({
-        title: `${nextPath.join(" > ")}#${i + 1}`,
-        where: String(test.location ?? "").length
-          ? `${formatSpecDisplayPath(file)}:${String(test.location ?? "")}`
-          : formatSpecDisplayPath(file),
-        message: String(test.message ?? ""),
-        left: JSON.stringify(test.left ?? ""),
-        right: JSON.stringify(test.right ?? ""),
-        suitePath: String(suiteAny.path ?? ""),
-      });
+    const out = [];
+    for (const suite of suites) {
+        const suiteAny = suite;
+        const nextPath = [...pathParts, String(suiteAny.description ?? "unknown")];
+        const tests = Array.isArray(suiteAny.tests)
+            ? suiteAny.tests
+            : [];
+        for (let i = 0; i < tests.length; i++) {
+            const test = tests[i];
+            if (String(test.verdict ?? "none") != "fail")
+                continue;
+            out.push({
+                title: `${nextPath.join(" > ")}#${i + 1}`,
+                where: String(test.location ?? "").length
+                    ? `${formatSpecDisplayPath(file)}:${String(test.location ?? "")}`
+                    : formatSpecDisplayPath(file),
+                message: String(test.message ?? ""),
+                left: JSON.stringify(test.left ?? ""),
+                right: JSON.stringify(test.right ?? ""),
+                suitePath: String(suiteAny.path ?? ""),
+            });
+        }
+        const childSuites = Array.isArray(suiteAny.suites)
+            ? suiteAny.suites
+            : [];
+        out.push(...collectReadableFailures(childSuites, file, nextPath));
     }
-    const childSuites = Array.isArray(suiteAny.suites) ? suiteAny.suites : [];
-    out.push(...collectReadableFailures(childSuites, file, nextPath));
-  }
-  return out;
+    return out;
 }
 function collectReadableLogs(suites) {
-  const out = [];
-  for (const suite of suites) {
-    const suiteAny = suite;
-    const logs = Array.isArray(suiteAny.logs) ? suiteAny.logs : [];
-    for (const log of logs) {
-      const value = String(log.value ?? log.message ?? "");
-      if (value.length) out.push(value);
+    const out = [];
+    for (const suite of suites) {
+        const suiteAny = suite;
+        const logs = Array.isArray(suiteAny.logs)
+            ? suiteAny.logs
+            : [];
+        for (const log of logs) {
+            const value = String(log.value ?? log.message ?? "");
+            if (value.length)
+                out.push(value);
+        }
+        const childSuites = Array.isArray(suiteAny.suites)
+            ? suiteAny.suites
+            : [];
+        out.push(...collectReadableLogs(childSuites));
     }
-    const childSuites = Array.isArray(suiteAny.suites) ? suiteAny.suites : [];
-    out.push(...collectReadableLogs(childSuites));
-  }
-  return out;
+    return out;
 }
-export async function run(
-  flags = {},
-  configPath = DEFAULT_CONFIG_PATH,
-  selectors = [],
-  shouldExit = true,
-  options = {},
-) {
-  const resolvedConfigPath = configPath ?? DEFAULT_CONFIG_PATH;
-  const reports = [];
-  const loadedConfig = loadConfig(resolvedConfigPath);
-  const mode = applyMode(loadedConfig, options.modeName);
-  const config = mode.config;
-  const inputPatterns = resolveInputPatterns(config.input, selectors);
-  const inputFiles = (await glob(inputPatterns)).sort((a, b) =>
-    a.localeCompare(b),
-  );
-  const duplicateSpecBasenames = await resolveDuplicateSpecBasenames(
-    config.input,
-  );
-  const snapshotEnabled = flags.snapshot !== false;
-  const createSnapshots = Boolean(flags.createSnapshots);
-  const overwriteSnapshots = Boolean(flags.overwriteSnapshots);
-  const cleanOutput = Boolean(flags.clean);
-  const showCoverage = Boolean(flags.showCoverage);
-  const coverage = resolveCoverageOptions(config.coverage);
-  if (flags.coverage != undefined) {
-    coverage.enabled = Boolean(flags.coverage);
-  }
-  const coverageEnabled = coverage.enabled;
-  const coverageDir = config.coverageDir ?? "./.as-test/coverage";
-  const runtimeCommand = resolveRuntimeCommand(
-    getConfiguredRuntimeCmd(config),
-    config.buildOptions.target,
-  );
-  const reporterSelection = resolveReporterSelection(
-    options.reporterPath,
-    config.runOptions.reporter,
-  );
-  const reporterKind = options.reporterKind ?? reporterSelection.kind;
-  const reporter =
-    options.reporter ??
-    (await loadReporter(reporterSelection, resolvedConfigPath, {
-      stdout: process.stdout,
-      stderr: process.stderr,
-    }));
-  const runtimeTokens = tokenizeCommand(runtimeCommand);
-  if (!runtimeTokens.length) {
-    throw new Error("runtime command is empty");
-  }
-  const command = runtimeTokens[0];
-  const execPath = getExec(command);
-  if (!execPath) {
-    const message = `${chalk.bgRed(" ERROR ")}${chalk.dim(":")} could not locate ${command} in PATH variable!`;
+export async function run(flags = {}, configPath = DEFAULT_CONFIG_PATH, selectors = [], shouldExit = true, options = {}) {
+    const resolvedConfigPath = configPath ?? DEFAULT_CONFIG_PATH;
+    const reports = [];
+    const loadedConfig = loadConfig(resolvedConfigPath);
+    const mode = applyMode(loadedConfig, options.modeName);
+    const config = mode.config;
+    const inputPatterns = resolveInputPatterns(config.input, selectors);
+    const inputFiles = (await glob(inputPatterns)).sort((a, b) => a.localeCompare(b));
+    const duplicateSpecBasenames = await resolveDuplicateSpecBasenames(config.input);
+    const snapshotEnabled = flags.snapshot !== false;
+    const createSnapshots = Boolean(flags.createSnapshots);
+    const overwriteSnapshots = Boolean(flags.overwriteSnapshots);
+    const cleanOutput = Boolean(flags.clean);
+    const showCoverage = Boolean(flags.showCoverage);
+    const coverage = resolveCoverageOptions(config.coverage);
+    if (flags.coverage != undefined) {
+        coverage.enabled = Boolean(flags.coverage);
+    }
+    const coverageEnabled = coverage.enabled;
+    const coverageDir = config.coverageDir ?? "./.as-test/coverage";
+    const runtimeCommand = resolveRuntimeCommand(getConfiguredRuntimeCmd(config), config.buildOptions.target);
+    const reporterSelection = resolveReporterSelection(options.reporterPath, config.runOptions.reporter);
+    const reporterKind = options.reporterKind ?? reporterSelection.kind;
+    const reporter = options.reporter ??
+        (await loadReporter(reporterSelection, resolvedConfigPath, {
+            stdout: process.stdout,
+            stderr: process.stderr,
+        }));
+    const runtimeTokens = tokenizeCommand(runtimeCommand);
+    if (!runtimeTokens.length) {
+        throw new Error("runtime command is empty");
+    }
+    const command = runtimeTokens[0];
+    const execPath = getExec(command);
+    if (!execPath) {
+        const message = `${chalk.bgRed(" ERROR ")}${chalk.dim(":")} could not locate ${command} in PATH variable!`;
+        if (shouldExit) {
+            console.log(message);
+            process.exit(1);
+        }
+        throw new Error(message);
+    }
+    if (options.emitRunStart !== false) {
+        reporter.onRunStart?.({
+            runtimeName: runtimeNameFromCommand(runtimeCommand),
+            clean: cleanOutput,
+            verbose: Boolean(flags.verbose),
+            snapshotEnabled,
+            createSnapshots,
+        });
+    }
+    if (showCoverage && !coverageEnabled) {
+        process.stderr.write(chalk.dim("coverage point output requested with --show-coverage, but coverage is disabled\n"));
+    }
+    const snapshotSummary = {
+        matched: 0,
+        created: 0,
+        updated: 0,
+        failed: 0,
+    };
+    let buildTime = 0;
+    const ownedWebSession = options.webSession === undefined &&
+        shouldUsePersistentHeadfulWebSession(config.buildOptions.target, runtimeCommand)
+        ? await PersistentWebSessionHost.start(false)
+        : null;
+    const webSession = options.webSession ?? ownedWebSession;
+    try {
+        for (let i = 0; i < inputFiles.length; i++) {
+            const file = inputFiles[i];
+            const outFile = path.join(config.outDir, resolveArtifactFileName(file, config.buildOptions.target, options.modeName, duplicateSpecBasenames));
+            if (!existsSync(outFile)) {
+                const buildStartedAt = Date.now();
+                await build(resolvedConfigPath, [file], options.modeName, { coverage: flags.coverage }, {}, loadedConfig);
+                buildTime += Date.now() - buildStartedAt;
+            }
+            const fileBase = file
+                .slice(file.lastIndexOf("/") + 1)
+                .replace(".ts", "")
+                .replace(".spec", "");
+            const fileToken = outFile;
+            const runtimeTargetEnv = resolveRuntimeTargetEnv(config.buildOptions.target, outFile);
+            const invocation = {
+                command: execPath,
+                args: runtimeTokens
+                    .slice(1)
+                    .map((token) => token.replace(/<name>/g, fileBase).replace(/<file>/g, fileToken)),
+            };
+            const runCommandForLog = formatInvocation(invocation);
+            const snapshotStore = new SnapshotStore(file, config.snapshotDir, duplicateSpecBasenames);
+            let report;
+            try {
+                const runtimeEnv = {
+                    ...mode.env,
+                    ...config.runOptions.env,
+                    ...runtimeTargetEnv,
+                    ...(process.env.BROWSER?.trim()
+                        ? { BROWSER: process.env.BROWSER.trim() }
+                        : config.runOptions.runtime.browser.trim()
+                            ? { BROWSER: config.runOptions.runtime.browser.trim() }
+                            : {}),
+                };
+                report = webSession
+                    ? await runWebSessionProcess(webSession, file, config.fuzz.crashDir, options.modeName, snapshotStore, snapshotEnabled, createSnapshots, overwriteSnapshots, reporter, reporterKind == "tap", runtimeEnv)
+                    : await runProcess(invocation, file, config.fuzz.crashDir, options.modeName, snapshotStore, snapshotEnabled, createSnapshots, overwriteSnapshots, reporter, reporterKind == "tap", runtimeEnv);
+            }
+            catch (error) {
+                const modeLabel = options.modeName ?? "default";
+                const details = error instanceof Error ? error.message : String(error);
+                throw new Error(`Failed to run ${formatSpecDisplayPath(file)} in mode ${modeLabel} with ${details}`);
+            }
+            const normalized = normalizeReport(report);
+            const selectedSuites = options.suiteSelectors?.length
+                ? filterSelectedSuites(normalized.suites, options.suiteSelectors, file, options.modeName ?? "default")
+                : normalized.suites;
+            snapshotStore.flush();
+            snapshotSummary.matched += snapshotStore.matched;
+            snapshotSummary.created += snapshotStore.created;
+            snapshotSummary.updated += snapshotStore.updated;
+            snapshotSummary.failed += snapshotStore.failed;
+            reports.push({
+                file,
+                modeName: options.modeName ?? "default",
+                suites: selectedSuites,
+                coverage: normalized.coverage,
+                runCommand: runCommandForLog,
+                buildCommand: options.buildCommandsByFile?.[file] ?? options.buildCommand ?? "",
+                snapshotSummary: {
+                    matched: snapshotStore.matched,
+                    created: snapshotStore.created,
+                    updated: snapshotStore.updated,
+                    failed: snapshotStore.failed,
+                },
+            });
+        }
+    }
+    finally {
+        await ownedWebSession?.close();
+    }
+    if (config.logs && config.logs != "none") {
+        const logRoot = path.join(process.cwd(), config.logs);
+        if (!existsSync(logRoot)) {
+            mkdirSync(logRoot, { recursive: true });
+        }
+        for (const report of reports) {
+            writeReadableLog(logRoot, report.file, report.suites, options.modeName, options.buildCommandsByFile?.[report.file] ??
+                options.buildCommand ??
+                "", report.runCommand, report.snapshotSummary);
+        }
+    }
+    const stats = collectRunStats(reports);
+    if (options.fileSummaryTotal != undefined) {
+        applyConfiguredFileTotalToStats(stats, options.fileSummaryTotal);
+    }
+    const coverageSummary = collectCoverageSummary(reports, coverageEnabled, showCoverage, coverage);
+    if (coverageEnabled &&
+        coverageDir &&
+        coverageDir != "none" &&
+        coverageSummary.files.length > 0) {
+        const resolvedCoverageDir = path.join(process.cwd(), coverageDir);
+        if (!existsSync(resolvedCoverageDir)) {
+            mkdirSync(resolvedCoverageDir, { recursive: true });
+        }
+        writeFileSync(path.join(resolvedCoverageDir, options.coverageFileName ?? "coverage.log.json"), JSON.stringify(coverageSummary, null, 2));
+    }
+    if (options.emitRunComplete !== false) {
+        const totalModes = Math.max(options.modeSummaryTotal ?? 1, 1);
+        const executedModes = Math.min(Math.max(options.modeSummaryExecuted ?? 1, 1), totalModes);
+        const unexecutedModes = Math.max(0, totalModes - executedModes);
+        const modeFailed = Boolean(stats.failedFiles || snapshotSummary.failed);
+        reporter.onRunComplete?.({
+            clean: cleanOutput,
+            snapshotEnabled,
+            showCoverage,
+            showCoverageAll: Boolean(flags.showCoverageAll),
+            verbose: Boolean(flags.verbose),
+            buildTime,
+            snapshotSummary,
+            coverageSummary,
+            stats,
+            reports,
+            modeSummary: {
+                failed: modeFailed ? 1 : 0,
+                skipped: unexecutedModes + (modeFailed || stats.passedFiles > 0 ? 0 : 1),
+                total: totalModes,
+            },
+        });
+        reporter.flush?.();
+    }
+    const failed = Boolean(stats.failedFiles || snapshotSummary.failed);
     if (shouldExit) {
-      console.log(message);
-      process.exit(1);
+        process.exit(failed ? 1 : 0);
     }
-    throw new Error(message);
-  }
-  if (options.emitRunStart !== false) {
-    reporter.onRunStart?.({
-      runtimeName: runtimeNameFromCommand(runtimeCommand),
-      clean: cleanOutput,
-      verbose: Boolean(flags.verbose),
-      snapshotEnabled,
-      createSnapshots,
-    });
-  }
-  if (showCoverage && !coverageEnabled) {
-    process.stderr.write(
-      chalk.dim(
-        "coverage point output requested with --show-coverage, but coverage is disabled\n",
-      ),
-    );
-  }
-  const snapshotSummary = {
-    matched: 0,
-    created: 0,
-    updated: 0,
-    failed: 0,
-  };
-  let buildTime = 0;
-  const ownedWebSession =
-    options.webSession === undefined &&
-    shouldUsePersistentHeadfulWebSession(
-      config.buildOptions.target,
-      runtimeCommand,
-    )
-      ? await PersistentWebSessionHost.start(false)
-      : null;
-  const webSession = options.webSession ?? ownedWebSession;
-  try {
-    for (let i = 0; i < inputFiles.length; i++) {
-      const file = inputFiles[i];
-      const outFile = path.join(
-        config.outDir,
-        resolveArtifactFileName(
-          file,
-          config.buildOptions.target,
-          options.modeName,
-          duplicateSpecBasenames,
-        ),
-      );
-      if (!existsSync(outFile)) {
-        const buildStartedAt = Date.now();
-        await build(
-          resolvedConfigPath,
-          [file],
-          options.modeName,
-          { coverage: flags.coverage },
-          {},
-          loadedConfig,
-        );
-        buildTime += Date.now() - buildStartedAt;
-      }
-      const fileBase = file
-        .slice(file.lastIndexOf("/") + 1)
-        .replace(".ts", "")
-        .replace(".spec", "");
-      const fileToken = outFile;
-      const runtimeTargetEnv = resolveRuntimeTargetEnv(
-        config.buildOptions.target,
-        outFile,
-      );
-      const invocation = {
-        command: execPath,
-        args: runtimeTokens
-          .slice(1)
-          .map((token) =>
-            token.replace(/<name>/g, fileBase).replace(/<file>/g, fileToken),
-          ),
-      };
-      const runCommandForLog = formatInvocation(invocation);
-      const snapshotStore = new SnapshotStore(
-        file,
-        config.snapshotDir,
-        duplicateSpecBasenames,
-      );
-      let report;
-      try {
-        const runtimeEnv = {
-          ...mode.env,
-          ...config.runOptions.env,
-          ...runtimeTargetEnv,
-          ...(process.env.BROWSER?.trim()
-            ? { BROWSER: process.env.BROWSER.trim() }
-            : config.runOptions.runtime.browser.trim()
-              ? { BROWSER: config.runOptions.runtime.browser.trim() }
-              : {}),
-        };
-        report = webSession
-          ? await runWebSessionProcess(
-              webSession,
-              file,
-              config.fuzz.crashDir,
-              options.modeName,
-              snapshotStore,
-              snapshotEnabled,
-              createSnapshots,
-              overwriteSnapshots,
-              reporter,
-              reporterKind == "tap",
-              runtimeEnv,
-            )
-          : await runProcess(
-              invocation,
-              file,
-              config.fuzz.crashDir,
-              options.modeName,
-              snapshotStore,
-              snapshotEnabled,
-              createSnapshots,
-              overwriteSnapshots,
-              reporter,
-              reporterKind == "tap",
-              runtimeEnv,
-            );
-      } catch (error) {
-        const modeLabel = options.modeName ?? "default";
-        const details = error instanceof Error ? error.message : String(error);
-        throw new Error(
-          `Failed to run ${formatSpecDisplayPath(file)} in mode ${modeLabel} with ${details}`,
-        );
-      }
-      const normalized = normalizeReport(report);
-      const selectedSuites = options.suiteSelectors?.length
-        ? filterSelectedSuites(
-            normalized.suites,
-            options.suiteSelectors,
-            file,
-            options.modeName ?? "default",
-          )
-        : normalized.suites;
-      snapshotStore.flush();
-      snapshotSummary.matched += snapshotStore.matched;
-      snapshotSummary.created += snapshotStore.created;
-      snapshotSummary.updated += snapshotStore.updated;
-      snapshotSummary.failed += snapshotStore.failed;
-      reports.push({
-        file,
-        modeName: options.modeName ?? "default",
-        suites: selectedSuites,
-        coverage: normalized.coverage,
-        runCommand: runCommandForLog,
-        buildCommand:
-          options.buildCommandsByFile?.[file] ?? options.buildCommand ?? "",
-        snapshotSummary: {
-          matched: snapshotStore.matched,
-          created: snapshotStore.created,
-          updated: snapshotStore.updated,
-          failed: snapshotStore.failed,
-        },
-      });
-    }
-  } finally {
-    await ownedWebSession?.close();
-  }
-  if (config.logs && config.logs != "none") {
-    const logRoot = path.join(process.cwd(), config.logs);
-    if (!existsSync(logRoot)) {
-      mkdirSync(logRoot, { recursive: true });
-    }
-    for (const report of reports) {
-      writeReadableLog(
-        logRoot,
-        report.file,
-        report.suites,
-        options.modeName,
-        options.buildCommandsByFile?.[report.file] ??
-          options.buildCommand ??
-          "",
-        report.runCommand,
-        report.snapshotSummary,
-      );
-    }
-  }
-  const stats = collectRunStats(reports);
-  if (options.fileSummaryTotal != undefined) {
-    applyConfiguredFileTotalToStats(stats, options.fileSummaryTotal);
-  }
-  const coverageSummary = collectCoverageSummary(
-    reports,
-    coverageEnabled,
-    showCoverage,
-    coverage,
-  );
-  if (
-    coverageEnabled &&
-    coverageDir &&
-    coverageDir != "none" &&
-    coverageSummary.files.length > 0
-  ) {
-    const resolvedCoverageDir = path.join(process.cwd(), coverageDir);
-    if (!existsSync(resolvedCoverageDir)) {
-      mkdirSync(resolvedCoverageDir, { recursive: true });
-    }
-    writeFileSync(
-      path.join(
-        resolvedCoverageDir,
-        options.coverageFileName ?? "coverage.log.json",
-      ),
-      JSON.stringify(coverageSummary, null, 2),
-    );
-  }
-  if (options.emitRunComplete !== false) {
-    const totalModes = Math.max(options.modeSummaryTotal ?? 1, 1);
-    const executedModes = Math.min(
-      Math.max(options.modeSummaryExecuted ?? 1, 1),
-      totalModes,
-    );
-    const unexecutedModes = Math.max(0, totalModes - executedModes);
-    const modeFailed = Boolean(stats.failedFiles || snapshotSummary.failed);
-    reporter.onRunComplete?.({
-      clean: cleanOutput,
-      snapshotEnabled,
-      showCoverage,
-      showCoverageAll: Boolean(flags.showCoverageAll),
-      verbose: Boolean(flags.verbose),
-      buildTime,
-      snapshotSummary,
-      coverageSummary,
-      stats,
-      reports,
-      modeSummary: {
-        failed: modeFailed ? 1 : 0,
-        skipped:
-          unexecutedModes + (modeFailed || stats.passedFiles > 0 ? 0 : 1),
-        total: totalModes,
-      },
-    });
-    reporter.flush?.();
-  }
-  const failed = Boolean(stats.failedFiles || snapshotSummary.failed);
-  if (shouldExit) {
-    process.exit(failed ? 1 : 0);
-  }
-  return {
-    failed,
-    buildTime,
-    stats,
-    snapshotSummary,
-    coverageSummary,
-    reports,
-  };
+    return {
+        failed,
+        buildTime,
+        stats,
+        snapshotSummary,
+        coverageSummary,
+        reports,
+    };
 }
 function applyConfiguredFileTotalToStats(stats, fileSummaryTotal) {
-  const total = Math.max(fileSummaryTotal, 0);
-  const executed = stats.failedFiles + stats.passedFiles + stats.skippedFiles;
-  const unexecuted = Math.max(0, total - executed);
-  stats.skippedFiles += unexecuted;
+    const total = Math.max(fileSummaryTotal, 0);
+    const executed = stats.failedFiles + stats.passedFiles + stats.skippedFiles;
+    const unexecuted = Math.max(0, total - executed);
+    stats.skippedFiles += unexecuted;
 }
 function resolveRuntimeCommand(runtimeRun, target, emitWarnings = true) {
-  const targetDefaultAligned = alignDefaultRuntimeToTarget(runtimeRun, target);
-  const normalized = resolveLegacyRuntime(
-    targetDefaultAligned,
-    target,
-    emitWarnings,
-  );
-  return fallbackToDefaultRuntime(normalized, target, emitWarnings);
+    const targetDefaultAligned = alignDefaultRuntimeToTarget(runtimeRun, target);
+    const normalized = resolveLegacyRuntime(targetDefaultAligned, target, emitWarnings);
+    return fallbackToDefaultRuntime(normalized, target, emitWarnings);
 }
 function shouldUsePersistentHeadfulWebSession(target, runtimeCommand) {
-  return target == "web" && !runtimeCommand.includes("--headless");
+    return target == "web" && !runtimeCommand.includes("--headless");
 }
 function alignDefaultRuntimeToTarget(runtimeRun, target) {
-  const fallback = getDefaultRuntimeFallback(target);
-  if (!fallback) return runtimeRun;
-  const trimmed = runtimeRun.trim();
-  if (!trimmed.length || trimmed == fallback.command) return runtimeRun;
-  const defaults = ["wasi", "bindings", "web"]
-    .map((kind) => getDefaultRuntimeFallback(kind))
-    .filter((item) => item != null);
-  for (const entry of defaults) {
-    if (entry.command != fallback.command && entry.command == trimmed) {
-      return fallback.command;
+    const fallback = getDefaultRuntimeFallback(target);
+    if (!fallback)
+        return runtimeRun;
+    const trimmed = runtimeRun.trim();
+    if (!trimmed.length || trimmed == fallback.command)
+        return runtimeRun;
+    const defaults = ["wasi", "bindings", "web"]
+        .map((kind) => getDefaultRuntimeFallback(kind))
+        .filter((item) => item != null);
+    for (const entry of defaults) {
+        if (entry.command != fallback.command && entry.command == trimmed) {
+            return fallback.command;
+        }
     }
-  }
-  return runtimeRun;
+    return runtimeRun;
 }
 function resolveLegacyRuntime(runtimeRun, target, emitWarnings) {
-  if (target == "wasi") {
-    const preferredPath = "./.as-test/runners/default.wasi.js";
-    const legacyPaths = ["./bin/wasi-run.js", "./.as-test/wasi/wasi.run.js"];
-    if (runtimeRun.includes(preferredPath)) {
-      ensureDefaultRuntimeRunner("wasi", emitWarnings);
-      return runtimeRun;
-    }
-    for (const legacyPath of legacyPaths) {
-      if (!runtimeRun.includes(legacyPath)) continue;
-      const resolvedLegacyPath = path.join(process.cwd(), legacyPath);
-      if (existsSync(resolvedLegacyPath)) return runtimeRun;
-      ensureDefaultRuntimeRunner("wasi", emitWarnings);
-      if (emitWarnings) {
-        process.stderr.write(
-          chalk.dim(
-            `legacy WASI runtime path detected (${legacyPath}); using ${preferredPath}\n`,
-          ),
-        );
-      }
-      return runtimeRun.replace(legacyPath, preferredPath);
-    }
-    return runtimeRun;
-  }
-  if (target == "bindings") {
-    const preferredPath = "./.as-test/runners/default.bindings.js";
-    const legacyPath = "./.as-test/runners/default.run.js";
-    if (runtimeRun.includes(preferredPath)) {
-      ensureDefaultRuntimeRunner("bindings", emitWarnings);
-      return runtimeRun;
-    }
-    if (runtimeRun.includes(legacyPath)) {
-      const resolvedLegacyPath = path.join(process.cwd(), legacyPath);
-      if (existsSync(resolvedLegacyPath)) {
-        if (emitWarnings) {
-          process.stderr.write(
-            chalk.dim(
-              `deprecated runtime script (${legacyPath}) detected; prefer ${preferredPath}\n`,
-            ),
-          );
+    if (target == "wasi") {
+        const preferredPath = "./.as-test/runners/default.wasi.js";
+        const legacyPaths = ["./bin/wasi-run.js", "./.as-test/wasi/wasi.run.js"];
+        if (runtimeRun.includes(preferredPath)) {
+            ensureDefaultRuntimeRunner("wasi", emitWarnings);
+            return runtimeRun;
+        }
+        for (const legacyPath of legacyPaths) {
+            if (!runtimeRun.includes(legacyPath))
+                continue;
+            const resolvedLegacyPath = path.join(process.cwd(), legacyPath);
+            if (existsSync(resolvedLegacyPath))
+                return runtimeRun;
+            ensureDefaultRuntimeRunner("wasi", emitWarnings);
+            if (emitWarnings) {
+                process.stderr.write(chalk.dim(`legacy WASI runtime path detected (${legacyPath}); using ${preferredPath}\n`));
+            }
+            return runtimeRun.replace(legacyPath, preferredPath);
         }
         return runtimeRun;
-      }
-      ensureDefaultRuntimeRunner("bindings", emitWarnings);
-      if (emitWarnings) {
-        process.stderr.write(
-          chalk.dim(
-            `legacy bindings runtime path detected (${legacyPath}); using ${preferredPath}\n`,
-          ),
-        );
-      }
-      return runtimeRun.replace(legacyPath, preferredPath);
     }
-  }
-  if (target == "web") {
-    const preferredPath = "./.as-test/runners/default.web.js";
-    if (runtimeRun.includes(preferredPath)) {
-      ensureDefaultRuntimeRunner("web", emitWarnings);
+    if (target == "bindings") {
+        const preferredPath = "./.as-test/runners/default.bindings.js";
+        const legacyPath = "./.as-test/runners/default.run.js";
+        if (runtimeRun.includes(preferredPath)) {
+            ensureDefaultRuntimeRunner("bindings", emitWarnings);
+            return runtimeRun;
+        }
+        if (runtimeRun.includes(legacyPath)) {
+            const resolvedLegacyPath = path.join(process.cwd(), legacyPath);
+            if (existsSync(resolvedLegacyPath)) {
+                if (emitWarnings) {
+                    process.stderr.write(chalk.dim(`deprecated runtime script (${legacyPath}) detected; prefer ${preferredPath}\n`));
+                }
+                return runtimeRun;
+            }
+            ensureDefaultRuntimeRunner("bindings", emitWarnings);
+            if (emitWarnings) {
+                process.stderr.write(chalk.dim(`legacy bindings runtime path detected (${legacyPath}); using ${preferredPath}\n`));
+            }
+            return runtimeRun.replace(legacyPath, preferredPath);
+        }
     }
-  }
-  return runtimeRun;
+    if (target == "web") {
+        const preferredPath = "./.as-test/runners/default.web.js";
+        if (runtimeRun.includes(preferredPath)) {
+            ensureDefaultRuntimeRunner("web", emitWarnings);
+        }
+    }
+    return runtimeRun;
 }
 function fallbackToDefaultRuntime(runtimeRun, target, emitWarnings) {
-  const scriptPath = extractRuntimeScriptPath(runtimeRun);
-  if (!scriptPath) return runtimeRun;
-  const resolvedScriptPath = path.isAbsolute(scriptPath)
-    ? scriptPath
-    : path.join(process.cwd(), scriptPath);
-  if (existsSync(resolvedScriptPath)) return runtimeRun;
-  const fallback = ensureDefaultRuntimeRunner(target, emitWarnings);
-  if (!fallback) return runtimeRun;
-  const resolvedFallbackPath = path.join(process.cwd(), fallback.scriptPath);
-  if (
-    resolvedScriptPath == resolvedFallbackPath ||
-    scriptPath == fallback.scriptPath
-  ) {
-    return runtimeRun;
-  }
-  if (emitWarnings) {
-    process.stderr.write(
-      chalk.dim(
-        `runtime script not found (${scriptPath}); using ${fallback.scriptPath}\n`,
-      ),
-    );
-  }
-  return fallback.command;
+    const scriptPath = extractRuntimeScriptPath(runtimeRun);
+    if (!scriptPath)
+        return runtimeRun;
+    const resolvedScriptPath = path.isAbsolute(scriptPath)
+        ? scriptPath
+        : path.join(process.cwd(), scriptPath);
+    if (existsSync(resolvedScriptPath))
+        return runtimeRun;
+    const fallback = ensureDefaultRuntimeRunner(target, emitWarnings);
+    if (!fallback)
+        return runtimeRun;
+    const resolvedFallbackPath = path.join(process.cwd(), fallback.scriptPath);
+    if (resolvedScriptPath == resolvedFallbackPath ||
+        scriptPath == fallback.scriptPath) {
+        return runtimeRun;
+    }
+    if (emitWarnings) {
+        process.stderr.write(chalk.dim(`runtime script not found (${scriptPath}); using ${fallback.scriptPath}\n`));
+    }
+    return fallback.command;
 }
 function getDefaultRuntimeFallback(target) {
-  if (target == "wasi") {
-    return {
-      command: "node ./.as-test/runners/default.wasi.js",
-      scriptPath: "./.as-test/runners/default.wasi.js",
-    };
-  }
-  if (target == "bindings") {
-    return {
-      command: "node ./.as-test/runners/default.bindings.js",
-      scriptPath: "./.as-test/runners/default.bindings.js",
-    };
-  }
-  if (target == "web") {
-    return {
-      command: "node ./.as-test/runners/default.web.js",
-      scriptPath: "./.as-test/runners/default.web.js",
-    };
-  }
-  return null;
+    if (target == "wasi") {
+        return {
+            command: "node ./.as-test/runners/default.wasi.js",
+            scriptPath: "./.as-test/runners/default.wasi.js",
+        };
+    }
+    if (target == "bindings") {
+        return {
+            command: "node ./.as-test/runners/default.bindings.js",
+            scriptPath: "./.as-test/runners/default.bindings.js",
+        };
+    }
+    if (target == "web") {
+        return {
+            command: "node ./.as-test/runners/default.web.js",
+            scriptPath: "./.as-test/runners/default.web.js",
+        };
+    }
+    return null;
 }
 function ensureDefaultRuntimeRunner(target, emitWarnings) {
-  const fallback = getDefaultRuntimeFallback(target);
-  if (!fallback) return null;
-  const resolvedScriptPath = path.join(process.cwd(), fallback.scriptPath);
-  if (existsSync(resolvedScriptPath)) {
+    const fallback = getDefaultRuntimeFallback(target);
+    if (!fallback)
+        return null;
+    const resolvedScriptPath = path.join(process.cwd(), fallback.scriptPath);
+    if (existsSync(resolvedScriptPath)) {
+        return fallback;
+    }
+    const source = getDefaultRuntimeRunnerSource(target);
+    if (!source)
+        return fallback;
+    if (!existsSync(path.dirname(resolvedScriptPath))) {
+        mkdirSync(path.dirname(resolvedScriptPath), { recursive: true });
+    }
+    writeFileSync(resolvedScriptPath, source);
+    if (emitWarnings) {
+        process.stderr.write(chalk.dim(`runtime script missing; created ${fallback.scriptPath}\n`));
+    }
     return fallback;
-  }
-  const source = getDefaultRuntimeRunnerSource(target);
-  if (!source) return fallback;
-  if (!existsSync(path.dirname(resolvedScriptPath))) {
-    mkdirSync(path.dirname(resolvedScriptPath), { recursive: true });
-  }
-  writeFileSync(resolvedScriptPath, source);
-  if (emitWarnings) {
-    process.stderr.write(
-      chalk.dim(`runtime script missing; created ${fallback.scriptPath}\n`),
-    );
-  }
-  return fallback;
 }
 function getDefaultRuntimeRunnerSource(target) {
-  if (target == "wasi") {
-    return `import { instantiate } from "as-test/lib";
+    if (target == "wasi") {
+        return `import { instantiate } from "as-test/lib";
 
 const imports = {};
 
@@ -1070,9 +916,9 @@ instantiate(imports)
     throw new Error("Failed to run WASI module: " + String(error));
   });
 `;
-  }
-  if (target == "bindings") {
-    return `import { instantiate } from "as-test/lib";
+    }
+    if (target == "bindings") {
+        return `import { instantiate } from "as-test/lib";
 
 const imports = {};
 
@@ -1085,1853 +931,1676 @@ instantiate(imports)
     throw new Error("Failed to run bindings module: " + String(error));
   });
 `;
-  }
-  if (target == "web") {
-    return buildWebRunnerSource();
-  }
-  return null;
+    }
+    if (target == "web") {
+        return buildWebRunnerSource();
+    }
+    return null;
 }
-function resolveArtifactFileName(
-  file,
-  target,
-  modeName,
-  duplicateSpecBasenames = new Set(),
-) {
-  const base = path
-    .basename(file)
-    .replace(/\.spec\.ts$/, "")
-    .replace(/\.ts$/, "");
-  const legacy = !modeName
-    ? `${path.basename(file).replace(".ts", ".wasm")}`
-    : `${base}.${modeName}.${target}.wasm`;
-  if (!duplicateSpecBasenames.has(path.basename(file))) {
-    return legacy;
-  }
-  const disambiguator = resolveDisambiguator(file, duplicateSpecBasenames);
-  if (!disambiguator.length) {
-    return legacy;
-  }
-  const ext = path.extname(legacy);
-  const stem = ext.length ? legacy.slice(0, -ext.length) : legacy;
-  return `${stem}.${disambiguator}${ext}`;
+function resolveArtifactFileName(file, target, modeName, duplicateSpecBasenames = new Set()) {
+    const base = path
+        .basename(file)
+        .replace(/\.spec\.ts$/, "")
+        .replace(/\.ts$/, "");
+    const legacy = !modeName
+        ? `${path.basename(file).replace(".ts", ".wasm")}`
+        : `${base}.${modeName}.${target}.wasm`;
+    if (!duplicateSpecBasenames.has(path.basename(file))) {
+        return legacy;
+    }
+    const disambiguator = resolveDisambiguator(file, duplicateSpecBasenames);
+    if (!disambiguator.length) {
+        return legacy;
+    }
+    const ext = path.extname(legacy);
+    const stem = ext.length ? legacy.slice(0, -ext.length) : legacy;
+    return `${stem}.${disambiguator}${ext}`;
 }
 async function resolveDuplicateSpecBasenames(configured) {
-  const patterns = Array.isArray(configured) ? configured : [configured];
-  const files = await glob(patterns);
-  const counts = new Map();
-  for (const file of files) {
-    const base = path.basename(file);
-    counts.set(base, (counts.get(base) ?? 0) + 1);
-  }
-  const duplicates = new Set();
-  for (const [base, count] of counts) {
-    if (count > 1) duplicates.add(base);
-  }
-  return duplicates;
+    const patterns = Array.isArray(configured) ? configured : [configured];
+    const files = await glob(patterns);
+    const counts = new Map();
+    for (const file of files) {
+        const base = path.basename(file);
+        counts.set(base, (counts.get(base) ?? 0) + 1);
+    }
+    const duplicates = new Set();
+    for (const [base, count] of counts) {
+        if (count > 1)
+            duplicates.add(base);
+    }
+    return duplicates;
 }
 function resolveDisambiguator(file, duplicateSpecBasenames) {
-  if (!duplicateSpecBasenames.has(path.basename(file))) return "";
-  const relDir = path.dirname(path.relative(process.cwd(), file));
-  if (!relDir.length || relDir == ".") return "";
-  return relDir
-    .replace(/[\\/]+/g, "__")
-    .replace(/[^A-Za-z0-9._-]/g, "_")
-    .replace(/^_+|_+$/g, "");
+    if (!duplicateSpecBasenames.has(path.basename(file)))
+        return "";
+    const relDir = path.dirname(path.relative(process.cwd(), file));
+    if (!relDir.length || relDir == ".")
+        return "";
+    return relDir
+        .replace(/[\\/]+/g, "__")
+        .replace(/[^A-Za-z0-9._-]/g, "_")
+        .replace(/^_+|_+$/g, "");
 }
 function resolveRuntimeTargetEnv(target, wasmPath) {
-  if (target == "bindings") {
-    return resolveBindingsRuntimeEnv(wasmPath);
-  }
-  if (target == "web") {
-    return resolveWebRuntimeEnv(wasmPath);
-  }
-  if (target == "wasi") {
-    return {
-      AS_TEST_RUNTIME_TARGET: "wasi",
-      AS_TEST_WASM_PATH: wasmPath,
-    };
-  }
-  return {};
+    if (target == "bindings") {
+        return resolveBindingsRuntimeEnv(wasmPath);
+    }
+    if (target == "web") {
+        return resolveWebRuntimeEnv(wasmPath);
+    }
+    if (target == "wasi") {
+        return {
+            AS_TEST_RUNTIME_TARGET: "wasi",
+            AS_TEST_WASM_PATH: wasmPath,
+        };
+    }
+    return {};
 }
 function resolveBindingsRuntimeEnv(wasmPath) {
-  const helperPath = wasmPath.replace(/\.wasm$/, ".js");
-  const kind = detectBindingsKind(wasmPath, helperPath);
-  const env = {
-    AS_TEST_RUNTIME_TARGET: "bindings",
-    AS_TEST_WASM_PATH: wasmPath,
-    AS_TEST_BINDINGS_KIND: kind,
-  };
-  if (kind != "none") {
-    env.AS_TEST_HELPER_PATH = helperPath;
-  }
-  return env;
+    const helperPath = wasmPath.replace(/\.wasm$/, ".js");
+    const kind = detectBindingsKind(wasmPath, helperPath);
+    const env = {
+        AS_TEST_RUNTIME_TARGET: "bindings",
+        AS_TEST_WASM_PATH: wasmPath,
+        AS_TEST_BINDINGS_KIND: kind,
+    };
+    if (kind != "none") {
+        env.AS_TEST_HELPER_PATH = helperPath;
+    }
+    return env;
 }
 function resolveWebRuntimeEnv(wasmPath) {
-  const env = resolveBindingsRuntimeEnv(wasmPath);
-  env.AS_TEST_RUNTIME_TARGET = "web";
-  return env;
+    const env = resolveBindingsRuntimeEnv(wasmPath);
+    env.AS_TEST_RUNTIME_TARGET = "web";
+    return env;
 }
 function detectBindingsKind(wasmPath, helperPath) {
-  if (!existsSync(wasmPath)) {
-    throw new Error(`bindings artifact not found: ${wasmPath}`);
-  }
-  if (!existsSync(helperPath)) {
-    return "none";
-  }
-  const source = readFileSync(helperPath, "utf8");
-  if (/\bexport\s+(async\s+)?function\s+instantiate\b/.test(source)) {
-    return "raw";
-  }
-  if (
-    /\bexport\s+const\b/.test(source) &&
-    /new URL\([^)]*\.wasm["']?,\s*import\.meta\.url\)/.test(source)
-  ) {
-    return "esm";
-  }
-  throw new Error(
-    `could not detect bindings kind for ${helperPath}; expected raw or esm helper output`,
-  );
+    if (!existsSync(wasmPath)) {
+        throw new Error(`bindings artifact not found: ${wasmPath}`);
+    }
+    if (!existsSync(helperPath)) {
+        return "none";
+    }
+    const source = readFileSync(helperPath, "utf8");
+    if (/\bexport\s+(async\s+)?function\s+instantiate\b/.test(source)) {
+        return "raw";
+    }
+    if (/\bexport\s+const\b/.test(source) &&
+        /new URL\([^)]*\.wasm["']?,\s*import\.meta\.url\)/.test(source)) {
+        return "esm";
+    }
+    throw new Error(`could not detect bindings kind for ${helperPath}; expected raw or esm helper output`);
 }
 function extractRuntimeScriptPath(runtimeRun) {
-  const tokens = runtimeRun
-    .trim()
-    .split(/\s+/)
-    .filter((token) => token.length > 0);
-  if (tokens.length < 2) return null;
-  const execToken = path.basename(tokens[0]).toLowerCase();
-  if (!isScriptHostRuntime(execToken)) return null;
-  for (let i = 1; i < tokens.length; i++) {
-    const token = tokens[i];
-    if (token == "--") {
-      const next = tokens[i + 1];
-      if (next && isLikelyRuntimeScriptPath(next)) return next;
-      return null;
+    const tokens = runtimeRun
+        .trim()
+        .split(/\s+/)
+        .filter((token) => token.length > 0);
+    if (tokens.length < 2)
+        return null;
+    const execToken = path.basename(tokens[0]).toLowerCase();
+    if (!isScriptHostRuntime(execToken))
+        return null;
+    for (let i = 1; i < tokens.length; i++) {
+        const token = tokens[i];
+        if (token == "--") {
+            const next = tokens[i + 1];
+            if (next && isLikelyRuntimeScriptPath(next))
+                return next;
+            return null;
+        }
+        if (token.startsWith("-"))
+            continue;
+        if (isLikelyRuntimeScriptPath(token))
+            return token;
+        return null;
     }
-    if (token.startsWith("-")) continue;
-    if (isLikelyRuntimeScriptPath(token)) return token;
     return null;
-  }
-  return null;
 }
 function isScriptHostRuntime(execToken) {
-  return (
-    execToken == "node" ||
-    execToken == "node.exe" ||
-    execToken == "node.cmd" ||
-    execToken == "bun" ||
-    execToken == "bun.exe" ||
-    execToken == "bun.cmd" ||
-    execToken == "deno" ||
-    execToken == "deno.exe" ||
-    execToken == "deno.cmd" ||
-    execToken == "tsx" ||
-    execToken == "tsx.cmd" ||
-    execToken == "ts-node" ||
-    execToken == "ts-node.cmd"
-  );
+    return (execToken == "node" ||
+        execToken == "node.exe" ||
+        execToken == "node.cmd" ||
+        execToken == "bun" ||
+        execToken == "bun.exe" ||
+        execToken == "bun.cmd" ||
+        execToken == "deno" ||
+        execToken == "deno.exe" ||
+        execToken == "deno.cmd" ||
+        execToken == "tsx" ||
+        execToken == "tsx.cmd" ||
+        execToken == "ts-node" ||
+        execToken == "ts-node.cmd");
 }
 function isLikelyRuntimeScriptPath(token) {
-  if (!token.length) return false;
-  if (token == "<file>" || token == "<name>") return false;
-  if (token.includes("://")) return false;
-  if (token.startsWith("-")) return false;
-  if (token.startsWith("./")) return true;
-  if (token.startsWith("../")) return true;
-  if (token.startsWith("/")) return true;
-  if (token.startsWith(".\\")) return true;
-  if (token.startsWith("..\\")) return true;
-  if (/^[A-Za-z]:[\\/]/.test(token)) return true;
-  return /\.(mjs|cjs|js|ts)$/.test(token);
+    if (!token.length)
+        return false;
+    if (token == "<file>" || token == "<name>")
+        return false;
+    if (token.includes("://"))
+        return false;
+    if (token.startsWith("-"))
+        return false;
+    if (token.startsWith("./"))
+        return true;
+    if (token.startsWith("../"))
+        return true;
+    if (token.startsWith("/"))
+        return true;
+    if (token.startsWith(".\\"))
+        return true;
+    if (token.startsWith("..\\"))
+        return true;
+    if (/^[A-Za-z]:[\\/]/.test(token))
+        return true;
+    return /\.(mjs|cjs|js|ts)$/.test(token);
 }
 function getConfiguredRuntimeCmd(config) {
-  const runtime = config.runOptions.runtime;
-  if (runtime.cmd && runtime.cmd.length) return runtime.cmd;
-  if (runtime.run && runtime.run.length) return runtime.run;
-  throw new Error(
-    `runtime command is missing. Set "runOptions.runtime.cmd" in as-test.config.json`,
-  );
+    const runtime = config.runOptions.runtime;
+    if (runtime.cmd && runtime.cmd.length)
+        return runtime.cmd;
+    if (runtime.run && runtime.run.length)
+        return runtime.run;
+    throw new Error(`runtime command is missing. Set "runOptions.runtime.cmd" in as-test.config.json`);
 }
 function runtimeNameFromCommand(command) {
-  const token = command.trim().split(/\s+/)[0];
-  return token && token.length ? token : "runtime";
+    const token = command.trim().split(/\s+/)[0];
+    return token && token.length ? token : "runtime";
 }
 function resolveInputPatterns(configured, selectors) {
-  const configuredInputs = Array.isArray(configured)
-    ? configured
-    : [configured];
-  if (!selectors.length) return configuredInputs;
-  const patterns = new Set();
-  for (const selector of expandSelectors(selectors)) {
-    if (!selector) continue;
-    if (isBareSuiteSelector(selector)) {
-      const base = stripSuiteSuffix(selector);
-      for (const configuredInput of configuredInputs) {
-        patterns.add(
-          path.join(path.dirname(configuredInput), `${base}.spec.ts`),
-        );
-      }
-      continue;
+    const configuredInputs = Array.isArray(configured)
+        ? configured
+        : [configured];
+    if (!selectors.length)
+        return configuredInputs;
+    const patterns = new Set();
+    for (const selector of expandSelectors(selectors)) {
+        if (!selector)
+            continue;
+        if (isBareSuiteSelector(selector)) {
+            const base = stripSuiteSuffix(selector);
+            for (const configuredInput of configuredInputs) {
+                patterns.add(path.join(path.dirname(configuredInput), `${base}.spec.ts`));
+            }
+            continue;
+        }
+        patterns.add(selector);
     }
-    patterns.add(selector);
-  }
-  return [...patterns];
+    return [...patterns];
 }
 function expandSelectors(selectors) {
-  const expanded = [];
-  for (const selector of selectors) {
-    if (!selector) continue;
-    if (!shouldSplitSelector(selector)) {
-      expanded.push(selector);
-      continue;
+    const expanded = [];
+    for (const selector of selectors) {
+        if (!selector)
+            continue;
+        if (!shouldSplitSelector(selector)) {
+            expanded.push(selector);
+            continue;
+        }
+        for (const token of selector.split(",")) {
+            const trimmed = token.trim();
+            if (!trimmed.length)
+                continue;
+            expanded.push(trimmed);
+        }
     }
-    for (const token of selector.split(",")) {
-      const trimmed = token.trim();
-      if (!trimmed.length) continue;
-      expanded.push(trimmed);
-    }
-  }
-  return expanded;
+    return expanded;
 }
 function shouldSplitSelector(selector) {
-  return (
-    selector.includes(",") &&
-    !selector.includes("/") &&
-    !selector.includes("\\") &&
-    !/[*?[\]{}]/.test(selector)
-  );
+    return (selector.includes(",") &&
+        !selector.includes("/") &&
+        !selector.includes("\\") &&
+        !/[*?[\]{}]/.test(selector));
 }
 function isBareSuiteSelector(selector) {
-  return (
-    !selector.includes("/") &&
-    !selector.includes("\\") &&
-    !/[*?[\]{}]/.test(selector)
-  );
+    return (!selector.includes("/") &&
+        !selector.includes("\\") &&
+        !/[*?[\]{}]/.test(selector));
 }
 function stripSuiteSuffix(selector) {
-  return selector.replace(/\.spec\.ts$/, "").replace(/\.ts$/, "");
+    return selector.replace(/\.spec\.ts$/, "").replace(/\.ts$/, "");
 }
 function normalizeReport(raw) {
-  if (Array.isArray(raw)) {
-    return {
-      suites: raw,
-      coverage: {
-        total: 0,
-        covered: 0,
-        uncovered: 0,
-        percent: 100,
-        points: [],
-      },
-    };
-  }
-  const value = raw;
-  if (!value) {
-    return {
-      suites: [],
-      coverage: {
-        total: 0,
-        covered: 0,
-        uncovered: 0,
-        percent: 100,
-        points: [],
-      },
-    };
-  }
-  const suites = Array.isArray(value.suites) ? value.suites : [];
-  const coverage = normalizeCoverage(value.coverage);
-  return { suites, coverage };
+    if (Array.isArray(raw)) {
+        return {
+            suites: raw,
+            coverage: {
+                total: 0,
+                covered: 0,
+                uncovered: 0,
+                percent: 100,
+                points: [],
+            },
+        };
+    }
+    const value = raw;
+    if (!value) {
+        return {
+            suites: [],
+            coverage: {
+                total: 0,
+                covered: 0,
+                uncovered: 0,
+                percent: 100,
+                points: [],
+            },
+        };
+    }
+    const suites = Array.isArray(value.suites) ? value.suites : [];
+    const coverage = normalizeCoverage(value.coverage);
+    return { suites, coverage };
 }
 function normalizeCoverage(value) {
-  const raw = value;
-  const total = Number(raw?.total ?? 0);
-  const uncovered = Number(raw?.uncovered ?? 0);
-  const covered =
-    raw?.covered != null ? Number(raw.covered) : Math.max(total - uncovered, 0);
-  const percent =
-    raw?.percent != null
-      ? Number(raw.percent)
-      : total
-        ? (covered * 100) / total
-        : 100;
-  const pointsRaw = Array.isArray(raw?.points) ? raw?.points : [];
-  const points = pointsRaw
-    .map((point) => {
-      const p = point;
-      return {
-        hash: String(p.hash ?? ""),
-        file: String(p.file ?? ""),
-        line: Number(p.line ?? 0),
-        column: Number(p.column ?? 0),
-        type: String(p.type ?? ""),
-        executed: Boolean(p.executed),
-        parentHash: String(p.parentHash ?? ""),
-        scopeKind: String(p.scopeKind ?? ""),
-        scopeName: String(p.scopeName ?? ""),
-        depth: Number(p.depth ?? 0),
-      };
+    const raw = value;
+    const total = Number(raw?.total ?? 0);
+    const uncovered = Number(raw?.uncovered ?? 0);
+    const covered = raw?.covered != null ? Number(raw.covered) : Math.max(total - uncovered, 0);
+    const percent = raw?.percent != null
+        ? Number(raw.percent)
+        : total
+            ? (covered * 100) / total
+            : 100;
+    const pointsRaw = Array.isArray(raw?.points)
+        ? raw?.points
+        : [];
+    const points = pointsRaw
+        .map((point) => {
+        const p = point;
+        return {
+            hash: String(p.hash ?? ""),
+            file: String(p.file ?? ""),
+            line: Number(p.line ?? 0),
+            column: Number(p.column ?? 0),
+            type: String(p.type ?? ""),
+            executed: Boolean(p.executed),
+            parentHash: String(p.parentHash ?? ""),
+            scopeKind: String(p.scopeKind ?? ""),
+            scopeName: String(p.scopeName ?? ""),
+            depth: Number(p.depth ?? 0),
+        };
     })
-    .filter((point) => point.file.length > 0);
-  return {
-    total,
-    covered,
-    uncovered,
-    percent,
-    points,
-  };
-}
-function collectCoverageSummary(reports, enabled, showPoints, coverage) {
-  const summary = {
-    enabled,
-    showPoints,
-    total: 0,
-    covered: 0,
-    uncovered: 0,
-    percent: 100,
-    files: [],
-  };
-  const uniquePoints = new Map();
-  const hasDetailedPoints = reports.some(
-    (report) => report.coverage.points.length > 0,
-  );
-  for (const report of reports) {
-    for (const point of report.coverage.points) {
-      if (isIgnoredCoverageFile(point.file, coverage)) continue;
-      if (isIgnoredCoveragePoint(point, coverage)) continue;
-      const key = `${point.file}::${point.hash}`;
-      const existing = uniquePoints.get(key);
-      if (!existing) {
-        uniquePoints.set(key, { ...point });
-      } else if (point.executed) {
-        existing.executed = true;
-      }
-    }
-  }
-  if (uniquePoints.size > 0) {
-    const byFile = new Map();
-    for (const point of uniquePoints.values()) {
-      if (!byFile.has(point.file)) byFile.set(point.file, []);
-      byFile.get(point.file).push(point);
-      summary.total++;
-      if (point.executed) summary.covered++;
-      else summary.uncovered++;
-    }
-    const sortedFiles = [...byFile.keys()].sort((a, b) => a.localeCompare(b));
-    for (const file of sortedFiles) {
-      const points = byFile.get(file);
-      points.sort(compareCoveragePoints);
-      let covered = 0;
-      for (const point of points) {
-        if (point.executed) covered++;
-      }
-      const total = points.length;
-      if (!total) continue;
-      const uncovered = total - covered;
-      summary.files.push({
-        file,
+        .filter((point) => point.file.length > 0);
+    return {
         total,
         covered,
         uncovered,
-        percent: total ? (covered * 100) / total : 100,
+        percent,
         points,
-      });
-    }
-  } else if (!hasDetailedPoints) {
-    // Compatibility fallback for reports without detailed point payloads.
+    };
+}
+function collectCoverageSummary(reports, enabled, showPoints, coverage) {
+    const summary = {
+        enabled,
+        showPoints,
+        total: 0,
+        covered: 0,
+        uncovered: 0,
+        percent: 100,
+        files: [],
+    };
+    const uniquePoints = new Map();
+    const hasDetailedPoints = reports.some((report) => report.coverage.points.length > 0);
     for (const report of reports) {
-      if (isIgnoredCoverageFile(report.file, coverage)) continue;
-      if (report.coverage.total <= 0) continue;
-      summary.total += report.coverage.total;
-      summary.covered += report.coverage.covered;
-      summary.uncovered += report.coverage.uncovered;
-      summary.files.push({
-        file: report.file,
-        total: report.coverage.total,
-        covered: report.coverage.covered,
-        uncovered: report.coverage.uncovered,
-        percent: report.coverage.percent,
-        points: report.coverage.points,
-      });
+        for (const point of report.coverage.points) {
+            if (isIgnoredCoverageFile(point.file, coverage))
+                continue;
+            if (isIgnoredCoveragePoint(point, coverage))
+                continue;
+            const key = `${point.file}::${point.hash}`;
+            const existing = uniquePoints.get(key);
+            if (!existing) {
+                uniquePoints.set(key, { ...point });
+            }
+            else if (point.executed) {
+                existing.executed = true;
+            }
+        }
     }
-  }
-  summary.percent = summary.total
-    ? (summary.covered * 100) / summary.total
-    : 100;
-  return summary;
+    if (uniquePoints.size > 0) {
+        const byFile = new Map();
+        for (const point of uniquePoints.values()) {
+            if (!byFile.has(point.file))
+                byFile.set(point.file, []);
+            byFile.get(point.file).push(point);
+            summary.total++;
+            if (point.executed)
+                summary.covered++;
+            else
+                summary.uncovered++;
+        }
+        const sortedFiles = [...byFile.keys()].sort((a, b) => a.localeCompare(b));
+        for (const file of sortedFiles) {
+            const points = byFile.get(file);
+            points.sort(compareCoveragePoints);
+            let covered = 0;
+            for (const point of points) {
+                if (point.executed)
+                    covered++;
+            }
+            const total = points.length;
+            if (!total)
+                continue;
+            const uncovered = total - covered;
+            summary.files.push({
+                file,
+                total,
+                covered,
+                uncovered,
+                percent: total ? (covered * 100) / total : 100,
+                points,
+            });
+        }
+    }
+    else if (!hasDetailedPoints) {
+        // Compatibility fallback for reports without detailed point payloads.
+        for (const report of reports) {
+            if (isIgnoredCoverageFile(report.file, coverage))
+                continue;
+            if (report.coverage.total <= 0)
+                continue;
+            summary.total += report.coverage.total;
+            summary.covered += report.coverage.covered;
+            summary.uncovered += report.coverage.uncovered;
+            summary.files.push({
+                file: report.file,
+                total: report.coverage.total,
+                covered: report.coverage.covered,
+                uncovered: report.coverage.uncovered,
+                percent: report.coverage.percent,
+                points: report.coverage.points,
+            });
+        }
+    }
+    summary.percent = summary.total
+        ? (summary.covered * 100) / summary.total
+        : 100;
+    return summary;
 }
 function isIgnoredCoverageFile(file, coverage) {
-  const normalized = file.replace(/\\/g, "/");
-  if (!isAllowedCoverageSourceFile(normalized)) return true;
-  if (isAssemblyScriptStdlibFile(normalized)) return true;
-  const classification = classifyCoverageFile(normalized);
-  if (classification.kind == "dependency") {
-    if (coverage.mode != "all" && !coverage.dependencies.length) return true;
-    if (
-      coverage.dependencies.length &&
-      (!classification.packageName ||
-        !coverage.dependencies.includes(classification.packageName))
-    ) {
-      return true;
+    const normalized = file.replace(/\\/g, "/");
+    if (!isAllowedCoverageSourceFile(normalized))
+        return true;
+    if (isAssemblyScriptStdlibFile(normalized))
+        return true;
+    const classification = classifyCoverageFile(normalized);
+    if (classification.kind == "dependency") {
+        if (coverage.mode != "all" && !coverage.dependencies.length)
+            return true;
+        if (coverage.dependencies.length &&
+            (!classification.packageName ||
+                !coverage.dependencies.includes(classification.packageName))) {
+            return true;
+        }
     }
-  }
-  if (!coverage.includeSpecs && normalized.endsWith(".spec.ts")) return true;
-  if (
-    coverage.include.length &&
-    !coverage.include.some((pattern) =>
-      matchesCoverageGlob(normalized, pattern),
-    )
-  ) {
-    return true;
-  }
-  if (
-    coverage.exclude.some((pattern) => matchesCoverageGlob(normalized, pattern))
-  ) {
-    return true;
-  }
-  return false;
+    if (!coverage.includeSpecs && normalized.endsWith(".spec.ts"))
+        return true;
+    if (coverage.include.length &&
+        !coverage.include.some((pattern) => matchesCoverageGlob(normalized, pattern))) {
+        return true;
+    }
+    if (coverage.exclude.some((pattern) => matchesCoverageGlob(normalized, pattern))) {
+        return true;
+    }
+    return false;
 }
 function matchesCoverageGlob(file, pattern) {
-  const normalizedPattern = pattern.replace(/\\/g, "/").trim();
-  if (!normalizedPattern.length) return false;
-  const regex = globPatternToRegExp(normalizedPattern);
-  return regex.test(file);
+    const normalizedPattern = pattern.replace(/\\/g, "/").trim();
+    if (!normalizedPattern.length)
+        return false;
+    const regex = globPatternToRegExp(normalizedPattern);
+    return regex.test(file);
 }
 function globPatternToRegExp(pattern) {
-  let source = "^";
-  for (let i = 0; i < pattern.length; i++) {
-    const char = pattern[i];
-    if (char == "*") {
-      const next = pattern[i + 1];
-      if (next == "*") {
-        const after = pattern[i + 2];
-        if (after == "/") {
-          source += "(?:.*/)?";
-          i += 2;
-        } else {
-          source += ".*";
-          i += 1;
+    let source = "^";
+    for (let i = 0; i < pattern.length; i++) {
+        const char = pattern[i];
+        if (char == "*") {
+            const next = pattern[i + 1];
+            if (next == "*") {
+                const after = pattern[i + 2];
+                if (after == "/") {
+                    source += "(?:.*/)?";
+                    i += 2;
+                }
+                else {
+                    source += ".*";
+                    i += 1;
+                }
+            }
+            else {
+                source += "[^/]*";
+            }
+            continue;
         }
-      } else {
-        source += "[^/]*";
-      }
-      continue;
+        if (char == "?") {
+            source += "[^/]";
+            continue;
+        }
+        if ("\\.[]{}()+-^$|".includes(char)) {
+            source += `\\${char}`;
+            continue;
+        }
+        source += char;
     }
-    if (char == "?") {
-      source += "[^/]";
-      continue;
-    }
-    if ("\\.[]{}()+-^$|".includes(char)) {
-      source += `\\${char}`;
-      continue;
-    }
-    source += char;
-  }
-  source += "$";
-  return new RegExp(source);
+    source += "$";
+    return new RegExp(source);
 }
 function isAllowedCoverageSourceFile(file) {
-  const lower = file.toLowerCase();
-  return lower.endsWith(".ts") || lower.endsWith(".as");
+    const lower = file.toLowerCase();
+    return lower.endsWith(".ts") || lower.endsWith(".as");
 }
 // AssemblyScript normalizes node_modules/<pkg>/... to ~lib/<pkg>/... in Source.normalizedPath.
 // This set contains the root names that are actual AS stdlib modules, so we can distinguish
 // real stdlib (~lib/array.ts) from third-party packages (~lib/json-as/assembly/index.ts).
 const AS_STDLIB_ROOT_NAMES = new Set([
-  "array",
-  "arraybuffer",
-  "atomics",
-  "bindings",
-  "builtins",
-  "compat",
-  "console",
-  "crypto",
-  "dataview",
-  "date",
-  "diagnostics",
-  "error",
-  "function",
-  "iterator",
-  "map",
-  "math",
-  "memory",
-  "number",
-  "object",
-  "polyfills",
-  "process",
-  "reference",
-  "regexp",
-  "rt",
-  "set",
-  "shared",
-  "staticarray",
-  "string",
-  "symbol",
-  "table",
-  "typedarray",
-  "uri",
-  "util",
-  "vector",
+    "array",
+    "arraybuffer",
+    "atomics",
+    "bindings",
+    "builtins",
+    "compat",
+    "console",
+    "crypto",
+    "dataview",
+    "date",
+    "diagnostics",
+    "error",
+    "function",
+    "iterator",
+    "map",
+    "math",
+    "memory",
+    "number",
+    "object",
+    "polyfills",
+    "process",
+    "reference",
+    "regexp",
+    "rt",
+    "set",
+    "shared",
+    "staticarray",
+    "string",
+    "symbol",
+    "table",
+    "typedarray",
+    "uri",
+    "util",
+    "vector",
 ]);
 function isAssemblyScriptStdlibFile(file) {
-  if (file.startsWith("~lib/")) {
-    // Extract the first path segment after ~lib/ (strip any file extension)
-    const after = file.slice("~lib/".length);
-    const root = (after.split("/")[0] ?? "").replace(/\.[^.]+$/, "");
-    return AS_STDLIB_ROOT_NAMES.has(root);
-  }
-  if (file.includes("/~lib/")) return true;
-  if (file.startsWith("assemblyscript/std/")) return true;
-  if (file.includes("/assemblyscript/std/")) return true;
-  return false;
+    if (file.startsWith("~lib/")) {
+        // Extract the first path segment after ~lib/ (strip any file extension)
+        const after = file.slice("~lib/".length);
+        const root = (after.split("/")[0] ?? "").replace(/\.[^.]+$/, "");
+        return AS_STDLIB_ROOT_NAMES.has(root);
+    }
+    if (file.includes("/~lib/"))
+        return true;
+    if (file.startsWith("assemblyscript/std/"))
+        return true;
+    if (file.includes("/assemblyscript/std/"))
+        return true;
+    return false;
 }
 function classifyCoverageFile(file) {
-  const packageName = resolveCoverageDependencyPackage(file);
-  if (packageName) {
-    return { kind: "dependency", packageName };
-  }
-  return { kind: "project", packageName: null };
+    const packageName = resolveCoverageDependencyPackage(file);
+    if (packageName) {
+        return { kind: "dependency", packageName };
+    }
+    return { kind: "project", packageName: null };
 }
 function resolveCoverageDependencyPackage(file) {
-  const normalized = file.replace(/\\/g, "/");
-  // AssemblyScript normalizes node_modules/<pkg>/... to ~lib/<pkg>/... at compile time.
-  // Handle that path format so coverage.mode and coverage.dependencies work at runtime.
-  if (normalized.startsWith("~lib/")) {
-    const after = normalized.slice("~lib/".length);
-    const segments = after.split("/").filter(Boolean);
-    if (!segments.length) return null;
-    if (segments[0].startsWith("@")) {
-      if (segments.length < 2) return null;
-      return `${segments[0]}/${segments[1]}`;
+    const normalized = file.replace(/\\/g, "/");
+    // AssemblyScript normalizes node_modules/<pkg>/... to ~lib/<pkg>/... at compile time.
+    // Handle that path format so coverage.mode and coverage.dependencies work at runtime.
+    if (normalized.startsWith("~lib/")) {
+        const after = normalized.slice("~lib/".length);
+        const segments = after.split("/").filter(Boolean);
+        if (!segments.length)
+            return null;
+        if (segments[0].startsWith("@")) {
+            if (segments.length < 2)
+                return null;
+            return `${segments[0]}/${segments[1]}`;
+        }
+        // Strip file extension for bare module entries like ~lib/json-as.ts (unusual but safe)
+        return segments[0].replace(/\.[^.]+$/, "") || null;
     }
-    // Strip file extension for bare module entries like ~lib/json-as.ts (unusual but safe)
-    return segments[0].replace(/\.[^.]+$/, "") || null;
-  }
-  const marker = "/node_modules/";
-  const prefixed = normalized.startsWith("node_modules/")
-    ? `/${normalized}`
-    : normalized;
-  const index = prefixed.lastIndexOf(marker);
-  if (index == -1) return null;
-  const after = prefixed.slice(index + marker.length);
-  if (!after.length) return null;
-  const segments = after.split("/").filter(Boolean);
-  if (!segments.length) return null;
-  if (segments[0].startsWith("@")) {
-    if (segments.length < 2) return null;
-    return `${segments[0]}/${segments[1]}`;
-  }
-  return segments[0];
+    const marker = "/node_modules/";
+    const prefixed = normalized.startsWith("node_modules/")
+        ? `/${normalized}`
+        : normalized;
+    const index = prefixed.lastIndexOf(marker);
+    if (index == -1)
+        return null;
+    const after = prefixed.slice(index + marker.length);
+    if (!after.length)
+        return null;
+    const segments = after.split("/").filter(Boolean);
+    if (!segments.length)
+        return null;
+    if (segments[0].startsWith("@")) {
+        if (segments.length < 2)
+            return null;
+        return `${segments[0]}/${segments[1]}`;
+    }
+    return segments[0];
 }
 function resolveCoverageOptions(raw) {
-  if (typeof raw == "boolean") {
+    if (typeof raw == "boolean") {
+        return {
+            enabled: raw,
+            mode: "project",
+            includeSpecs: false,
+            dependencies: [],
+            include: [],
+            exclude: [],
+            ignore: {
+                labels: [],
+                names: [],
+                locations: [],
+                snippets: [],
+            },
+        };
+    }
+    if (raw && typeof raw == "object") {
+        const obj = raw;
+        const ignore = obj.ignore && typeof obj.ignore == "object" && !Array.isArray(obj.ignore)
+            ? obj.ignore
+            : null;
+        return {
+            enabled: obj.enabled == null ? false : Boolean(obj.enabled),
+            mode: obj.mode == "all" ? "all" : "project",
+            includeSpecs: Boolean(obj.includeSpecs),
+            dependencies: Array.isArray(obj.dependencies)
+                ? obj.dependencies.filter((item) => typeof item == "string")
+                : [],
+            include: Array.isArray(obj.include)
+                ? obj.include.filter((item) => typeof item == "string")
+                : [],
+            exclude: Array.isArray(obj.exclude)
+                ? obj.exclude.filter((item) => typeof item == "string")
+                : [],
+            ignore: {
+                labels: Array.isArray(ignore?.labels)
+                    ? ignore.labels.filter((item) => typeof item == "string")
+                    : [],
+                names: Array.isArray(ignore?.names)
+                    ? ignore.names.filter((item) => typeof item == "string")
+                    : [],
+                locations: Array.isArray(ignore?.locations)
+                    ? ignore.locations.filter((item) => typeof item == "string")
+                    : [],
+                snippets: Array.isArray(ignore?.snippets)
+                    ? ignore.snippets.filter((item) => typeof item == "string")
+                    : [],
+            },
+        };
+    }
     return {
-      enabled: raw,
-      mode: "project",
-      includeSpecs: false,
-      dependencies: [],
-      include: [],
-      exclude: [],
-      ignore: {
-        labels: [],
-        names: [],
-        locations: [],
-        snippets: [],
-      },
+        enabled: false,
+        mode: "project",
+        includeSpecs: false,
+        dependencies: [],
+        include: [],
+        exclude: [],
+        ignore: {
+            labels: [],
+            names: [],
+            locations: [],
+            snippets: [],
+        },
     };
-  }
-  if (raw && typeof raw == "object") {
-    const obj = raw;
-    const ignore =
-      obj.ignore && typeof obj.ignore == "object" && !Array.isArray(obj.ignore)
-        ? obj.ignore
-        : null;
-    return {
-      enabled: obj.enabled == null ? false : Boolean(obj.enabled),
-      mode: obj.mode == "all" ? "all" : "project",
-      includeSpecs: Boolean(obj.includeSpecs),
-      dependencies: Array.isArray(obj.dependencies)
-        ? obj.dependencies.filter((item) => typeof item == "string")
-        : [],
-      include: Array.isArray(obj.include)
-        ? obj.include.filter((item) => typeof item == "string")
-        : [],
-      exclude: Array.isArray(obj.exclude)
-        ? obj.exclude.filter((item) => typeof item == "string")
-        : [],
-      ignore: {
-        labels: Array.isArray(ignore?.labels)
-          ? ignore.labels.filter((item) => typeof item == "string")
-          : [],
-        names: Array.isArray(ignore?.names)
-          ? ignore.names.filter((item) => typeof item == "string")
-          : [],
-        locations: Array.isArray(ignore?.locations)
-          ? ignore.locations.filter((item) => typeof item == "string")
-          : [],
-        snippets: Array.isArray(ignore?.snippets)
-          ? ignore.snippets.filter((item) => typeof item == "string")
-          : [],
-      },
-    };
-  }
-  return {
-    enabled: false,
-    mode: "project",
-    includeSpecs: false,
-    dependencies: [],
-    include: [],
-    exclude: [],
-    ignore: {
-      labels: [],
-      names: [],
-      locations: [],
-      snippets: [],
-    },
-  };
 }
 function isIgnoredCoveragePoint(point, coverage) {
-  const ignore = coverage.ignore;
-  if (
-    !ignore.labels.length &&
-    !ignore.names.length &&
-    !ignore.locations.length &&
-    !ignore.snippets.length
-  ) {
+    const ignore = coverage.ignore;
+    if (!ignore.labels.length &&
+        !ignore.names.length &&
+        !ignore.locations.length &&
+        !ignore.snippets.length) {
+        return false;
+    }
+    const info = describeCoveragePoint(point.file, point.line, point.column, point.type);
+    const location = `${point.file.replace(/\\/g, "/")}:${point.line}:${point.column}`;
+    const label = info.displayType.toLowerCase();
+    const name = info.subjectName?.toLowerCase() ?? "";
+    const snippet = info.visible.toLowerCase();
+    if (ignore.labels.some((pattern) => matchesCoverageTextPattern(label, pattern.toLowerCase()))) {
+        return true;
+    }
+    if (name.length &&
+        ignore.names.some((pattern) => matchesCoverageTextPattern(name, pattern.toLowerCase()))) {
+        return true;
+    }
+    if (ignore.locations.some((pattern) => matchesCoverageTextPattern(location, pattern.replace(/\\/g, "/")))) {
+        return true;
+    }
+    if (snippet.length &&
+        ignore.snippets.some((pattern) => matchesCoverageTextPattern(snippet, pattern.toLowerCase()))) {
+        return true;
+    }
     return false;
-  }
-  const info = describeCoveragePoint(
-    point.file,
-    point.line,
-    point.column,
-    point.type,
-  );
-  const location = `${point.file.replace(/\\/g, "/")}:${point.line}:${point.column}`;
-  const label = info.displayType.toLowerCase();
-  const name = info.subjectName?.toLowerCase() ?? "";
-  const snippet = info.visible.toLowerCase();
-  if (
-    ignore.labels.some((pattern) =>
-      matchesCoverageTextPattern(label, pattern.toLowerCase()),
-    )
-  ) {
-    return true;
-  }
-  if (
-    name.length &&
-    ignore.names.some((pattern) =>
-      matchesCoverageTextPattern(name, pattern.toLowerCase()),
-    )
-  ) {
-    return true;
-  }
-  if (
-    ignore.locations.some((pattern) =>
-      matchesCoverageTextPattern(location, pattern.replace(/\\/g, "/")),
-    )
-  ) {
-    return true;
-  }
-  if (
-    snippet.length &&
-    ignore.snippets.some((pattern) =>
-      matchesCoverageTextPattern(snippet, pattern.toLowerCase()),
-    )
-  ) {
-    return true;
-  }
-  return false;
 }
 function matchesCoverageTextPattern(value, pattern) {
-  const normalized = pattern.trim();
-  if (!normalized.length) return false;
-  return globPatternToRegExp(normalized).test(value);
+    const normalized = pattern.trim();
+    if (!normalized.length)
+        return false;
+    return globPatternToRegExp(normalized).test(value);
 }
 function compareCoveragePoints(a, b) {
-  const depthA = a.depth ?? 0;
-  const depthB = b.depth ?? 0;
-  if (a.line !== b.line) return a.line - b.line;
-  if (a.column !== b.column) return a.column - b.column;
-  if (depthA !== depthB) return depthA - depthB;
-  if (a.type !== b.type) return a.type.localeCompare(b.type);
-  return a.hash.localeCompare(b.hash);
+    const depthA = a.depth ?? 0;
+    const depthB = b.depth ?? 0;
+    if (a.line !== b.line)
+        return a.line - b.line;
+    if (a.column !== b.column)
+        return a.column - b.column;
+    if (depthA !== depthB)
+        return depthA - depthB;
+    if (a.type !== b.type)
+        return a.type.localeCompare(b.type);
+    return a.hash.localeCompare(b.hash);
 }
-async function runProcess(
-  invocation,
-  specFile,
-  crashDir,
-  modeName,
-  snapshots,
-  snapshotEnabled,
-  createSnapshots,
-  overwriteSnapshots,
-  reporter,
-  tapMode = false,
-  env = process.env,
-) {
-  const child = spawn(invocation.command, invocation.args, {
-    stdio: ["pipe", "pipe", "pipe"],
-    shell: false,
-    env,
-  });
-  let report = null;
-  let parseError = null;
-  let stderrBuffer = "";
-  let stderrPendingLine = "";
-  let stdoutBuffer = "";
-  let spawnError = null;
-  let sawChannelClose = false;
-  const runtimeEvents = {
-    sawFileStart: false,
-    sawFileEnd: false,
-    fileName: formatSpecDisplayPath(specFile),
-    fileVerdict: "none",
-    fileTime: "",
-    suiteStarts: 0,
-    suiteEnds: 0,
-    assertionFails: 0,
-    warnings: 0,
-    logs: 0,
-  };
-  const reportStream = {
-    dataFrames: 0,
-    dataBytes: 0,
-    sawChunkStart: false,
-    sawChunkEnd: false,
-    chunkCountExpected: 0,
-    chunkBytesExpected: 0,
-    chunkTotalBytesExpected: 0,
-    chunkFramesReceived: 0,
-    chunkBytesReceived: 0,
-    chunks: [],
-  };
-  child.on("error", (error) => {
-    spawnError = error;
-  });
-  child.stderr.on("data", (chunk) => {
-    stderrPendingLine += chunk.toString("utf8");
-    let newline = stderrPendingLine.indexOf("\n");
-    while (newline >= 0) {
-      const line = stderrPendingLine.slice(0, newline + 1);
-      stderrPendingLine = stderrPendingLine.slice(newline + 1);
-      if (!shouldSuppressWasiWarningLine(line)) {
-        stderrBuffer += line;
-      }
-      newline = stderrPendingLine.indexOf("\n");
-    }
-  });
-  class TestChannel extends Channel {
-    onPassthrough(data) {
-      stdoutBuffer += data.toString("utf8");
-      if (tapMode) {
-        process.stderr.write(data);
-      } else {
-        process.stdout.write(data);
-      }
-    }
-    onCall(msg) {
-      const event = msg;
-      const kind = String(event.kind ?? "");
-      if (kind === "event:assert-fail") {
-        runtimeEvents.assertionFails++;
-        reporter.onAssertionFail?.({
-          key: String(event.key ?? ""),
-          instr: String(event.instr ?? ""),
-          left: String(event.left ?? ""),
-          right: String(event.right ?? ""),
-          message: String(event.message ?? ""),
-        });
-        return;
-      }
-      if (kind === "event:file-start") {
-        runtimeEvents.sawFileStart = true;
-        runtimeEvents.fileName = String(event.file ?? runtimeEvents.fileName);
-        reporter.onFileStart?.({
-          file: String(event.file ?? "unknown"),
-          depth: 0,
-          suiteKind: "file",
-          description: String(event.file ?? "unknown"),
-        });
-        return;
-      }
-      if (kind === "event:file-end") {
-        runtimeEvents.sawFileEnd = true;
-        runtimeEvents.fileName = String(event.file ?? runtimeEvents.fileName);
-        runtimeEvents.fileVerdict = String(event.verdict ?? "none");
-        runtimeEvents.fileTime = String(event.time ?? "");
-        reporter.onFileEnd?.({
-          file: String(event.file ?? "unknown"),
-          depth: 0,
-          suiteKind: "file",
-          description: String(event.file ?? "unknown"),
-          verdict: String(event.verdict ?? "none"),
-          time: String(event.time ?? ""),
-        });
-        return;
-      }
-      if (kind === "event:suite-start") {
-        runtimeEvents.suiteStarts++;
-        reporter.onSuiteStart?.({
-          file: String(event.file ?? "unknown"),
-          depth: Number(event.depth ?? 0),
-          suiteKind: String(event.suiteKind ?? ""),
-          description: String(event.description ?? ""),
-        });
-        return;
-      }
-      if (kind === "event:suite-end") {
-        runtimeEvents.suiteEnds++;
-        reporter.onSuiteEnd?.({
-          file: String(event.file ?? "unknown"),
-          depth: Number(event.depth ?? 0),
-          suiteKind: String(event.suiteKind ?? ""),
-          description: String(event.description ?? ""),
-          verdict: String(event.verdict ?? "none"),
-        });
-        return;
-      }
-      if (kind === "event:warn") {
-        runtimeEvents.warnings++;
-        reporter.onWarning?.({
-          message: String(event.message ?? ""),
-        });
-        return;
-      }
-      if (kind === "event:log") {
-        runtimeEvents.logs++;
-        reporter.onLog?.({
-          file: String(event.file ?? "unknown"),
-          depth: Number(event.depth ?? 0),
-          text: String(event.text ?? ""),
-        });
-        return;
-      }
-      if (kind === "snapshot:assert") {
-        const key = String(event.key ?? "");
-        const actual = String(event.actual ?? "");
-        const result = snapshots.assert(
-          key,
-          actual,
-          snapshotEnabled,
-          createSnapshots,
-          overwriteSnapshots,
-        );
-        if (result.warnMissing) {
-          reporter.onSnapshotMissing?.({ key });
+async function runProcess(invocation, specFile, crashDir, modeName, snapshots, snapshotEnabled, createSnapshots, overwriteSnapshots, reporter, tapMode = false, env = process.env) {
+    const child = spawn(invocation.command, invocation.args, {
+        stdio: ["pipe", "pipe", "pipe"],
+        shell: false,
+        env,
+    });
+    let report = null;
+    let parseError = null;
+    let stderrBuffer = "";
+    let stderrPendingLine = "";
+    let stdoutBuffer = "";
+    let spawnError = null;
+    let sawChannelClose = false;
+    const runtimeEvents = {
+        sawFileStart: false,
+        sawFileEnd: false,
+        fileName: formatSpecDisplayPath(specFile),
+        fileVerdict: "none",
+        fileTime: "",
+        suiteStarts: 0,
+        suiteEnds: 0,
+        assertionFails: 0,
+        warnings: 0,
+        logs: 0,
+    };
+    const reportStream = {
+        dataFrames: 0,
+        dataBytes: 0,
+        sawChunkStart: false,
+        sawChunkEnd: false,
+        chunkCountExpected: 0,
+        chunkBytesExpected: 0,
+        chunkTotalBytesExpected: 0,
+        chunkFramesReceived: 0,
+        chunkBytesReceived: 0,
+        chunks: [],
+    };
+    child.on("error", (error) => {
+        spawnError = error;
+    });
+    child.stderr.on("data", (chunk) => {
+        stderrPendingLine += chunk.toString("utf8");
+        let newline = stderrPendingLine.indexOf("\n");
+        while (newline >= 0) {
+            const line = stderrPendingLine.slice(0, newline + 1);
+            stderrPendingLine = stderrPendingLine.slice(newline + 1);
+            if (!shouldSuppressWasiWarningLine(line)) {
+                stderrBuffer += line;
+            }
+            newline = stderrPendingLine.indexOf("\n");
         }
-        this.send(
-          MessageType.CALL,
-          Buffer.from(`${result.ok ? "1" : "0"}\n${result.expected}`, "utf8"),
-        );
-        return;
-      }
-      if (kind === "report:start") {
-        reportStream.sawChunkStart = true;
-        reportStream.sawChunkEnd = false;
-        reportStream.chunkCountExpected = Number(event.chunkCount ?? 0);
-        reportStream.chunkBytesExpected = Number(event.chunkBytes ?? 0);
-        reportStream.chunkTotalBytesExpected = Number(event.totalBytes ?? 0);
-        reportStream.chunkFramesReceived = 0;
-        reportStream.chunkBytesReceived = 0;
-        reportStream.chunks = [];
-        return;
-      }
-      if (kind === "report:end") {
-        reportStream.sawChunkEnd = true;
-        return;
-      }
-      this.sendJSON(MessageType.CALL, { ok: true, expected: "" });
-    }
-    onDataMessage(data) {
-      reportStream.dataFrames++;
-      reportStream.dataBytes += data.length;
-      if (reportStream.sawChunkStart && !reportStream.sawChunkEnd) {
-        reportStream.chunkFramesReceived++;
-        reportStream.chunkBytesReceived += data.length;
-        reportStream.chunks.push(data.toString("utf8"));
-        return;
-      }
-      try {
-        report = JSON.parse(data.toString("utf8"));
-        parseError = null;
-      } catch (error) {
-        parseError = String(error);
-      }
-    }
-    onClose() {
-      sawChannelClose = true;
-    }
-  }
-  const _channel = new TestChannel(child.stdout, child.stdin);
-  const code = await new Promise((resolve) => {
-    child.on("close", (exitCode) => resolve(exitCode ?? 1));
-  });
-  if (
-    stderrPendingLine.length &&
-    !shouldSuppressWasiWarningLine(stderrPendingLine)
-  ) {
-    stderrBuffer += stderrPendingLine;
-  }
-  const processSpawnError = spawnError;
-  if (processSpawnError) {
-    const errorText = processSpawnError.stack ?? processSpawnError.message;
-    persistCrashRecord(crashDir, {
-      kind: "test",
-      file: specFile,
-      mode: modeName ?? "default",
-      error: errorText,
-      stdout: stdoutBuffer,
-      stderr: stderrBuffer,
     });
-    return createRuntimeFailureReport(
-      specFile,
-      modeName,
-      "failed to start test runtime",
-      errorText,
-      stdoutBuffer,
-      stderrBuffer,
-    );
-  }
-  if (reportStream.sawChunkStart) {
-    if (!reportStream.sawChunkEnd) {
-      parseError =
-        parseError ?? "missing report:end marker for chunked report payload";
-    } else {
-      const chunkedPayload = reportStream.chunks.join("");
-      try {
-        report = JSON.parse(chunkedPayload);
-        parseError = null;
-      } catch (error) {
-        parseError = `could not parse chunked report payload: ${String(error)}`;
-      }
-      if (
-        reportStream.chunkCountExpected > 0 &&
-        reportStream.chunkFramesReceived !== reportStream.chunkCountExpected
-      ) {
-        parseError =
-          parseError ??
-          `chunk count mismatch: expected ${reportStream.chunkCountExpected}, received ${reportStream.chunkFramesReceived}`;
-      }
-      if (
-        reportStream.chunkTotalBytesExpected > 0 &&
-        reportStream.chunkBytesReceived !== reportStream.chunkTotalBytesExpected
-      ) {
-        parseError =
-          parseError ??
-          `chunk size mismatch: expected ${reportStream.chunkTotalBytesExpected} bytes, received ${reportStream.chunkBytesReceived}`;
-      }
+    class TestChannel extends Channel {
+        onPassthrough(data) {
+            stdoutBuffer += data.toString("utf8");
+            if (tapMode) {
+                process.stderr.write(data);
+            }
+            else {
+                process.stdout.write(data);
+            }
+        }
+        onCall(msg) {
+            const event = msg;
+            const kind = String(event.kind ?? "");
+            if (kind === "event:assert-fail") {
+                runtimeEvents.assertionFails++;
+                reporter.onAssertionFail?.({
+                    key: String(event.key ?? ""),
+                    instr: String(event.instr ?? ""),
+                    left: String(event.left ?? ""),
+                    right: String(event.right ?? ""),
+                    message: String(event.message ?? ""),
+                });
+                return;
+            }
+            if (kind === "event:file-start") {
+                runtimeEvents.sawFileStart = true;
+                runtimeEvents.fileName = String(event.file ?? runtimeEvents.fileName);
+                reporter.onFileStart?.({
+                    file: String(event.file ?? "unknown"),
+                    depth: 0,
+                    suiteKind: "file",
+                    description: String(event.file ?? "unknown"),
+                });
+                return;
+            }
+            if (kind === "event:file-end") {
+                runtimeEvents.sawFileEnd = true;
+                runtimeEvents.fileName = String(event.file ?? runtimeEvents.fileName);
+                runtimeEvents.fileVerdict = String(event.verdict ?? "none");
+                runtimeEvents.fileTime = String(event.time ?? "");
+                reporter.onFileEnd?.({
+                    file: String(event.file ?? "unknown"),
+                    depth: 0,
+                    suiteKind: "file",
+                    description: String(event.file ?? "unknown"),
+                    verdict: String(event.verdict ?? "none"),
+                    time: String(event.time ?? ""),
+                });
+                return;
+            }
+            if (kind === "event:suite-start") {
+                runtimeEvents.suiteStarts++;
+                reporter.onSuiteStart?.({
+                    file: String(event.file ?? "unknown"),
+                    depth: Number(event.depth ?? 0),
+                    suiteKind: String(event.suiteKind ?? ""),
+                    description: String(event.description ?? ""),
+                });
+                return;
+            }
+            if (kind === "event:suite-end") {
+                runtimeEvents.suiteEnds++;
+                reporter.onSuiteEnd?.({
+                    file: String(event.file ?? "unknown"),
+                    depth: Number(event.depth ?? 0),
+                    suiteKind: String(event.suiteKind ?? ""),
+                    description: String(event.description ?? ""),
+                    verdict: String(event.verdict ?? "none"),
+                });
+                return;
+            }
+            if (kind === "event:warn") {
+                runtimeEvents.warnings++;
+                reporter.onWarning?.({
+                    message: String(event.message ?? ""),
+                });
+                return;
+            }
+            if (kind === "event:log") {
+                runtimeEvents.logs++;
+                reporter.onLog?.({
+                    file: String(event.file ?? "unknown"),
+                    depth: Number(event.depth ?? 0),
+                    text: String(event.text ?? ""),
+                });
+                return;
+            }
+            if (kind === "snapshot:assert") {
+                const key = String(event.key ?? "");
+                const actual = String(event.actual ?? "");
+                const result = snapshots.assert(key, actual, snapshotEnabled, createSnapshots, overwriteSnapshots);
+                if (result.warnMissing) {
+                    reporter.onSnapshotMissing?.({ key });
+                }
+                this.send(MessageType.CALL, Buffer.from(`${result.ok ? "1" : "0"}\n${result.expected}`, "utf8"));
+                return;
+            }
+            if (kind === "report:start") {
+                reportStream.sawChunkStart = true;
+                reportStream.sawChunkEnd = false;
+                reportStream.chunkCountExpected = Number(event.chunkCount ?? 0);
+                reportStream.chunkBytesExpected = Number(event.chunkBytes ?? 0);
+                reportStream.chunkTotalBytesExpected = Number(event.totalBytes ?? 0);
+                reportStream.chunkFramesReceived = 0;
+                reportStream.chunkBytesReceived = 0;
+                reportStream.chunks = [];
+                return;
+            }
+            if (kind === "report:end") {
+                reportStream.sawChunkEnd = true;
+                return;
+            }
+            this.sendJSON(MessageType.CALL, { ok: true, expected: "" });
+        }
+        onDataMessage(data) {
+            reportStream.dataFrames++;
+            reportStream.dataBytes += data.length;
+            if (reportStream.sawChunkStart && !reportStream.sawChunkEnd) {
+                reportStream.chunkFramesReceived++;
+                reportStream.chunkBytesReceived += data.length;
+                reportStream.chunks.push(data.toString("utf8"));
+                return;
+            }
+            try {
+                report = JSON.parse(data.toString("utf8"));
+                parseError = null;
+            }
+            catch (error) {
+                parseError = String(error);
+            }
+        }
+        onClose() {
+            sawChannelClose = true;
+        }
     }
-  }
-  if (parseError) {
-    const errorText = `could not parse report payload: ${parseError}`;
-    const diagnostics = buildRuntimeReportDiagnostics(
-      code,
-      sawChannelClose,
-      reportStream,
-      runtimeEvents,
-    );
-    const fullError = `${errorText}\n${diagnostics}`;
-    persistCrashRecord(crashDir, {
-      kind: "test",
-      file: specFile,
-      mode: modeName ?? "default",
-      error: fullError,
-      stdout: stdoutBuffer,
-      stderr: stderrBuffer,
+    const _channel = new TestChannel(child.stdout, child.stdin);
+    const code = await new Promise((resolve) => {
+        child.on("close", (exitCode) => resolve(exitCode ?? 1));
     });
-    return createRuntimeFailureReport(
-      specFile,
-      modeName,
-      "runtime returned an invalid report payload",
-      fullError,
-      stdoutBuffer,
-      stderrBuffer,
-    );
-  }
-  if (!report) {
-    const synthesized = synthesizeReportFromRuntimeEvents(
-      specFile,
-      runtimeEvents,
-    );
-    if (synthesized) {
-      reporter.onWarning?.({
-        message:
-          "runtime report payload missing; reconstructed result from streamed lifecycle events",
-      });
-      if (code !== 0 || hasMeaningfulRuntimeOutput(stderrBuffer)) {
+    if (stderrPendingLine.length &&
+        !shouldSuppressWasiWarningLine(stderrPendingLine)) {
+        stderrBuffer += stderrPendingLine;
+    }
+    const processSpawnError = spawnError;
+    if (processSpawnError) {
+        const errorText = processSpawnError.stack ?? processSpawnError.message;
+        persistCrashRecord(crashDir, {
+            kind: "test",
+            file: specFile,
+            mode: modeName ?? "default",
+            error: errorText,
+            stdout: stdoutBuffer,
+            stderr: stderrBuffer,
+        });
+        return createRuntimeFailureReport(specFile, modeName, "failed to start test runtime", errorText, stdoutBuffer, stderrBuffer);
+    }
+    if (reportStream.sawChunkStart) {
+        if (!reportStream.sawChunkEnd) {
+            parseError =
+                parseError ?? "missing report:end marker for chunked report payload";
+        }
+        else {
+            const chunkedPayload = reportStream.chunks.join("");
+            try {
+                report = JSON.parse(chunkedPayload);
+                parseError = null;
+            }
+            catch (error) {
+                parseError = `could not parse chunked report payload: ${String(error)}`;
+            }
+            if (reportStream.chunkCountExpected > 0 &&
+                reportStream.chunkFramesReceived !== reportStream.chunkCountExpected) {
+                parseError =
+                    parseError ??
+                        `chunk count mismatch: expected ${reportStream.chunkCountExpected}, received ${reportStream.chunkFramesReceived}`;
+            }
+            if (reportStream.chunkTotalBytesExpected > 0 &&
+                reportStream.chunkBytesReceived !== reportStream.chunkTotalBytesExpected) {
+                parseError =
+                    parseError ??
+                        `chunk size mismatch: expected ${reportStream.chunkTotalBytesExpected} bytes, received ${reportStream.chunkBytesReceived}`;
+            }
+        }
+    }
+    if (parseError) {
+        const errorText = `could not parse report payload: ${parseError}`;
+        const diagnostics = buildRuntimeReportDiagnostics(code, sawChannelClose, reportStream, runtimeEvents);
+        const fullError = `${errorText}\n${diagnostics}`;
+        persistCrashRecord(crashDir, {
+            kind: "test",
+            file: specFile,
+            mode: modeName ?? "default",
+            error: fullError,
+            stdout: stdoutBuffer,
+            stderr: stderrBuffer,
+        });
+        return createRuntimeFailureReport(specFile, modeName, "runtime returned an invalid report payload", fullError, stdoutBuffer, stderrBuffer);
+    }
+    if (!report) {
+        const synthesized = synthesizeReportFromRuntimeEvents(specFile, runtimeEvents);
+        if (synthesized) {
+            reporter.onWarning?.({
+                message: "runtime report payload missing; reconstructed result from streamed lifecycle events",
+            });
+            if (code !== 0 || hasMeaningfulRuntimeOutput(stderrBuffer)) {
+                const errorParts = [];
+                if (code !== 0) {
+                    errorParts.push(`child process exited with code ${code}`);
+                }
+                const stderrText = normalizeRuntimeOutput(stderrBuffer);
+                if (stderrText.length) {
+                    errorParts.push(stderrText);
+                }
+                const diagnostics = buildRuntimeReportDiagnostics(code, sawChannelClose, reportStream, runtimeEvents);
+                errorParts.push(diagnostics);
+                const errorText = errorParts.join("\n\n");
+                persistCrashRecord(crashDir, {
+                    kind: "test",
+                    file: specFile,
+                    mode: modeName ?? "default",
+                    error: errorText || "runtime reported an unknown error",
+                    stdout: stdoutBuffer,
+                    stderr: stderrBuffer,
+                });
+                return appendRuntimeFailureReport(synthesized, specFile, modeName, code !== 0
+                    ? `test runtime failed with exit code ${code}`
+                    : "test runtime wrote to stderr", errorText, stdoutBuffer, stderrBuffer);
+            }
+            return synthesized;
+        }
+        const errorText = "missing report payload from test runtime";
+        const diagnostics = buildRuntimeReportDiagnostics(code, sawChannelClose, reportStream, runtimeEvents);
+        const fullError = `${errorText}\n${diagnostics}`;
+        persistCrashRecord(crashDir, {
+            kind: "test",
+            file: specFile,
+            mode: modeName ?? "default",
+            error: fullError,
+            stdout: stdoutBuffer,
+            stderr: stderrBuffer,
+        });
+        return createRuntimeFailureReport(specFile, modeName, "test runtime exited without sending a report", fullError, stdoutBuffer, stderrBuffer);
+    }
+    if (code !== 0 || hasMeaningfulRuntimeOutput(stderrBuffer)) {
         const errorParts = [];
         if (code !== 0) {
-          errorParts.push(`child process exited with code ${code}`);
+            errorParts.push(`child process exited with code ${code}`);
         }
         const stderrText = normalizeRuntimeOutput(stderrBuffer);
         if (stderrText.length) {
-          errorParts.push(stderrText);
+            errorParts.push(stderrText);
         }
-        const diagnostics = buildRuntimeReportDiagnostics(
-          code,
-          sawChannelClose,
-          reportStream,
-          runtimeEvents,
-        );
-        errorParts.push(diagnostics);
         const errorText = errorParts.join("\n\n");
         persistCrashRecord(crashDir, {
-          kind: "test",
-          file: specFile,
-          mode: modeName ?? "default",
-          error: errorText || "runtime reported an unknown error",
-          stdout: stdoutBuffer,
-          stderr: stderrBuffer,
+            kind: "test",
+            file: specFile,
+            mode: modeName ?? "default",
+            error: errorText || "runtime reported an unknown error",
+            stdout: stdoutBuffer,
+            stderr: stderrBuffer,
         });
-        return appendRuntimeFailureReport(
-          synthesized,
-          specFile,
-          modeName,
-          code !== 0
+        return appendRuntimeFailureReport(report, specFile, modeName, code !== 0
             ? `test runtime failed with exit code ${code}`
-            : "test runtime wrote to stderr",
-          errorText,
-          stdoutBuffer,
-          stderrBuffer,
-        );
-      }
-      return synthesized;
+            : "test runtime wrote to stderr", errorText, stdoutBuffer, stderrBuffer);
     }
-    const errorText = "missing report payload from test runtime";
-    const diagnostics = buildRuntimeReportDiagnostics(
-      code,
-      sawChannelClose,
-      reportStream,
-      runtimeEvents,
-    );
-    const fullError = `${errorText}\n${diagnostics}`;
-    persistCrashRecord(crashDir, {
-      kind: "test",
-      file: specFile,
-      mode: modeName ?? "default",
-      error: fullError,
-      stdout: stdoutBuffer,
-      stderr: stderrBuffer,
-    });
-    return createRuntimeFailureReport(
-      specFile,
-      modeName,
-      "test runtime exited without sending a report",
-      fullError,
-      stdoutBuffer,
-      stderrBuffer,
-    );
-  }
-  if (code !== 0 || hasMeaningfulRuntimeOutput(stderrBuffer)) {
-    const errorParts = [];
-    if (code !== 0) {
-      errorParts.push(`child process exited with code ${code}`);
-    }
-    const stderrText = normalizeRuntimeOutput(stderrBuffer);
-    if (stderrText.length) {
-      errorParts.push(stderrText);
-    }
-    const errorText = errorParts.join("\n\n");
-    persistCrashRecord(crashDir, {
-      kind: "test",
-      file: specFile,
-      mode: modeName ?? "default",
-      error: errorText || "runtime reported an unknown error",
-      stdout: stdoutBuffer,
-      stderr: stderrBuffer,
-    });
-    return appendRuntimeFailureReport(
-      report,
-      specFile,
-      modeName,
-      code !== 0
-        ? `test runtime failed with exit code ${code}`
-        : "test runtime wrote to stderr",
-      errorText,
-      stdoutBuffer,
-      stderrBuffer,
-    );
-  }
-  return report;
+    return report;
 }
-async function runWebSessionProcess(
-  session,
-  specFile,
-  crashDir,
-  modeName,
-  snapshots,
-  snapshotEnabled,
-  createSnapshots,
-  overwriteSnapshots,
-  reporter,
-  tapMode = false,
-  env = process.env,
-) {
-  const input = new PassThrough();
-  const output = new PassThrough();
-  let report = null;
-  let parseError = null;
-  let stderrBuffer = "";
-  let stdoutBuffer = "";
-  let sawChannelClose = false;
-  const runtimeEvents = {
-    sawFileStart: false,
-    sawFileEnd: false,
-    fileName: formatSpecDisplayPath(specFile),
-    fileVerdict: "none",
-    fileTime: "",
-    suiteStarts: 0,
-    suiteEnds: 0,
-    assertionFails: 0,
-    warnings: 0,
-    logs: 0,
-  };
-  const reportStream = {
-    dataFrames: 0,
-    dataBytes: 0,
-    sawChunkStart: false,
-    sawChunkEnd: false,
-    chunkCountExpected: 0,
-    chunkBytesExpected: 0,
-    chunkTotalBytesExpected: 0,
-    chunkFramesReceived: 0,
-    chunkBytesReceived: 0,
-    chunks: [],
-  };
-  class TestChannel extends Channel {
-    onPassthrough(data) {
-      stdoutBuffer += data.toString("utf8");
-      if (tapMode) {
-        process.stderr.write(data);
-      } else {
-        process.stdout.write(data);
-      }
+async function runWebSessionProcess(session, specFile, crashDir, modeName, snapshots, snapshotEnabled, createSnapshots, overwriteSnapshots, reporter, tapMode = false, env = process.env) {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    let report = null;
+    let parseError = null;
+    let stderrBuffer = "";
+    let stdoutBuffer = "";
+    let sawChannelClose = false;
+    const runtimeEvents = {
+        sawFileStart: false,
+        sawFileEnd: false,
+        fileName: formatSpecDisplayPath(specFile),
+        fileVerdict: "none",
+        fileTime: "",
+        suiteStarts: 0,
+        suiteEnds: 0,
+        assertionFails: 0,
+        warnings: 0,
+        logs: 0,
+    };
+    const reportStream = {
+        dataFrames: 0,
+        dataBytes: 0,
+        sawChunkStart: false,
+        sawChunkEnd: false,
+        chunkCountExpected: 0,
+        chunkBytesExpected: 0,
+        chunkTotalBytesExpected: 0,
+        chunkFramesReceived: 0,
+        chunkBytesReceived: 0,
+        chunks: [],
+    };
+    class TestChannel extends Channel {
+        onPassthrough(data) {
+            stdoutBuffer += data.toString("utf8");
+            if (tapMode) {
+                process.stderr.write(data);
+            }
+            else {
+                process.stdout.write(data);
+            }
+        }
+        onCall(msg) {
+            const event = msg;
+            const kind = String(event.kind ?? "");
+            if (kind === "event:assert-fail") {
+                runtimeEvents.assertionFails++;
+                reporter.onAssertionFail?.({
+                    key: String(event.key ?? ""),
+                    instr: String(event.instr ?? ""),
+                    left: String(event.left ?? ""),
+                    right: String(event.right ?? ""),
+                    message: String(event.message ?? ""),
+                });
+                return;
+            }
+            if (kind === "event:file-start") {
+                runtimeEvents.sawFileStart = true;
+                runtimeEvents.fileName = String(event.file ?? runtimeEvents.fileName);
+                reporter.onFileStart?.({
+                    file: String(event.file ?? "unknown"),
+                    depth: 0,
+                    suiteKind: "file",
+                    description: String(event.file ?? "unknown"),
+                });
+                return;
+            }
+            if (kind === "event:file-end") {
+                runtimeEvents.sawFileEnd = true;
+                runtimeEvents.fileName = String(event.file ?? runtimeEvents.fileName);
+                runtimeEvents.fileVerdict = String(event.verdict ?? "none");
+                runtimeEvents.fileTime = String(event.time ?? "");
+                reporter.onFileEnd?.({
+                    file: String(event.file ?? "unknown"),
+                    depth: 0,
+                    suiteKind: "file",
+                    description: String(event.file ?? "unknown"),
+                    verdict: String(event.verdict ?? "none"),
+                    time: String(event.time ?? ""),
+                });
+                return;
+            }
+            if (kind === "event:suite-start") {
+                runtimeEvents.suiteStarts++;
+                reporter.onSuiteStart?.({
+                    file: String(event.file ?? "unknown"),
+                    depth: Number(event.depth ?? 0),
+                    suiteKind: String(event.suiteKind ?? ""),
+                    description: String(event.description ?? ""),
+                });
+                return;
+            }
+            if (kind === "event:suite-end") {
+                runtimeEvents.suiteEnds++;
+                reporter.onSuiteEnd?.({
+                    file: String(event.file ?? "unknown"),
+                    depth: Number(event.depth ?? 0),
+                    suiteKind: String(event.suiteKind ?? ""),
+                    description: String(event.description ?? ""),
+                    verdict: String(event.verdict ?? "none"),
+                });
+                return;
+            }
+            if (kind === "event:warn") {
+                runtimeEvents.warnings++;
+                reporter.onWarning?.({
+                    message: String(event.message ?? ""),
+                });
+                return;
+            }
+            if (kind === "event:log") {
+                runtimeEvents.logs++;
+                reporter.onLog?.({
+                    file: String(event.file ?? "unknown"),
+                    depth: Number(event.depth ?? 0),
+                    text: String(event.text ?? ""),
+                });
+                return;
+            }
+            if (kind === "snapshot:assert") {
+                const key = String(event.key ?? "");
+                const actual = String(event.actual ?? "");
+                const result = snapshots.assert(key, actual, snapshotEnabled, createSnapshots, overwriteSnapshots);
+                if (result.warnMissing) {
+                    reporter.onSnapshotMissing?.({ key });
+                }
+                this.send(MessageType.CALL, Buffer.from(`${result.ok ? "1" : "0"}\n${result.expected}`, "utf8"));
+                return;
+            }
+            if (kind === "report:start") {
+                reportStream.sawChunkStart = true;
+                reportStream.sawChunkEnd = false;
+                reportStream.chunkCountExpected = Number(event.chunkCount ?? 0);
+                reportStream.chunkBytesExpected = Number(event.chunkBytes ?? 0);
+                reportStream.chunkTotalBytesExpected = Number(event.totalBytes ?? 0);
+                reportStream.chunkFramesReceived = 0;
+                reportStream.chunkBytesReceived = 0;
+                reportStream.chunks = [];
+                return;
+            }
+            if (kind === "report:end") {
+                reportStream.sawChunkEnd = true;
+                return;
+            }
+            this.sendJSON(MessageType.CALL, { ok: true, expected: "" });
+        }
+        onDataMessage(data) {
+            reportStream.dataFrames++;
+            reportStream.dataBytes += data.length;
+            if (reportStream.sawChunkStart && !reportStream.sawChunkEnd) {
+                reportStream.chunkFramesReceived++;
+                reportStream.chunkBytesReceived += data.length;
+                reportStream.chunks.push(data.toString("utf8"));
+                return;
+            }
+            try {
+                report = JSON.parse(data.toString("utf8"));
+                parseError = null;
+            }
+            catch (error) {
+                parseError = String(error);
+            }
+        }
+        onClose() {
+            sawChannelClose = true;
+        }
     }
-    onCall(msg) {
-      const event = msg;
-      const kind = String(event.kind ?? "");
-      if (kind === "event:assert-fail") {
-        runtimeEvents.assertionFails++;
-        reporter.onAssertionFail?.({
-          key: String(event.key ?? ""),
-          instr: String(event.instr ?? ""),
-          left: String(event.left ?? ""),
-          right: String(event.right ?? ""),
-          message: String(event.message ?? ""),
+    const channel = new TestChannel(input, output);
+    output.on("data", (chunk) => {
+        session.sendReply(Buffer.from(chunk));
+    });
+    let code = 0;
+    try {
+        await session.runJob(Object.fromEntries(Object.entries(env).filter((entry) => typeof entry[1] == "string")), formatSpecDisplayPath(specFile), (frame) => {
+            input.write(frame);
         });
-        return;
-      }
-      if (kind === "event:file-start") {
-        runtimeEvents.sawFileStart = true;
-        runtimeEvents.fileName = String(event.file ?? runtimeEvents.fileName);
-        reporter.onFileStart?.({
-          file: String(event.file ?? "unknown"),
-          depth: 0,
-          suiteKind: "file",
-          description: String(event.file ?? "unknown"),
+    }
+    catch (error) {
+        code = 1;
+        await session.close(error instanceof Error ? error : new Error(String(error)));
+        stderrBuffer +=
+            (error instanceof Error
+                ? (error.stack ?? error.message)
+                : String(error)) + "\n";
+    }
+    finally {
+        input.end();
+        output.end();
+    }
+    if (reportStream.sawChunkStart) {
+        if (!reportStream.sawChunkEnd) {
+            parseError =
+                parseError ?? "missing report:end marker for chunked report payload";
+        }
+        else {
+            const chunkedPayload = reportStream.chunks.join("");
+            try {
+                report = JSON.parse(chunkedPayload);
+                parseError = null;
+            }
+            catch (error) {
+                parseError = `could not parse chunked report payload: ${String(error)}`;
+            }
+            if (reportStream.chunkCountExpected > 0 &&
+                reportStream.chunkFramesReceived !== reportStream.chunkCountExpected) {
+                parseError =
+                    parseError ??
+                        `chunk count mismatch: expected ${reportStream.chunkCountExpected}, received ${reportStream.chunkFramesReceived}`;
+            }
+            if (reportStream.chunkTotalBytesExpected > 0 &&
+                reportStream.chunkBytesReceived !== reportStream.chunkTotalBytesExpected) {
+                parseError =
+                    parseError ??
+                        `chunk size mismatch: expected ${reportStream.chunkTotalBytesExpected} bytes, received ${reportStream.chunkBytesReceived}`;
+            }
+        }
+    }
+    if (parseError) {
+        const errorText = `could not parse report payload: ${parseError}`;
+        const diagnostics = buildRuntimeReportDiagnostics(code, sawChannelClose, reportStream, runtimeEvents);
+        const fullError = `${errorText}\n${diagnostics}`;
+        persistCrashRecord(crashDir, {
+            kind: "test",
+            file: specFile,
+            mode: modeName ?? "default",
+            error: fullError,
+            stdout: stdoutBuffer,
+            stderr: stderrBuffer,
         });
-        return;
-      }
-      if (kind === "event:file-end") {
-        runtimeEvents.sawFileEnd = true;
-        runtimeEvents.fileName = String(event.file ?? runtimeEvents.fileName);
-        runtimeEvents.fileVerdict = String(event.verdict ?? "none");
-        runtimeEvents.fileTime = String(event.time ?? "");
-        reporter.onFileEnd?.({
-          file: String(event.file ?? "unknown"),
-          depth: 0,
-          suiteKind: "file",
-          description: String(event.file ?? "unknown"),
-          verdict: String(event.verdict ?? "none"),
-          time: String(event.time ?? ""),
+        return createRuntimeFailureReport(specFile, modeName, "runtime returned an invalid report payload", fullError, stdoutBuffer, stderrBuffer);
+    }
+    if (!report) {
+        const synthesized = synthesizeReportFromRuntimeEvents(specFile, runtimeEvents);
+        if (synthesized) {
+            reporter.onWarning?.({
+                message: "runtime report payload missing; reconstructed result from streamed lifecycle events",
+            });
+            if (code !== 0 || hasMeaningfulRuntimeOutput(stderrBuffer)) {
+                const errorParts = [];
+                if (code !== 0) {
+                    errorParts.push(`child process exited with code ${code}`);
+                }
+                const stderrText = normalizeRuntimeOutput(stderrBuffer);
+                if (stderrText.length) {
+                    errorParts.push(stderrText);
+                }
+                const diagnostics = buildRuntimeReportDiagnostics(code, sawChannelClose, reportStream, runtimeEvents);
+                reporter.onWarning?.({
+                    message: `${errorParts.join("; ")}\n${diagnostics}`,
+                });
+            }
+            return synthesized;
+        }
+        const diagnostics = buildRuntimeReportDiagnostics(code, sawChannelClose, reportStream, runtimeEvents);
+        const fullError = `missing report payload from test runtime\n${diagnostics}`;
+        persistCrashRecord(crashDir, {
+            kind: "test",
+            file: specFile,
+            mode: modeName ?? "default",
+            error: fullError,
+            stdout: stdoutBuffer,
+            stderr: stderrBuffer,
         });
-        return;
-      }
-      if (kind === "event:suite-start") {
-        runtimeEvents.suiteStarts++;
-        reporter.onSuiteStart?.({
-          file: String(event.file ?? "unknown"),
-          depth: Number(event.depth ?? 0),
-          suiteKind: String(event.suiteKind ?? ""),
-          description: String(event.description ?? ""),
-        });
-        return;
-      }
-      if (kind === "event:suite-end") {
-        runtimeEvents.suiteEnds++;
-        reporter.onSuiteEnd?.({
-          file: String(event.file ?? "unknown"),
-          depth: Number(event.depth ?? 0),
-          suiteKind: String(event.suiteKind ?? ""),
-          description: String(event.description ?? ""),
-          verdict: String(event.verdict ?? "none"),
-        });
-        return;
-      }
-      if (kind === "event:warn") {
-        runtimeEvents.warnings++;
+        return createRuntimeFailureReport(specFile, modeName, "missing report payload from test runtime", fullError, stdoutBuffer, stderrBuffer);
+    }
+    if (code != 0 || hasMeaningfulRuntimeOutput(stderrBuffer)) {
+        const diagnostics = buildRuntimeReportDiagnostics(code, sawChannelClose, reportStream, runtimeEvents);
         reporter.onWarning?.({
-          message: String(event.message ?? ""),
+            message: [
+                code !== 0 ? `child process exited with code ${code}` : "",
+                normalizeRuntimeOutput(stderrBuffer),
+                diagnostics,
+            ]
+                .filter(Boolean)
+                .join("\n"),
         });
-        return;
-      }
-      if (kind === "event:log") {
-        runtimeEvents.logs++;
-        reporter.onLog?.({
-          file: String(event.file ?? "unknown"),
-          depth: Number(event.depth ?? 0),
-          text: String(event.text ?? ""),
-        });
-        return;
-      }
-      if (kind === "snapshot:assert") {
-        const key = String(event.key ?? "");
-        const actual = String(event.actual ?? "");
-        const result = snapshots.assert(
-          key,
-          actual,
-          snapshotEnabled,
-          createSnapshots,
-          overwriteSnapshots,
-        );
-        if (result.warnMissing) {
-          reporter.onSnapshotMissing?.({ key });
-        }
-        this.send(
-          MessageType.CALL,
-          Buffer.from(`${result.ok ? "1" : "0"}\n${result.expected}`, "utf8"),
-        );
-        return;
-      }
-      if (kind === "report:start") {
-        reportStream.sawChunkStart = true;
-        reportStream.sawChunkEnd = false;
-        reportStream.chunkCountExpected = Number(event.chunkCount ?? 0);
-        reportStream.chunkBytesExpected = Number(event.chunkBytes ?? 0);
-        reportStream.chunkTotalBytesExpected = Number(event.totalBytes ?? 0);
-        reportStream.chunkFramesReceived = 0;
-        reportStream.chunkBytesReceived = 0;
-        reportStream.chunks = [];
-        return;
-      }
-      if (kind === "report:end") {
-        reportStream.sawChunkEnd = true;
-        return;
-      }
-      this.sendJSON(MessageType.CALL, { ok: true, expected: "" });
     }
-    onDataMessage(data) {
-      reportStream.dataFrames++;
-      reportStream.dataBytes += data.length;
-      if (reportStream.sawChunkStart && !reportStream.sawChunkEnd) {
-        reportStream.chunkFramesReceived++;
-        reportStream.chunkBytesReceived += data.length;
-        reportStream.chunks.push(data.toString("utf8"));
-        return;
-      }
-      try {
-        report = JSON.parse(data.toString("utf8"));
-        parseError = null;
-      } catch (error) {
-        parseError = String(error);
-      }
-    }
-    onClose() {
-      sawChannelClose = true;
-    }
-  }
-  const channel = new TestChannel(input, output);
-  output.on("data", (chunk) => {
-    session.sendReply(Buffer.from(chunk));
-  });
-  let code = 0;
-  try {
-    await session.runJob(
-      Object.fromEntries(
-        Object.entries(env).filter((entry) => typeof entry[1] == "string"),
-      ),
-      formatSpecDisplayPath(specFile),
-      (frame) => {
-        input.write(frame);
-      },
-    );
-  } catch (error) {
-    code = 1;
-    await session.close(
-      error instanceof Error ? error : new Error(String(error)),
-    );
-    stderrBuffer +=
-      (error instanceof Error
-        ? (error.stack ?? error.message)
-        : String(error)) + "\n";
-  } finally {
-    input.end();
-    output.end();
-  }
-  if (reportStream.sawChunkStart) {
-    if (!reportStream.sawChunkEnd) {
-      parseError =
-        parseError ?? "missing report:end marker for chunked report payload";
-    } else {
-      const chunkedPayload = reportStream.chunks.join("");
-      try {
-        report = JSON.parse(chunkedPayload);
-        parseError = null;
-      } catch (error) {
-        parseError = `could not parse chunked report payload: ${String(error)}`;
-      }
-      if (
-        reportStream.chunkCountExpected > 0 &&
-        reportStream.chunkFramesReceived !== reportStream.chunkCountExpected
-      ) {
-        parseError =
-          parseError ??
-          `chunk count mismatch: expected ${reportStream.chunkCountExpected}, received ${reportStream.chunkFramesReceived}`;
-      }
-      if (
-        reportStream.chunkTotalBytesExpected > 0 &&
-        reportStream.chunkBytesReceived !== reportStream.chunkTotalBytesExpected
-      ) {
-        parseError =
-          parseError ??
-          `chunk size mismatch: expected ${reportStream.chunkTotalBytesExpected} bytes, received ${reportStream.chunkBytesReceived}`;
-      }
-    }
-  }
-  if (parseError) {
-    const errorText = `could not parse report payload: ${parseError}`;
-    const diagnostics = buildRuntimeReportDiagnostics(
-      code,
-      sawChannelClose,
-      reportStream,
-      runtimeEvents,
-    );
-    const fullError = `${errorText}\n${diagnostics}`;
-    persistCrashRecord(crashDir, {
-      kind: "test",
-      file: specFile,
-      mode: modeName ?? "default",
-      error: fullError,
-      stdout: stdoutBuffer,
-      stderr: stderrBuffer,
-    });
-    return createRuntimeFailureReport(
-      specFile,
-      modeName,
-      "runtime returned an invalid report payload",
-      fullError,
-      stdoutBuffer,
-      stderrBuffer,
-    );
-  }
-  if (!report) {
-    const synthesized = synthesizeReportFromRuntimeEvents(
-      specFile,
-      runtimeEvents,
-    );
-    if (synthesized) {
-      reporter.onWarning?.({
-        message:
-          "runtime report payload missing; reconstructed result from streamed lifecycle events",
-      });
-      if (code !== 0 || hasMeaningfulRuntimeOutput(stderrBuffer)) {
-        const errorParts = [];
-        if (code !== 0) {
-          errorParts.push(`child process exited with code ${code}`);
-        }
-        const stderrText = normalizeRuntimeOutput(stderrBuffer);
-        if (stderrText.length) {
-          errorParts.push(stderrText);
-        }
-        const diagnostics = buildRuntimeReportDiagnostics(
-          code,
-          sawChannelClose,
-          reportStream,
-          runtimeEvents,
-        );
-        reporter.onWarning?.({
-          message: `${errorParts.join("; ")}\n${diagnostics}`,
-        });
-      }
-      return synthesized;
-    }
-    const diagnostics = buildRuntimeReportDiagnostics(
-      code,
-      sawChannelClose,
-      reportStream,
-      runtimeEvents,
-    );
-    const fullError = `missing report payload from test runtime\n${diagnostics}`;
-    persistCrashRecord(crashDir, {
-      kind: "test",
-      file: specFile,
-      mode: modeName ?? "default",
-      error: fullError,
-      stdout: stdoutBuffer,
-      stderr: stderrBuffer,
-    });
-    return createRuntimeFailureReport(
-      specFile,
-      modeName,
-      "missing report payload from test runtime",
-      fullError,
-      stdoutBuffer,
-      stderrBuffer,
-    );
-  }
-  if (code != 0 || hasMeaningfulRuntimeOutput(stderrBuffer)) {
-    const diagnostics = buildRuntimeReportDiagnostics(
-      code,
-      sawChannelClose,
-      reportStream,
-      runtimeEvents,
-    );
-    reporter.onWarning?.({
-      message: [
-        code !== 0 ? `child process exited with code ${code}` : "",
-        normalizeRuntimeOutput(stderrBuffer),
-        diagnostics,
-      ]
-        .filter(Boolean)
-        .join("\n"),
-    });
-  }
-  return report;
+    return report;
 }
 function synthesizeReportFromRuntimeEvents(specFile, runtimeEvents) {
-  if (
-    !runtimeEvents.sawFileEnd &&
-    runtimeEvents.suiteStarts <= 0 &&
-    runtimeEvents.suiteEnds <= 0
-  ) {
-    return null;
-  }
-  let verdict = runtimeEvents.fileVerdict;
-  if (verdict == "none" && runtimeEvents.assertionFails > 0) {
-    verdict = "fail";
-  } else if (verdict == "none" && runtimeEvents.sawFileEnd) {
-    verdict = "ok";
-  }
-  return {
-    suites: [
-      {
+    if (!runtimeEvents.sawFileEnd &&
+        runtimeEvents.suiteStarts <= 0 &&
+        runtimeEvents.suiteEnds <= 0) {
+        return null;
+    }
+    let verdict = runtimeEvents.fileVerdict;
+    if (verdict == "none" && runtimeEvents.assertionFails > 0) {
+        verdict = "fail";
+    }
+    else if (verdict == "none" && runtimeEvents.sawFileEnd) {
+        verdict = "ok";
+    }
+    return {
+        suites: [
+            {
+                file: specFile,
+                description: runtimeEvents.fileName || formatSpecDisplayPath(specFile),
+                depth: 0,
+                kind: "file",
+                verdict,
+                time: {
+                    start: 0,
+                    end: 0,
+                },
+                suites: [],
+                logs: [],
+                tests: [],
+            },
+        ],
+        coverage: {
+            total: 0,
+            covered: 0,
+            uncovered: 0,
+            percent: 100,
+            points: [],
+        },
+    };
+}
+function buildRuntimeReportDiagnostics(code, sawChannelClose, reportStream, runtimeEvents) {
+    return [
+        `runtime diagnostics: exitCode=${code}, channelClose=${sawChannelClose ? "yes" : "no"}`,
+        `report stream: dataFrames=${reportStream.dataFrames}, dataBytes=${reportStream.dataBytes}, chunked=${reportStream.sawChunkStart ? "yes" : "no"}, chunkStart=${reportStream.sawChunkStart ? "yes" : "no"}, chunkEnd=${reportStream.sawChunkEnd ? "yes" : "no"}, chunkFrames=${reportStream.chunkFramesReceived}, expectedChunkFrames=${reportStream.chunkCountExpected}, chunkBytes=${reportStream.chunkBytesReceived}, expectedChunkBytes=${reportStream.chunkTotalBytesExpected}`,
+        `runtime events: fileStart=${runtimeEvents.sawFileStart ? "yes" : "no"}, fileEnd=${runtimeEvents.sawFileEnd ? "yes" : "no"}, fileVerdict=${runtimeEvents.fileVerdict}, suiteStarts=${runtimeEvents.suiteStarts}, suiteEnds=${runtimeEvents.suiteEnds}, assertionFails=${runtimeEvents.assertionFails}, warnings=${runtimeEvents.warnings}, logs=${runtimeEvents.logs}`,
+    ].join("\n");
+}
+function createRuntimeFailureReport(specFile, modeName, title, details, stdout, stderr) {
+    return appendRuntimeFailureReport({
+        suites: [],
+        coverage: {
+            total: 0,
+            covered: 0,
+            uncovered: 0,
+            percent: 100,
+            points: [],
+        },
+    }, specFile, modeName, title, details, stdout, stderr);
+}
+function appendRuntimeFailureReport(report, specFile, modeName, title, details, stdout, stderr) {
+    const suites = Array.isArray(report?.suites) ? report.suites : [];
+    suites.push({
         file: specFile,
-        description: runtimeEvents.fileName || formatSpecDisplayPath(specFile),
+        description: formatSpecDisplayPath(specFile),
         depth: 0,
-        kind: "file",
-        verdict,
+        kind: "runtime-error",
+        verdict: "fail",
         time: {
-          start: 0,
-          end: 0,
+            start: 0,
+            end: 0,
         },
         suites: [],
         logs: [],
-        tests: [],
-      },
-    ],
-    coverage: {
-      total: 0,
-      covered: 0,
-      uncovered: 0,
-      percent: 100,
-      points: [],
-    },
-  };
-}
-function buildRuntimeReportDiagnostics(
-  code,
-  sawChannelClose,
-  reportStream,
-  runtimeEvents,
-) {
-  return [
-    `runtime diagnostics: exitCode=${code}, channelClose=${sawChannelClose ? "yes" : "no"}`,
-    `report stream: dataFrames=${reportStream.dataFrames}, dataBytes=${reportStream.dataBytes}, chunked=${reportStream.sawChunkStart ? "yes" : "no"}, chunkStart=${reportStream.sawChunkStart ? "yes" : "no"}, chunkEnd=${reportStream.sawChunkEnd ? "yes" : "no"}, chunkFrames=${reportStream.chunkFramesReceived}, expectedChunkFrames=${reportStream.chunkCountExpected}, chunkBytes=${reportStream.chunkBytesReceived}, expectedChunkBytes=${reportStream.chunkTotalBytesExpected}`,
-    `runtime events: fileStart=${runtimeEvents.sawFileStart ? "yes" : "no"}, fileEnd=${runtimeEvents.sawFileEnd ? "yes" : "no"}, fileVerdict=${runtimeEvents.fileVerdict}, suiteStarts=${runtimeEvents.suiteStarts}, suiteEnds=${runtimeEvents.suiteEnds}, assertionFails=${runtimeEvents.assertionFails}, warnings=${runtimeEvents.warnings}, logs=${runtimeEvents.logs}`,
-  ].join("\n");
-}
-function createRuntimeFailureReport(
-  specFile,
-  modeName,
-  title,
-  details,
-  stdout,
-  stderr,
-) {
-  return appendRuntimeFailureReport(
-    {
-      suites: [],
-      coverage: {
-        total: 0,
-        covered: 0,
-        uncovered: 0,
-        percent: 100,
-        points: [],
-      },
-    },
-    specFile,
-    modeName,
-    title,
-    details,
-    stdout,
-    stderr,
-  );
-}
-function appendRuntimeFailureReport(
-  report,
-  specFile,
-  modeName,
-  title,
-  details,
-  stdout,
-  stderr,
-) {
-  const suites = Array.isArray(report?.suites) ? report.suites : [];
-  suites.push({
-    file: specFile,
-    description: formatSpecDisplayPath(specFile),
-    depth: 0,
-    kind: "runtime-error",
-    verdict: "fail",
-    time: {
-      start: 0,
-      end: 0,
-    },
-    suites: [],
-    logs: [],
-    tests: [
-      {
-        order: 0,
-        type: "runtime-error",
-        verdict: "fail",
-        left: null,
-        right: null,
-        instr: title,
-        message: formatRuntimeFailureMessage(details, stdout, stderr),
-        location: "",
-      },
-    ],
-    modeName: modeName ?? "default",
-  });
-  report.suites = suites;
-  return report;
+        tests: [
+            {
+                order: 0,
+                type: "runtime-error",
+                verdict: "fail",
+                left: null,
+                right: null,
+                instr: title,
+                message: formatRuntimeFailureMessage(details, stdout, stderr),
+                location: "",
+            },
+        ],
+        modeName: modeName ?? "default",
+    });
+    report.suites = suites;
+    return report;
 }
 function formatRuntimeFailureMessage(details, stdout, stderr) {
-  const parts = [];
-  const normalizedDetails = normalizeRuntimeOutput(details);
-  const normalizedStderr = normalizeRuntimeOutput(stderr);
-  const normalizedStdout = normalizeRuntimeOutput(stdout);
-  if (normalizedDetails.length) parts.push(normalizedDetails);
-  if (normalizedStderr.length && normalizedStderr !== normalizedDetails) {
-    parts.push(`stderr:\n${normalizedStderr}`);
-  }
-  if (normalizedStdout.length) {
-    parts.push(`stdout:\n${normalizedStdout}`);
-  }
-  return parts.join("\n\n");
+    const parts = [];
+    const normalizedDetails = normalizeRuntimeOutput(details);
+    const normalizedStderr = normalizeRuntimeOutput(stderr);
+    const normalizedStdout = normalizeRuntimeOutput(stdout);
+    if (normalizedDetails.length)
+        parts.push(normalizedDetails);
+    if (normalizedStderr.length && normalizedStderr !== normalizedDetails) {
+        parts.push(`stderr:\n${normalizedStderr}`);
+    }
+    if (normalizedStdout.length) {
+        parts.push(`stdout:\n${normalizedStdout}`);
+    }
+    return parts.join("\n\n");
 }
 function normalizeRuntimeOutput(value) {
-  return value.replace(/\r\n/g, "\n").trim();
+    return value.replace(/\r\n/g, "\n").trim();
 }
 function hasMeaningfulRuntimeOutput(value) {
-  return normalizeRuntimeOutput(value).length > 0;
+    return normalizeRuntimeOutput(value).length > 0;
 }
 function shouldSuppressWasiWarningLine(line) {
-  if (line.includes("ExperimentalWarning: WASI is an experimental feature")) {
-    return true;
-  }
-  if (line.includes("--trace-warnings")) {
-    return true;
-  }
-  return false;
+    if (line.includes("ExperimentalWarning: WASI is an experimental feature")) {
+        return true;
+    }
+    if (line.includes("--trace-warnings")) {
+        return true;
+    }
+    return false;
 }
 function collectRunStats(reports) {
-  const stats = {
-    passedFiles: 0,
-    failedFiles: 0,
-    skippedFiles: 0,
-    passedSuites: 0,
-    failedSuites: 0,
-    skippedSuites: 0,
-    passedTests: 0,
-    failedTests: 0,
-    skippedTests: 0,
-    time: 0.0,
-    failedEntries: [],
-  };
-  for (const fileReport of reports) {
-    readFileReport(stats, fileReport);
-  }
-  return stats;
+    const stats = {
+        passedFiles: 0,
+        failedFiles: 0,
+        skippedFiles: 0,
+        passedSuites: 0,
+        failedSuites: 0,
+        skippedSuites: 0,
+        passedTests: 0,
+        failedTests: 0,
+        skippedTests: 0,
+        time: 0.0,
+        failedEntries: [],
+    };
+    for (const fileReport of reports) {
+        readFileReport(stats, fileReport);
+    }
+    return stats;
 }
 function readFileReport(stats, fileReport) {
-  const fileReportAny = fileReport;
-  const suites = Array.isArray(fileReportAny.suites)
-    ? fileReportAny.suites
-    : Array.isArray(fileReport)
-      ? fileReport
-      : [];
-  const file = String(fileReportAny.file ?? "");
-  const modeName = String(fileReportAny.modeName ?? "");
-  const runCommand = String(fileReportAny.runCommand ?? "");
-  const buildCommand = String(fileReportAny.buildCommand ?? "");
-  let fileVerdict = "none";
-  for (const suite of suites) {
-    fileVerdict = mergeVerdict(
-      fileVerdict,
-      readSuite(stats, suite, file, modeName, runCommand, buildCommand),
-    );
-  }
-  if (fileVerdict == "fail") {
-    stats.failedFiles++;
-  } else if (fileVerdict == "ok") {
-    stats.passedFiles++;
-  } else {
-    stats.skippedFiles++;
-  }
+    const fileReportAny = fileReport;
+    const suites = Array.isArray(fileReportAny.suites)
+        ? fileReportAny.suites
+        : Array.isArray(fileReport)
+            ? fileReport
+            : [];
+    const file = String(fileReportAny.file ?? "");
+    const modeName = String(fileReportAny.modeName ?? "");
+    const runCommand = String(fileReportAny.runCommand ?? "");
+    const buildCommand = String(fileReportAny.buildCommand ?? "");
+    let fileVerdict = "none";
+    for (const suite of suites) {
+        fileVerdict = mergeVerdict(fileVerdict, readSuite(stats, suite, file, modeName, runCommand, buildCommand));
+    }
+    if (fileVerdict == "fail") {
+        stats.failedFiles++;
+    }
+    else if (fileVerdict == "ok") {
+        stats.passedFiles++;
+    }
+    else {
+        stats.skippedFiles++;
+    }
 }
 function readSuite(stats, suite, file, modeName, runCommand, buildCommand) {
-  const suiteAny = suite;
-  const kind = String(suiteAny.kind ?? "");
-  let verdict = normalizeVerdict(suiteAny.verdict);
-  const time = suiteAny.time;
-  const start = Number(time?.start ?? 0);
-  const end = Number(time?.end ?? 0);
-  stats.time += end - start;
-  const subSuites = Array.isArray(suiteAny.suites) ? suiteAny.suites : [];
-  for (const subSuite of subSuites) {
-    verdict = mergeVerdict(
-      verdict,
-      readSuite(stats, subSuite, file, modeName, runCommand, buildCommand),
-    );
-  }
-  const tests = Array.isArray(suiteAny.tests) ? suiteAny.tests : [];
-  for (const test of tests) {
-    const testVerdict = normalizeVerdict(test.verdict);
-    verdict = mergeVerdict(verdict, testVerdict);
-    if (testVerdict == "fail") {
-      stats.failedTests++;
-    } else if (testVerdict == "ok") {
-      stats.passedTests++;
-    } else {
-      stats.skippedTests++;
+    const suiteAny = suite;
+    const kind = String(suiteAny.kind ?? "");
+    let verdict = normalizeVerdict(suiteAny.verdict);
+    const time = suiteAny.time;
+    const start = Number(time?.start ?? 0);
+    const end = Number(time?.end ?? 0);
+    stats.time += end - start;
+    const subSuites = Array.isArray(suiteAny.suites)
+        ? suiteAny.suites
+        : [];
+    for (const subSuite of subSuites) {
+        verdict = mergeVerdict(verdict, readSuite(stats, subSuite, file, modeName, runCommand, buildCommand));
     }
-  }
-  if (isTestCaseSuiteKind(kind)) {
-    if (!subSuites.length && !tests.length) {
-      if (verdict == "fail") {
-        stats.failedTests++;
-      } else if (verdict == "ok") {
-        stats.passedTests++;
-      } else if (verdict == "skip") {
-        stats.skippedTests++;
-      }
+    const tests = Array.isArray(suiteAny.tests)
+        ? suiteAny.tests
+        : [];
+    for (const test of tests) {
+        const testVerdict = normalizeVerdict(test.verdict);
+        verdict = mergeVerdict(verdict, testVerdict);
+        if (testVerdict == "fail") {
+            stats.failedTests++;
+        }
+        else if (testVerdict == "ok") {
+            stats.passedTests++;
+        }
+        else {
+            stats.skippedTests++;
+        }
+    }
+    if (isTestCaseSuiteKind(kind)) {
+        if (!subSuites.length && !tests.length) {
+            if (verdict == "fail") {
+                stats.failedTests++;
+            }
+            else if (verdict == "ok") {
+                stats.passedTests++;
+            }
+            else if (verdict == "skip") {
+                stats.skippedTests++;
+            }
+        }
+        return verdict;
+    }
+    if (verdict == "fail") {
+        stats.failedSuites++;
+        stats.failedEntries.push({
+            ...suiteAny,
+            file,
+            modeName,
+            runCommand,
+            buildCommand,
+        });
+    }
+    else if (verdict == "ok") {
+        stats.passedSuites++;
+    }
+    else {
+        stats.skippedSuites++;
     }
     return verdict;
-  }
-  if (verdict == "fail") {
-    stats.failedSuites++;
-    stats.failedEntries.push({
-      ...suiteAny,
-      file,
-      modeName,
-      runCommand,
-      buildCommand,
-    });
-  } else if (verdict == "ok") {
-    stats.passedSuites++;
-  } else {
-    stats.skippedSuites++;
-  }
-  return verdict;
 }
 function isTestCaseSuiteKind(kind) {
-  return (
-    kind == "test" ||
-    kind == "it" ||
-    kind == "only" ||
-    kind == "xtest" ||
-    kind == "xit" ||
-    kind == "xonly" ||
-    kind == "todo"
-  );
+    return (kind == "test" ||
+        kind == "it" ||
+        kind == "only" ||
+        kind == "xtest" ||
+        kind == "xit" ||
+        kind == "xonly" ||
+        kind == "todo");
 }
 function normalizeVerdict(value) {
-  const verdict = String(value ?? "none");
-  if (verdict == "fail") return "fail";
-  if (verdict == "ok") return "ok";
-  if (verdict == "skip") return "skip";
-  return "none";
+    const verdict = String(value ?? "none");
+    if (verdict == "fail")
+        return "fail";
+    if (verdict == "ok")
+        return "ok";
+    if (verdict == "skip")
+        return "skip";
+    return "none";
 }
 function mergeVerdict(current, next) {
-  if (current == "fail" || next == "fail") return "fail";
-  if (current == "ok" || next == "ok") return "ok";
-  if (current == "skip" || next == "skip") return "skip";
-  return "none";
+    if (current == "fail" || next == "fail")
+        return "fail";
+    if (current == "ok" || next == "ok")
+        return "ok";
+    if (current == "skip" || next == "skip")
+        return "skip";
+    return "none";
 }
-export async function createRunReporter(
-  configPath = DEFAULT_CONFIG_PATH,
-  reporterPath,
-  modeName,
-  context = {
+export async function createRunReporter(configPath = DEFAULT_CONFIG_PATH, reporterPath, modeName, context = {
     stdout: process.stdout,
     stderr: process.stderr,
-  },
-) {
-  const resolvedConfigPath = configPath ?? DEFAULT_CONFIG_PATH;
-  const loadedConfig = loadConfig(resolvedConfigPath);
-  const mode = applyMode(loadedConfig, modeName);
-  const config = mode.config;
-  const selection = resolveReporterSelection(
-    reporterPath,
-    config.runOptions.reporter,
-  );
-  const reporter = await loadReporter(selection, resolvedConfigPath, {
-    stdout: context.stdout,
-    stderr: context.stderr,
-  });
-  const runtimeCommand = resolveRuntimeCommand(
-    getConfiguredRuntimeCmd(config),
-    config.buildOptions.target,
-    false,
-  );
-  return {
-    reporter,
-    reporterKind: selection.kind,
-    runtimeName: runtimeNameFromCommand(runtimeCommand),
-    resolvedConfigPath,
-  };
+}) {
+    const resolvedConfigPath = configPath ?? DEFAULT_CONFIG_PATH;
+    const loadedConfig = loadConfig(resolvedConfigPath);
+    const mode = applyMode(loadedConfig, modeName);
+    const config = mode.config;
+    const selection = resolveReporterSelection(reporterPath, config.runOptions.reporter);
+    const reporter = await loadReporter(selection, resolvedConfigPath, {
+        stdout: context.stdout,
+        stderr: context.stderr,
+    });
+    const runtimeCommand = resolveRuntimeCommand(getConfiguredRuntimeCmd(config), config.buildOptions.target, false);
+    return {
+        reporter,
+        reporterKind: selection.kind,
+        runtimeName: runtimeNameFromCommand(runtimeCommand),
+        resolvedConfigPath,
+    };
 }
 async function loadReporter(selection, configPath, context) {
-  if (selection.kind == "default") {
-    return createDefaultReporter(context);
-  }
-  if (selection.kind == "tap") {
-    return createTapReporter(context, selection.tap);
-  }
-  const reporterPath = selection.reporterPath;
-  if (!reporterPath) {
-    return createDefaultReporter(context);
-  }
-  const resolved = path.isAbsolute(reporterPath)
-    ? reporterPath
-    : path.resolve(path.dirname(configPath), reporterPath);
-  try {
-    const mod = await import(pathToFileURL(resolved).href);
-    const factory = resolveReporterFactory(mod);
-    return factory(context);
-  } catch (error) {
-    const reporterError = new Error(
-      `could not load reporter "${reporterPath}": ${String(error)}`,
-    );
-    reporterError.cause = error;
-    throw reporterError;
-  }
+    if (selection.kind == "default") {
+        return createDefaultReporter(context);
+    }
+    if (selection.kind == "tap") {
+        return createTapReporter(context, selection.tap);
+    }
+    const reporterPath = selection.reporterPath;
+    if (!reporterPath) {
+        return createDefaultReporter(context);
+    }
+    const resolved = path.isAbsolute(reporterPath)
+        ? reporterPath
+        : path.resolve(path.dirname(configPath), reporterPath);
+    try {
+        const mod = (await import(pathToFileURL(resolved).href));
+        const factory = resolveReporterFactory(mod);
+        return factory(context);
+    }
+    catch (error) {
+        const reporterError = new Error(`could not load reporter "${reporterPath}": ${String(error)}`);
+        reporterError.cause = error;
+        throw reporterError;
+    }
 }
 function resolveReporterSelection(cliValue, configValue) {
-  const parsed = parseReporterConfig(configValue);
-  const raw = resolveCliReporter(
-    process.argv.slice(2),
-    cliValue ?? parsed.name,
-  );
-  const normalized = raw.trim();
-  const canonical = normalized.toLowerCase();
-  if (!normalized.length || canonical == "default") {
-    return { kind: "default", reporterPath: "", tap: parsed.tap };
-  }
-  if (canonical == "tap" || canonical == "tap13") {
-    return { kind: "tap", reporterPath: "", tap: parsed.tap };
-  }
-  return { kind: "custom", reporterPath: normalized, tap: parsed.tap };
+    const parsed = parseReporterConfig(configValue);
+    const raw = resolveCliReporter(process.argv.slice(2), cliValue ?? parsed.name);
+    const normalized = raw.trim();
+    const canonical = normalized.toLowerCase();
+    if (!normalized.length || canonical == "default") {
+        return { kind: "default", reporterPath: "", tap: parsed.tap };
+    }
+    if (canonical == "tap" || canonical == "tap13") {
+        return { kind: "tap", reporterPath: "", tap: parsed.tap };
+    }
+    return { kind: "custom", reporterPath: normalized, tap: parsed.tap };
 }
 function resolveCliReporter(argv, fallback) {
-  let resolved = fallback;
-  for (let i = 0; i < argv.length; i++) {
-    const token = argv[i];
-    if (token == "--tap") {
-      resolved = "tap";
-      continue;
+    let resolved = fallback;
+    for (let i = 0; i < argv.length; i++) {
+        const token = argv[i];
+        if (token == "--tap") {
+            resolved = "tap";
+            continue;
+        }
+        if (token == "--reporter") {
+            const value = argv[i + 1];
+            if (!value || value.startsWith("-")) {
+                throw new Error(`--reporter requires a value`);
+            }
+            resolved = value;
+            i++;
+            continue;
+        }
+        if (token.startsWith("--reporter=")) {
+            const value = token.slice("--reporter=".length);
+            if (!value.length) {
+                throw new Error(`--reporter requires a value`);
+            }
+            resolved = value;
+            continue;
+        }
     }
-    if (token == "--reporter") {
-      const value = argv[i + 1];
-      if (!value || value.startsWith("-")) {
-        throw new Error(`--reporter requires a value`);
-      }
-      resolved = value;
-      i++;
-      continue;
-    }
-    if (token.startsWith("--reporter=")) {
-      const value = token.slice("--reporter=".length);
-      if (!value.length) {
-        throw new Error(`--reporter requires a value`);
-      }
-      resolved = value;
-      continue;
-    }
-  }
-  return resolved;
+    return resolved;
 }
 function parseReporterConfig(value) {
-  const tap = {
-    mode: "single-file",
-    outDir: "./.as-test/reports",
-    outFile: "./.as-test/reports/report.tap",
-  };
-  if (typeof value == "string") {
-    return { name: value, tap };
-  }
-  if (!value || typeof value != "object") {
-    return { name: "", tap };
-  }
-  const config = value;
-  const name = typeof config.name == "string" ? config.name : "";
-  if (typeof config.outDir == "string" && config.outDir.trim().length) {
-    tap.outDir = config.outDir.trim();
-  }
-  if (typeof config.outFile == "string" && config.outFile.trim().length) {
-    tap.outFile = config.outFile.trim();
-  } else if (tap.outDir && tap.outDir.length) {
-    tap.outFile = path.join(tap.outDir, "report.tap");
-  }
-  if (Array.isArray(config.options)) {
-    const options = config.options
-      .filter((option) => typeof option == "string")
-      .map((option) => option.toLowerCase());
-    if (options.includes("per-file")) {
-      tap.mode = "per-file";
-      if (!config.outFile && tap.outDir && tap.outDir.length) {
-        tap.outFile = path.join(tap.outDir, "report.tap");
-      }
-    } else {
-      tap.mode = "single-file";
+    const tap = {
+        mode: "single-file",
+        outDir: "./.as-test/reports",
+        outFile: "./.as-test/reports/report.tap",
+    };
+    if (typeof value == "string") {
+        return { name: value, tap };
     }
-  }
-  return { name, tap };
+    if (!value || typeof value != "object") {
+        return { name: "", tap };
+    }
+    const config = value;
+    const name = typeof config.name == "string" ? config.name : "";
+    if (typeof config.outDir == "string" && config.outDir.trim().length) {
+        tap.outDir = config.outDir.trim();
+    }
+    if (typeof config.outFile == "string" && config.outFile.trim().length) {
+        tap.outFile = config.outFile.trim();
+    }
+    else if (tap.outDir && tap.outDir.length) {
+        tap.outFile = path.join(tap.outDir, "report.tap");
+    }
+    if (Array.isArray(config.options)) {
+        const options = config.options
+            .filter((option) => typeof option == "string")
+            .map((option) => option.toLowerCase());
+        if (options.includes("per-file")) {
+            tap.mode = "per-file";
+            if (!config.outFile && tap.outDir && tap.outDir.length) {
+                tap.outFile = path.join(tap.outDir, "report.tap");
+            }
+        }
+        else {
+            tap.mode = "single-file";
+        }
+    }
+    return { name, tap };
 }
 function resolveReporterFactory(mod) {
-  const fromNamed = mod.createReporter;
-  if (typeof fromNamed == "function") {
-    return fromNamed;
-  }
-  const fromDefault = mod.default;
-  if (typeof fromDefault == "function") {
-    return fromDefault;
-  }
-  if (
-    fromDefault &&
-    typeof fromDefault == "object" &&
-    "createReporter" in fromDefault
-  ) {
-    const nested = fromDefault.createReporter;
-    if (typeof nested == "function") {
-      return nested;
+    const fromNamed = mod.createReporter;
+    if (typeof fromNamed == "function") {
+        return fromNamed;
     }
-  }
-  throw new Error(
-    `reporter module must export a factory as "createReporter" or default`,
-  );
+    const fromDefault = mod.default;
+    if (typeof fromDefault == "function") {
+        return fromDefault;
+    }
+    if (fromDefault &&
+        typeof fromDefault == "object" &&
+        "createReporter" in fromDefault) {
+        const nested = fromDefault.createReporter;
+        if (typeof nested == "function") {
+            return nested;
+        }
+    }
+    throw new Error(`reporter module must export a factory as "createReporter" or default`);
 }
 export const __coverageInternals = {
-  classifyCoverageFile,
-  resolveCoverageDependencyPackage,
-  isIgnoredCoverageFile,
-  resolveCoverageOptions,
+    classifyCoverageFile,
+    resolveCoverageDependencyPackage,
+    isIgnoredCoverageFile,
+    resolveCoverageOptions,
 };

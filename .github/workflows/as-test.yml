@@ -29,6 +29,9 @@ jobs:
       - name: Run tests
         run: bun run test:ci
 
+      - name: Run integration tests
+        run: bun run test:integration
+
       - name: Test Summary
         uses: test-summary/action@v2
         if: always()
