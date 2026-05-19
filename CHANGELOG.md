@@ -1,14 +1,17 @@
 # Change Log
 
+## 2026-05-19 - v1.1.9
+
+- fix: spec files that share a basename across subdirectories (e.g. `sqli/flags.spec.ts` and `sqli_v2/flags.spec.ts`) now build to their disambiguated artifact names across `ast test`, `ast run`, and `ast fuzz` — even when only one of them is being built. Previously the single-file build paths, the selector-filtered top-level build, the per-mode test/run dispatch, the plan listing, and the fuzz runner all computed duplicates from a local (and often single-element) file list, never matched anything, and clobbered each other into a single `flags.spec.wasm` / `parser.fuzz.wasm`; the runner then reported `bindings artifact not found`. Every call site now computes the duplicate set against the full configured input glob (`config.input` for tests/runs, `config.fuzz.input` when `overrides.kind === "fuzz"`), matching the runner's lookup behavior.
+- chore: as-test's own suite now includes nested fixtures (`assembly/__tests__/nested/array.spec.ts`, `assembly/__fuzz__/nested/array.fuzz.ts`) that share basenames with siblings at the top level, exercising the disambiguation path end-to-end against the real build/run pipeline. The repo `as-test.config.json` inputs were widened to `**/*.spec.ts` / `**/*.fuzz.ts` to pick them up.
+- chore: `npm test` now runs both the AssemblyScript spec suite (`npm run test:as`) and the Node integration suite (`npm run test:integration`) in one command. `release:check` and `prepublishOnly` no longer need to invoke `test:integration` separately.
+- chore: GitHub workflows (`as-test.yml`, `release.yml`) now run `test:integration` after `test:ci`, so the Node integration suite gates PRs and releases (previously CI only ran the AS spec suite).
+
 ## 2026-05-18 - v1.1.8
 
 - chore: `ast init` now writes `json-as` (`^1.3.5`) into the consumer's `devDependencies` so a fresh project installs everything it needs in one step.
 - fix: align the `covered, missing` column in coverage file breakdowns so long file paths no longer push the counts out of column.
 - feat: `--show-coverage` (and `--show-coverage=all`) now auto-enable coverage when coverage hasn't been explicitly toggled, removing the "coverage is disabled" warning when only the show flag is passed.
-- fix: spec files that share a basename across subdirectories (e.g. `sqli/flags.spec.ts` and `sqli_v2/flags.spec.ts`) now build to their disambiguated artifact names across `ast test`, `ast run`, and `ast fuzz` — even when only one of them is being built. Previously the single-file build paths, the selector-filtered top-level build, the per-mode test/run dispatch, the plan listing, and the fuzz runner all computed duplicates from a local (and often single-element) file list, never matched anything, and clobbered each other into a single `flags.spec.wasm` / `parser.fuzz.wasm`; the runner then reported `bindings artifact not found`. Every call site now computes the duplicate set against the full configured input glob (`config.input` for tests/runs, `config.fuzz.input` when `overrides.kind === "fuzz"`), matching the runner's lookup behavior.
-- chore: as-test's own suite now includes nested fixtures (`assembly/__tests__/nested/array.spec.ts`, `assembly/__fuzz__/nested/array.fuzz.ts`) that share basenames with siblings at the top level, exercising the disambiguation path end-to-end against the real build/run pipeline. The repo `as-test.config.json` inputs were widened to `**/*.spec.ts` / `**/*.fuzz.ts` to pick them up.
-- chore: `npm test` now runs both the AssemblyScript spec suite (`npm run test:as`) and the Node integration suite (`npm run test:integration`) in one command. `release:check` and `prepublishOnly` no longer need to invoke `test:integration` separately.
-- chore: GitHub workflows (`as-test.yml`, `release.yml`) now run `test:integration` after `test:ci`, so the Node integration suite gates PRs and releases (previously CI only ran the AS spec suite).
 
 ## 2026-05-18 - v1.1.7
 
