@@ -8,6 +8,8 @@ import {
   formatTime,
   getExec,
   loadConfig,
+  resolveArtifactPath,
+  resolveSpecRelativePath,
   tokenizeCommand,
 } from "../util.js";
 import * as path from "path";
@@ -173,31 +175,23 @@ class SnapshotStore {
   constructor(
     specFile: string,
     snapshotDir: string,
-    duplicateSpecBasenames: Set<string> = new Set<string>(),
+    inputPatterns: string[] | string,
   ) {
     this.specBasename = path.basename(specFile);
     const dir = path.join(process.cwd(), snapshotDir);
-    const relative = resolveArtifactRelativePath(specFile, "__tests__").replace(
-      /\.ts$/,
+    const relative = resolveSpecRelativePath(specFile, inputPatterns).replace(
+      /\.ts$/i,
       ".snap",
     );
     this.filePath = path.join(dir, relative);
-    const sourcePath =
-      resolveSnapshotSourcePath(
-        specFile,
-        dir,
-        duplicateSpecBasenames,
-        this.filePath,
-      ) ?? null;
+    const sourcePath = existsSync(this.filePath) ? this.filePath : null;
     const loaded = sourcePath
       ? readSnapshotFile(sourcePath, specFile)
       : { data: {}, normalized: false, preamble: "" };
     this.data = loaded.data;
     this.preamble = loaded.preamble;
-    this.existed = Boolean(sourcePath && existsSync(sourcePath));
-    this.dirty = Boolean(
-      (sourcePath && sourcePath != this.filePath) || loaded.normalized,
-    );
+    this.existed = Boolean(sourcePath);
+    this.dirty = Boolean(loaded.normalized);
   }
 
   assert(
@@ -255,27 +249,6 @@ class SnapshotStore {
       ),
     );
   }
-}
-
-function resolveSnapshotSourcePath(
-  specFile: string,
-  snapshotDir: string,
-  duplicateSpecBasenames: Set<string>,
-  preferredPath: string,
-): string | null {
-  if (existsSync(preferredPath)) return preferredPath;
-  const base = path.basename(specFile, ".ts");
-  const legacyFlat = path.join(snapshotDir, `${base}.snap.json`);
-  if (existsSync(legacyFlat)) return legacyFlat;
-  const disambiguator = resolveDisambiguator(specFile, duplicateSpecBasenames);
-  if (disambiguator.length) {
-    const legacyDisambiguated = path.join(
-      snapshotDir,
-      `${base}.${disambiguator}.snap.json`,
-    );
-    if (existsSync(legacyDisambiguated)) return legacyDisambiguated;
-  }
-  return null;
 }
 
 function readSnapshotFile(
@@ -444,17 +417,11 @@ function trimSnapshotPreamble(lines: string[]): string {
   return lines.slice(0, end).join("\n");
 }
 
+// Only the basename of the returned path matters — callers feed this into
+// `path.basename(...)` to localize snapshot keys (strip the "${basename}::"
+// prefix). The full path is therefore synthetic but stable.
 function resolveSnapshotSpecFile(filePath: string): string {
-  const normalized = filePath.replace(/\\/g, "/");
-  const marker = "/snapshots/";
-  const markerIndex = normalized.lastIndexOf(marker);
-  const suffix =
-    markerIndex >= 0
-      ? normalized.slice(markerIndex + marker.length)
-      : path.basename(normalized);
-  const withoutMode = suffix.replace(/^default\//, "");
-  const relative = withoutMode.replace(/\.snap$/, ".ts");
-  return `assembly/__tests__/${relative}`;
+  return path.basename(filePath).replace(/\.snap$/, ".ts");
 }
 
 function localizeSnapshotKey(specFile: string, key: string): string {
@@ -498,20 +465,10 @@ function canonicalizeSnapshotLocalKey(localKey: string): string {
   return localKey;
 }
 
-function resolveArtifactRelativePath(
-  sourceFile: string,
-  segment: "__tests__" | "__fuzz__",
-): string {
-  const normalized = sourceFile.replace(/\\/g, "/");
-  const marker = `/${segment}/`;
-  const index = normalized.lastIndexOf(marker);
-  if (index >= 0) return normalized.slice(index + marker.length);
-  return path.basename(normalized);
-}
-
 function writeReadableLog(
   logRoot: string,
   file: string,
+  inputPatterns: string[] | string,
   suites: any[],
   modeName: string | undefined,
   buildCommand: string,
@@ -523,8 +480,8 @@ function writeReadableLog(
     failed: number;
   },
 ): void {
-  const relative = resolveArtifactRelativePath(file, "__tests__").replace(
-    /\.ts$/,
+  const relative = resolveSpecRelativePath(file, inputPatterns).replace(
+    /\.ts$/i,
     ".log",
   );
   const filePath = path.join(logRoot, relative);
@@ -869,9 +826,6 @@ export async function run(
   const inputFiles = (await glob(inputPatterns)).sort((a, b) =>
     a.localeCompare(b),
   );
-  const duplicateSpecBasenames = await resolveDuplicateSpecBasenames(
-    config.input,
-  );
   const snapshotEnabled = flags.snapshot !== false;
   const createSnapshots = Boolean(flags.createSnapshots);
   const overwriteSnapshots = Boolean(flags.overwriteSnapshots);
@@ -954,12 +908,7 @@ export async function run(
       const file = inputFiles[i]!;
       const outFile = path.join(
         config.outDir,
-        resolveArtifactFileName(
-          file,
-          config.buildOptions.target,
-          options.modeName,
-          duplicateSpecBasenames,
-        ),
+        resolveArtifactPath(file, config.input),
       );
 
       if (!existsSync(outFile)) {
@@ -996,7 +945,7 @@ export async function run(
       const snapshotStore = new SnapshotStore(
         file,
         config.snapshotDir,
-        duplicateSpecBasenames,
+        config.input,
       );
       let report: any;
       try {
@@ -1010,11 +959,16 @@ export async function run(
               ? { BROWSER: config.runOptions.runtime.browser.trim() }
               : {}),
         };
+        const crashEntryKey = resolveSpecRelativePath(
+          file,
+          config.input,
+        ).replace(/\.ts$/i, "");
         report = webSession
           ? await runWebSessionProcess(
               webSession,
               file,
               config.fuzz.crashDir,
+              crashEntryKey,
               options.modeName,
               snapshotStore,
               snapshotEnabled,
@@ -1028,6 +982,7 @@ export async function run(
               invocation,
               file,
               config.fuzz.crashDir,
+              crashEntryKey,
               options.modeName,
               snapshotStore,
               snapshotEnabled,
@@ -1087,6 +1042,7 @@ export async function run(
       writeReadableLog(
         logRoot,
         report.file,
+        config.input,
         report.suites,
         options.modeName,
         options.buildCommandsByFile?.[report.file] ??
@@ -1114,16 +1070,12 @@ export async function run(
     coverageSummary.files.length > 0
   ) {
     const resolvedCoverageDir = path.join(process.cwd(), coverageDir);
-    if (!existsSync(resolvedCoverageDir)) {
-      mkdirSync(resolvedCoverageDir, { recursive: true });
-    }
-    writeFileSync(
-      path.join(
-        resolvedCoverageDir,
-        options.coverageFileName ?? "coverage.log.json",
-      ),
-      JSON.stringify(coverageSummary, null, 2),
+    const coverageFilePath = path.join(
+      resolvedCoverageDir,
+      options.coverageFileName ?? "coverage.log.json",
     );
+    mkdirSync(path.dirname(coverageFilePath), { recursive: true });
+    writeFileSync(coverageFilePath, JSON.stringify(coverageSummary, null, 2));
   }
   if (options.emitRunComplete !== false) {
     const totalModes = Math.max(options.modeSummaryTotal ?? 1, 1);
@@ -1420,61 +1372,6 @@ instantiate(imports)
   }
 
   return null;
-}
-
-function resolveArtifactFileName(
-  file: string,
-  target: string,
-  modeName?: string,
-  duplicateSpecBasenames: Set<string> = new Set<string>(),
-): string {
-  const base = path
-    .basename(file)
-    .replace(/\.spec\.ts$/, "")
-    .replace(/\.ts$/, "");
-  const legacy = !modeName
-    ? `${path.basename(file).replace(".ts", ".wasm")}`
-    : `${base}.${modeName}.${target}.wasm`;
-  if (!duplicateSpecBasenames.has(path.basename(file))) {
-    return legacy;
-  }
-  const disambiguator = resolveDisambiguator(file, duplicateSpecBasenames);
-  if (!disambiguator.length) {
-    return legacy;
-  }
-  const ext = path.extname(legacy);
-  const stem = ext.length ? legacy.slice(0, -ext.length) : legacy;
-  return `${stem}.${disambiguator}${ext}`;
-}
-
-async function resolveDuplicateSpecBasenames(
-  configured: string[] | string,
-): Promise<Set<string>> {
-  const patterns = Array.isArray(configured) ? configured : [configured];
-  const files = await glob(patterns);
-  const counts = new Map<string, number>();
-  for (const file of files) {
-    const base = path.basename(file);
-    counts.set(base, (counts.get(base) ?? 0) + 1);
-  }
-  const duplicates = new Set<string>();
-  for (const [base, count] of counts) {
-    if (count > 1) duplicates.add(base);
-  }
-  return duplicates;
-}
-
-function resolveDisambiguator(
-  file: string,
-  duplicateSpecBasenames: Set<string>,
-): string {
-  if (!duplicateSpecBasenames.has(path.basename(file))) return "";
-  const relDir = path.dirname(path.relative(process.cwd(), file));
-  if (!relDir.length || relDir == ".") return "";
-  return relDir
-    .replace(/[\\/]+/g, "__")
-    .replace(/[^A-Za-z0-9._-]/g, "_")
-    .replace(/^_+|_+$/g, "");
 }
 
 function resolveRuntimeTargetEnv(
@@ -2234,6 +2131,7 @@ async function runProcess(
   invocation: RuntimeInvocation,
   specFile: string,
   crashDir: string,
+  crashEntryKey: string,
   modeName: string | undefined,
   snapshots: SnapshotStore,
   snapshotEnabled: boolean,
@@ -2460,6 +2358,7 @@ async function runProcess(
     persistCrashRecord(crashDir, {
       kind: "test",
       file: specFile,
+      entryKey: crashEntryKey,
       mode: modeName ?? "default",
       error: errorText,
       stdout: stdoutBuffer,
@@ -2518,6 +2417,7 @@ async function runProcess(
     persistCrashRecord(crashDir, {
       kind: "test",
       file: specFile,
+      entryKey: crashEntryKey,
       mode: modeName ?? "default",
       error: fullError,
       stdout: stdoutBuffer,
@@ -2562,6 +2462,7 @@ async function runProcess(
         persistCrashRecord(crashDir, {
           kind: "test",
           file: specFile,
+          entryKey: crashEntryKey,
           mode: modeName ?? "default",
           error: errorText || "runtime reported an unknown error",
           stdout: stdoutBuffer,
@@ -2592,6 +2493,7 @@ async function runProcess(
     persistCrashRecord(crashDir, {
       kind: "test",
       file: specFile,
+      entryKey: crashEntryKey,
       mode: modeName ?? "default",
       error: fullError,
       stdout: stdoutBuffer,
@@ -2619,6 +2521,7 @@ async function runProcess(
     persistCrashRecord(crashDir, {
       kind: "test",
       file: specFile,
+      entryKey: crashEntryKey,
       mode: modeName ?? "default",
       error: errorText || "runtime reported an unknown error",
       stdout: stdoutBuffer,
@@ -2643,6 +2546,7 @@ async function runWebSessionProcess(
   session: PersistentWebSessionHost,
   specFile: string,
   crashDir: string,
+  crashEntryKey: string,
   modeName: string | undefined,
   snapshots: SnapshotStore,
   snapshotEnabled: boolean,
@@ -2905,6 +2809,7 @@ async function runWebSessionProcess(
     persistCrashRecord(crashDir, {
       kind: "test",
       file: specFile,
+      entryKey: crashEntryKey,
       mode: modeName ?? "default",
       error: fullError,
       stdout: stdoutBuffer,
@@ -2960,6 +2865,7 @@ async function runWebSessionProcess(
     persistCrashRecord(crashDir, {
       kind: "test",
       file: specFile,
+      entryKey: crashEntryKey,
       mode: modeName ?? "default",
       error: fullError,
       stdout: stdoutBuffer,

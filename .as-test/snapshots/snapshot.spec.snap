@@ -1,3 +1,41 @@
+# as-test snapshot file
+#
+# IDs use this format:
+#   Suite > test
+#   Suite > test [name]
+#   Suite > test #2
+#
+# Examples:
+#   test("renders card", () => {
+#     expect(view()).toMatchSnapshot();
+#   })
+#   -> renders card
+#
+#   test("renders card", () => {
+#     expect(view()).toMatchSnapshot("mobile");
+#   })
+#   -> renders card [mobile]
+#
+#   test("renders card", () => {
+#     expect(header()).toMatchSnapshot();
+#     expect(body()).toMatchSnapshot();
+#   })
+#   -> renders card
+#   -> renders card #2
+#
+#   describe("Card", () => {
+#     test("renders", () => {
+#       expect(view()).toMatchSnapshot();
+#     })
+#   })
+#   -> Card > renders
+#
+# Single-line values are written directly below the ID.
+# Multi-line values use delimiters:
+#   <<<
+#   ...
+#   >>>
+
 === Snapshot support > string snapshot ===
 "snapshot-value-v1"
 

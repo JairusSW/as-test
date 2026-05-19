@@ -1,5 +1,20 @@
 # Change Log
 
+## 2026-05-19 - v1.1.6-patch.1
+
+### Directory-preserving artifact layout
+
+- feat: build artifacts, fuzz artifacts, snapshots, readable logs, coverage logs, and crash records now mirror the source tree under the configured input globs instead of being flattened into a single directory with a `____`-mangled disambiguator suffix. For `assembly/__tests__/nested/array.spec.ts` the artifact is `outDir/<mode>/nested/array.spec.wasm` (previously `outDir/<mode>/array.<mode>.<target>.assembly____tests____nested.wasm`). Sidecar `.js` / `.d.ts` files sit next to the wasm.
+- feat: filename simplified to `<stem>.wasm` — the `.<mode>.<target>` suffix has been dropped since the mode is already a directory level and the target is implied by the mode config.
+- feat: add `resolveGlobBase`, `resolveSpecRelativePath`, and `resolveArtifactPath` in `cli/util.ts` as the shared path helpers used by every code path that writes or looks up a per-spec artifact. Glob bases are computed component-wise (so `assembly/__tests` is not a prefix of `assembly/__tests__/foo.spec.ts`) and the longest matching base wins when multiple configured input patterns overlap. Patterns without a static prefix (e.g. `**/*.spec.ts`) fall back to the file's cwd-relative path.
+- feat: add an up-front collision check in `build()` that throws a clear error naming both source files when two configured inputs would resolve to the same artifact path.
+- fix: `ast test <one-spec>`, `ast run <one-spec>`, and `ast fuzz <one-spec>` no longer drop the disambiguator when only one of two same-basename files is being built. The build side and the runner side now compute the same path from the same configured input set, so the runner no longer reports `bindings artifact not found` after a single-file build.
+- fix: build sites now `mkdir -p` the artifact's parent directory before invoking `asc` — pinned `assemblyscript@0.28.17`'s `-o` flag does not create parents and would otherwise ENOENT for any new nested directory.
+- fix: `persistCrashRecord` now `mkdir -p`'s the entry's parent directory, supporting `/` in entry keys so nested specs and fuzz failures get their own crash files instead of clobbering by basename.
+- fix: replace the hardcoded `/__tests__/` and `/__fuzz__/` markers in snapshot and readable-log path resolution with proper glob-base computation, so projects with custom input layouts (e.g. `tests/specs/**/*.spec.ts`) now nest correctly instead of silently falling back to basename-only paths.
+- fix: clean break on snapshot file layout — the legacy `${base}.snap.json` and `${base}.${disambiguator}.snap.json` fallbacks have been removed. After upgrading, run `--create-snapshots` or `--overwrite-snapshots` once so snapshots are written at their new relative-path locations.
+- chore: delete the duplicate-basename plumbing introduced by the patch immediately preceding this one. Every code path that used to thread `Set<string>` of duplicate basenames now reads paths directly. No back-compat for the old flat-with-suffix scheme — `ast clean` removes any orphan artifacts.
+
 ## 2026-05-14 - v1.1.6
 
 - fix: coverage `mode` and `dependencies` filtering now correctly handles AssemblyScript-normalized `~lib/<pkg>/...` paths, which are the actual runtime paths emitted for `node_modules` imports.

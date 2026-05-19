@@ -1,4 +1,4 @@
-import { existsSync } from "fs";
+import { existsSync, mkdirSync } from "fs";
 import { Config } from "../types.js";
 import { glob } from "glob";
 import chalk from "chalk";
@@ -12,6 +12,8 @@ import {
   applyMode,
   getPkgRunner,
   loadConfig,
+  resolveArtifactPath,
+  resolveSpecRelativePath,
   tokenizeCommand,
   resolveProjectModule,
 } from "../util.js";
@@ -105,11 +107,13 @@ export async function build(
   }
 
   const pkgRunner = getPkgRunner();
-  const inputPatterns = resolveInputPatterns(config.input, selectors);
+  const sourceInputPatterns =
+    overrides.kind === "fuzz" ? config.fuzz.input : config.input;
+  const inputPatterns = resolveInputPatterns(sourceInputPatterns, selectors);
   const inputFiles = (await glob(inputPatterns)).sort((a, b) =>
     a.localeCompare(b),
   );
-  const duplicateSpecBasenames = resolveDuplicateBasenames(inputFiles);
+  await assertNoArtifactCollisions(sourceInputPatterns);
 
   const coverageEnabled = resolveCoverageEnabled(
     config.coverage,
@@ -128,12 +132,10 @@ export async function build(
   ) {
     const pool = getSerialBuildWorkerPool();
     for (const file of inputFiles) {
-      const outFile = `${config.outDir}/${resolveArtifactFileName(
-        file,
-        config.buildOptions.target,
-        modeName,
-        duplicateSpecBasenames,
-      )}`;
+      const outFile = path.join(
+        config.outDir,
+        resolveArtifactPath(file, sourceInputPatterns),
+      );
       const invocation = getBuildCommand(
         config,
         pkgRunner,
@@ -155,12 +157,11 @@ export async function build(
   }
 
   for (const file of inputFiles) {
-    const outFile = `${config.outDir}/${resolveArtifactFileName(
-      file,
-      config.buildOptions.target,
-      modeName,
-      duplicateSpecBasenames,
-    )}`;
+    const outFile = path.join(
+      config.outDir,
+      resolveArtifactPath(file, sourceInputPatterns),
+    );
+    mkdirSync(path.dirname(outFile), { recursive: true });
     const invocation = getBuildCommand(
       config,
       pkgRunner,
@@ -181,6 +182,10 @@ export async function build(
         kind,
         stage: "build",
         file,
+        entryKey: resolveSpecRelativePath(file, sourceInputPatterns).replace(
+          /\.ts$/i,
+          "",
+        ),
         mode: modeLabel,
         cwd: process.cwd(),
         buildCommand,
@@ -246,13 +251,12 @@ export async function getBuildInvocationPreview(
     config.buildOptions.args = [...config.buildOptions.args, ...overrides.args];
   }
 
-  const duplicateSpecBasenames = resolveDuplicateBasenames([file]);
-  const outFile = `${config.outDir}/${resolveArtifactFileName(
-    file,
-    config.buildOptions.target,
-    modeName,
-    duplicateSpecBasenames,
-  )}`;
+  const sourceInputPatterns =
+    overrides.kind === "fuzz" ? config.fuzz.input : config.input;
+  const outFile = path.join(
+    config.outDir,
+    resolveArtifactPath(file, sourceInputPatterns),
+  );
   return getBuildCommand(
     config,
     getPkgRunner(),
@@ -289,13 +293,12 @@ export async function getBuildReuseInfo(
   if (hasCustomBuildCommand(config)) {
     return null;
   }
-  const duplicateSpecBasenames = resolveDuplicateBasenames([file]);
-  const outFile = `${config.outDir}/${resolveArtifactFileName(
-    file,
-    config.buildOptions.target,
-    modeName,
-    duplicateSpecBasenames,
-  )}`;
+  const sourceInputPatterns =
+    overrides.kind === "fuzz" ? config.fuzz.input : config.input;
+  const outFile = path.join(
+    config.outDir,
+    resolveArtifactPath(file, sourceInputPatterns),
+  );
   const invocation = getBuildCommand(
     config,
     getPkgRunner(),
@@ -442,51 +445,25 @@ function expandBuildCommand(
     .replace(/<mode>/g, modeName ?? "");
 }
 
-function resolveArtifactFileName(
-  file: string,
-  target: string,
-  modeName?: string,
-  duplicateSpecBasenames: Set<string> = new Set<string>(),
-): string {
-  const base = path
-    .basename(file)
-    .replace(/\.spec\.ts$/, "")
-    .replace(/\.ts$/, "");
-  const legacy = !modeName
-    ? `${path.basename(file).replace(".ts", ".wasm")}`
-    : `${base}.${modeName}.${target}.wasm`;
-  if (!duplicateSpecBasenames.has(path.basename(file))) {
-    return legacy;
-  }
-  const disambiguator = resolveDisambiguator(file);
-  if (!disambiguator.length) {
-    return legacy;
-  }
-  const ext = path.extname(legacy);
-  const stem = ext.length ? legacy.slice(0, -ext.length) : legacy;
-  return `${stem}.${disambiguator}${ext}`;
-}
-
-function resolveDuplicateBasenames(files: string[]): Set<string> {
-  const counts = new Map<string, number>();
+async function assertNoArtifactCollisions(
+  configured: string[] | string,
+): Promise<void> {
+  const patterns = Array.isArray(configured) ? configured : [configured];
+  const files = await glob(patterns);
+  const seen = new Map<string, string>();
   for (const file of files) {
-    const base = path.basename(file);
-    counts.set(base, (counts.get(base) ?? 0) + 1);
+    const artifact = resolveArtifactPath(file, patterns);
+    const prev = seen.get(artifact);
+    if (prev != null && prev !== file) {
+      throw new Error(
+        `Two input files resolve to the same artifact path "${artifact}":\n` +
+          `  - ${prev}\n` +
+          `  - ${file}\n` +
+          `Rename one of them or narrow the input patterns to disambiguate.`,
+      );
+    }
+    seen.set(artifact, file);
   }
-  const duplicates = new Set<string>();
-  for (const [base, count] of counts) {
-    if (count > 1) duplicates.add(base);
-  }
-  return duplicates;
-}
-
-function resolveDisambiguator(file: string): string {
-  const relDir = path.dirname(path.relative(process.cwd(), file));
-  if (!relDir.length || relDir == ".") return "";
-  return relDir
-    .replace(/[\\/]+/g, "__")
-    .replace(/[^A-Za-z0-9._-]/g, "_")
-    .replace(/^_+|_+$/g, "");
 }
 
 function resolveInputPatterns(

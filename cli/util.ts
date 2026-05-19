@@ -1730,3 +1730,91 @@ export function resolveProjectModule(specifier: string): string | null {
   }
   return null;
 }
+
+// picomatch-compatible glob metacharacters; first occurrence marks the start
+// of the dynamic part of a pattern and everything before it is the static base.
+const GLOB_META_RE = /[*?[\](){}!|+@]/;
+
+// Longest non-glob prefix of a single pattern, returned with native separators.
+// Examples:
+//   "assembly/__tests__/**/*.spec.ts" -> "assembly/__tests__"
+//   "**/*.spec.ts"                    -> ""
+//   "assembly/foo.spec.ts"            -> "assembly" (no glob → use dirname)
+//   "/abs/path/**/*.ts"               -> "/abs/path"
+export function resolveGlobBase(pattern: string): string {
+  const normalized = pattern.replace(/\\/g, "/");
+  const metaIdx = normalized.search(GLOB_META_RE);
+  let base: string;
+  if (metaIdx < 0) {
+    const dir = dirname(normalized);
+    base = dir == "." ? "" : dir;
+  } else {
+    const slice = normalized.slice(0, metaIdx);
+    const lastSlash = slice.lastIndexOf("/");
+    base = lastSlash < 0 ? "" : slice.slice(0, lastSlash);
+  }
+  if (!base.length) return "";
+  return base.split("/").join(sep);
+}
+
+// Strip the most-specific matching configured input base off `file`, returning
+// the path relative to that base (with native separators). If no base matches,
+// returns the basename of the file. Comparison is component-wise — so
+// "assembly/__tests" is not a prefix of "assembly/__tests__/foo.spec.ts".
+export function resolveSpecRelativePath(
+  file: string,
+  inputPatterns: string[] | string,
+): string {
+  const patterns = Array.isArray(inputPatterns)
+    ? inputPatterns
+    : [inputPatterns];
+  const absFile = resolve(process.cwd(), file);
+  const fileComponents = toComponents(absFile);
+
+  let bestBaseAbs: string | null = null;
+  let bestLength = -1;
+  for (const pattern of patterns) {
+    const base = resolveGlobBase(pattern);
+    const absBase = base.length
+      ? resolve(process.cwd(), base)
+      : resolve(process.cwd());
+    const baseComponents = toComponents(absBase);
+    if (!isComponentPrefix(baseComponents, fileComponents)) continue;
+    if (baseComponents.length > bestLength) {
+      bestBaseAbs = absBase;
+      bestLength = baseComponents.length;
+    }
+  }
+
+  if (bestBaseAbs == null) return basename(file);
+  const rel = relative(bestBaseAbs, absFile);
+  return rel.length ? rel : basename(file);
+}
+
+// Compute the artifact path (relative to outDir) for a given spec/fuzz source
+// file. Strips ".ts" only, keeping ".spec" / ".fuzz" suffixes so spec and
+// fuzz artifacts can coexist in the same outDir.
+//   assembly/__tests__/array.spec.ts        -> "array.spec.wasm"
+//   assembly/__tests__/nested/array.spec.ts -> "nested/array.spec.wasm"
+//   assembly/__fuzz__/nested/array.fuzz.ts  -> "nested/array.fuzz.wasm"
+export function resolveArtifactPath(
+  file: string,
+  inputPatterns: string[] | string,
+): string {
+  const rel = resolveSpecRelativePath(file, inputPatterns);
+  return rel.replace(/\.ts$/i, ".wasm");
+}
+
+function toComponents(absPath: string): string[] {
+  return absPath
+    .split(/[\\/]+/)
+    .filter((segment, idx) => segment.length || idx == 0);
+}
+
+function isComponentPrefix(prefix: string[], full: string[]): boolean {
+  if (prefix.length > full.length) return false;
+  for (let i = 0; i < prefix.length; i++) {
+    if (prefix[i] !== full[i]) return false;
+  }
+  return true;
+}
