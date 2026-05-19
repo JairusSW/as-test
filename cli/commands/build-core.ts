@@ -1,4 +1,4 @@
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { Config } from "../types.js";
 import { glob } from "glob";
 import chalk from "chalk";
@@ -735,7 +735,10 @@ function getDefaultBuildArgs(
   const tryAsEnabled = resolveTryAsEnabled(featureToggles.tryAs);
 
   buildArgs.push("--transform", "as-test/transform");
-  if (resolveProjectModule("json-as/transform")) {
+  if (
+    resolveProjectModule("json-as/transform") &&
+    !userSuppliesJsonAsTransform(config)
+  ) {
     buildArgs.push("--transform", "json-as/transform");
   }
   if (tryAsEnabled) {
@@ -778,6 +781,83 @@ function getDefaultBuildArgs(
     process.exit(1);
   }
   return buildArgs;
+}
+
+// Treats anything whose path contains a "json-as" path component as a
+// user-supplied json-as transform. Matches bare specifiers, subpath specifiers,
+// absolute paths, and ./node_modules paths.
+const JSON_AS_TRANSFORM_PATTERN = /(?:^|[\\/])json-as(?:[\\/@]|$)/;
+
+function userSuppliesJsonAsTransform(config: Config): boolean {
+  for (const raw of config.buildOptions.args) {
+    if (!raw.length) continue;
+    const tokens = tokenizeCommand(raw);
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i]!;
+      if (token == "--transform") {
+        const value = tokens[i + 1];
+        if (value && JSON_AS_TRANSFORM_PATTERN.test(value)) return true;
+      } else if (token.startsWith("--transform=")) {
+        const value = token.slice("--transform=".length);
+        if (value && JSON_AS_TRANSFORM_PATTERN.test(value)) return true;
+      }
+    }
+  }
+  if (config.config && config.config !== "none" && existsSync(config.config)) {
+    if (asconfigDeclaresJsonAs(config.config, new Set<string>())) return true;
+  }
+  return false;
+}
+
+function asconfigDeclaresJsonAs(
+  configFile: string,
+  seen: Set<string>,
+): boolean {
+  const resolved = path.resolve(configFile);
+  if (seen.has(resolved)) return false;
+  seen.add(resolved);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(resolved, "utf8"));
+  } catch {
+    return false;
+  }
+  if (!parsed || typeof parsed != "object") return false;
+  const obj = parsed as Record<string, unknown>;
+
+  if (transformsContainJsonAs(obj.options)) return true;
+  if (transformsContainJsonAs(obj)) return true;
+  const targets = obj.targets;
+  if (targets && typeof targets == "object" && !Array.isArray(targets)) {
+    for (const value of Object.values(targets as Record<string, unknown>)) {
+      if (transformsContainJsonAs(value)) return true;
+    }
+  }
+
+  const extendsValue = obj.extends;
+  if (typeof extendsValue == "string" && extendsValue.length) {
+    const parentPath = path.resolve(path.dirname(resolved), extendsValue);
+    if (existsSync(parentPath) && asconfigDeclaresJsonAs(parentPath, seen)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function transformsContainJsonAs(value: unknown): boolean {
+  if (!value || typeof value != "object") return false;
+  const transform = (value as { transform?: unknown }).transform;
+  if (typeof transform == "string") {
+    return JSON_AS_TRANSFORM_PATTERN.test(transform);
+  }
+  if (Array.isArray(transform)) {
+    for (const item of transform) {
+      if (typeof item == "string" && JSON_AS_TRANSFORM_PATTERN.test(item)) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function resolveTryAsEnabled(override?: boolean): boolean {

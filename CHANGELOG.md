@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-05-19 - v1.1.10
+
+- feat: when the user already declares `--transform json-as/...` in `buildOptions.args` or in their referenced `asconfig.json` (top-level `options.transform`, any `targets.*.transform`, or via a single level of `extends`), as-test no longer adds its own auto-include — letting users bring their own json-as version or load path. Detection matches bare specifiers (`json-as`, `json-as/transform`), absolute paths, and `./node_modules/...` paths.
+
 ## 2026-05-19 - v1.1.9
 
 - fix: spec files that share a basename across subdirectories (e.g. `sqli/flags.spec.ts` and `sqli_v2/flags.spec.ts`) now build to their disambiguated artifact names across `ast test`, `ast run`, and `ast fuzz` — even when only one of them is being built. Previously the single-file build paths, the selector-filtered top-level build, the per-mode test/run dispatch, the plan listing, and the fuzz runner all computed duplicates from a local (and often single-element) file list, never matched anything, and clobbered each other into a single `flags.spec.wasm` / `parser.fuzz.wasm`; the runner then reported `bindings artifact not found`. Every call site now computes the duplicate set against the full configured input glob (`config.input` for tests/runs, `config.fuzz.input` when `overrides.kind === "fuzz"`), matching the runner's lookup behavior.

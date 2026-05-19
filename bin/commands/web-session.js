@@ -5,570 +5,579 @@ import http from "http";
 import path from "path";
 const WEB_MAGIC = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 export class PersistentWebSessionHost {
-  constructor(headless) {
-    this.headless = headless;
-    this.html = buildWebSessionHtml();
-    this.client = buildWebSessionClientSource();
-    this.worker = buildWebSessionWorkerSource();
-    this.server = http.createServer((req, res) => this.onRequest(req, res));
-    this.browserProcess = null;
-    this.ownsBrowserProcess = false;
-    this.serverSockets = new Set();
-    this.wsSocket = null;
-    this.wsBuffer = Buffer.alloc(0);
-    this.ready = false;
-    this.closed = false;
-    this.currentJob = null;
-    this.nextJobId = 1;
-    this.closeError = null;
-    this.readyResolve = null;
-    this.readyReject = null;
-    this.terminalHooksEnabled = Boolean(process.stdin.isTTY);
-    this.onTerminalClosed = () => {
-      void this.exitFromTerminalClosure();
-    };
-    this.onTerminalHangup = () => {
-      void this.exitFromTerminalClosure();
-    };
-    this.readyPromise = new Promise((resolve, reject) => {
-      this.readyResolve = resolve;
-      this.readyReject = reject;
-    });
-  }
-  static async start(headless) {
-    const host = new PersistentWebSessionHost(headless);
-    await host.listen();
-    return host;
-  }
-  async runJob(env, label, onBinary) {
-    await this.readyPromise;
-    if (this.closed) {
-      throw this.closeError ?? new Error("web session host is already closed");
-    }
-    if (this.currentJob) {
-      throw new Error("web session host already has an active job");
-    }
-    const wasmPath = env.AS_TEST_WASM_PATH || "";
-    if (!wasmPath.length) {
-      throw new Error("AS_TEST_WASM_PATH is not set for web session job");
-    }
-    const helperPath = env.AS_TEST_HELPER_PATH?.length
-      ? env.AS_TEST_HELPER_PATH
-      : null;
-    const jobId = String(this.nextJobId++);
-    const browserEnv = {
-      ...env,
-      AS_TEST_WASM_PATH: `/job/${jobId}/${path.basename(wasmPath)}`,
-    };
-    if (helperPath) {
-      browserEnv.AS_TEST_HELPER_PATH = `/job/${jobId}/${path.basename(helperPath)}`;
-    } else {
-      delete browserEnv.AS_TEST_HELPER_PATH;
-    }
-    await new Promise((resolve, reject) => {
-      this.currentJob = {
-        id: jobId,
-        env: browserEnv,
-        label,
-        wasmPath,
-        helperPath,
-        onBinary,
-        resolve: () => {
-          this.currentJob = null;
-          resolve();
-        },
-        reject: (error) => {
-          this.currentJob = null;
-          reject(error);
-        },
-        started: false,
-      };
-      this.sendControl({ kind: "load", env: browserEnv, label });
-    });
-  }
-  sendReply(frame) {
-    if (!this.wsSocket || !frame.length) return;
-    sendWebSocketFrame(this.wsSocket, 0x2, frame);
-  }
-  async close(reason) {
-    if (this.closed) return;
-    this.closed = true;
-    this.removeTerminalHooks();
-    const closeError = reason ?? new Error("web session host closed");
-    this.closeError = closeError;
-    if (!this.ready) {
-      this.readyReject?.(closeError);
-      this.readyResolve = null;
-      this.readyReject = null;
-    }
-    if (this.currentJob) {
-      this.currentJob.reject(closeError);
-    }
-    try {
-      this.sendControl({
-        kind: "shutdown",
-        ok: reason == null,
-        message: reason?.message ?? "",
-      });
-    } catch {}
-    try {
-      this.wsSocket?.end();
-    } catch {}
-    try {
-      this.wsSocket?.destroy();
-    } catch {}
-    try {
-      this.server.closeIdleConnections?.();
-      this.server.closeAllConnections?.();
-    } catch {}
-    for (const socket of this.serverSockets) {
-      try {
-        socket.destroy();
-      } catch {}
-    }
-    await new Promise((resolve) => {
-      try {
-        this.server.close(() => resolve());
-      } catch {
-        resolve();
-      }
-    });
-    if (
-      this.browserProcess &&
-      this.ownsBrowserProcess &&
-      !this.browserProcess.killed
-    ) {
-      killOwnedBrowserProcess(this.browserProcess);
-    }
-  }
-  async exitFromTerminalClosure() {
-    await this.close(new Error("terminal side closed"));
-    process.exit(0);
-  }
-  async listen() {
-    this.installTerminalHooks();
-    this.server.on("connection", (socket) => {
-      this.serverSockets.add(socket);
-      socket.on("close", () => {
-        this.serverSockets.delete(socket);
-      });
-    });
-    this.server.on("upgrade", (req, socket) => {
-      if ((req.url ?? "") != "/ws") {
-        socket.destroy();
-        return;
-      }
-      const key = String(req.headers["sec-websocket-key"] ?? "");
-      if (!key) {
-        socket.destroy();
-        return;
-      }
-      const accept = createHash("sha1")
-        .update(key + WEB_MAGIC)
-        .digest("base64");
-      socket.write(
-        [
-          "HTTP/1.1 101 Switching Protocols",
-          "Upgrade: websocket",
-          "Connection: Upgrade",
-          "Sec-WebSocket-Accept: " + accept,
-          "",
-          "",
-        ].join("\r\n"),
-      );
-      this.wsSocket = socket;
-      this.wsBuffer = Buffer.alloc(0);
-      socket.on("data", (chunk) => this.onWebSocketData(chunk));
-      socket.on("end", () => {
+    constructor(headless) {
+        this.headless = headless;
+        this.html = buildWebSessionHtml();
+        this.client = buildWebSessionClientSource();
+        this.worker = buildWebSessionWorkerSource();
+        this.server = http.createServer((req, res) => this.onRequest(req, res));
+        this.browserProcess = null;
+        this.ownsBrowserProcess = false;
+        this.serverSockets = new Set();
         this.wsSocket = null;
-        if (!this.closed) {
-          void this.close(new Error("web browser disconnected"));
-        }
-      });
-      socket.on("close", () => {
-        this.wsSocket = null;
-        if (!this.closed) {
-          void this.close(new Error("web browser disconnected"));
-        }
-      });
-      socket.on("error", (error) => {
-        const err = error instanceof Error ? error : new Error(String(error));
-        if (!this.closed) {
-          void this.close(err);
-        }
-      });
-    });
-    await new Promise((resolve, reject) => {
-      this.server.once("error", (error) =>
-        reject(error instanceof Error ? error : new Error(String(error))),
-      );
-      this.server.listen(0, "127.0.0.1", () => resolve());
-    });
-    const address = this.server.address();
-    if (!address || typeof address == "string") {
-      throw new Error("failed to determine web session host address");
-    }
-    const url = `http://127.0.0.1:${address.port}/`;
-    if (!this.headless && !process.env.BROWSER?.trim().length) {
-      process.stdout.write(`Open web session: ${url}\n`);
-    } else {
-      const launched = launchBrowser(url, this.headless);
-      this.browserProcess = launched.process;
-      this.ownsBrowserProcess = launched.ownsProcess;
-      this.browserProcess.on("close", (code) => {
-        if (this.closed) return;
-        const error = new Error(
-          `web browser process exited with code ${code ?? 0}`,
-        );
-        if (!this.ready && this.readyReject) {
-          this.readyReject(error);
-          return;
-        }
-        void this.close(error);
-      });
-    }
-    await this.readyPromise;
-  }
-  installTerminalHooks() {
-    if (!this.terminalHooksEnabled) return;
-    process.stdin.on("close", this.onTerminalClosed);
-    process.stdin.on("end", this.onTerminalClosed);
-    process.on("SIGHUP", this.onTerminalHangup);
-  }
-  removeTerminalHooks() {
-    if (!this.terminalHooksEnabled) return;
-    process.stdin.off("close", this.onTerminalClosed);
-    process.stdin.off("end", this.onTerminalClosed);
-    process.off("SIGHUP", this.onTerminalHangup);
-  }
-  onRequest(req, res) {
-    const headers = {
-      "Cross-Origin-Embedder-Policy": "require-corp",
-      "Cross-Origin-Opener-Policy": "same-origin",
-      "Cache-Control": "no-store",
-    };
-    const url = req.url ?? "/";
-    if (url == "/" || url.startsWith("/?")) {
-      res.writeHead(200, {
-        ...headers,
-        "Content-Type": "text/html; charset=utf-8",
-      });
-      res.end(this.html);
-      return;
-    }
-    if (url == "/client.js") {
-      res.writeHead(200, {
-        ...headers,
-        "Content-Type": "text/javascript; charset=utf-8",
-      });
-      res.end(this.client);
-      return;
-    }
-    if (url == "/worker.js") {
-      res.writeHead(200, {
-        ...headers,
-        "Content-Type": "text/javascript; charset=utf-8",
-      });
-      res.end(this.worker);
-      return;
-    }
-    if (this.currentJob) {
-      const wasmUrl = this.currentJob.env.AS_TEST_WASM_PATH;
-      const helperUrl = this.currentJob.env.AS_TEST_HELPER_PATH ?? "";
-      if (url == wasmUrl) {
-        res.writeHead(200, {
-          ...headers,
-          "Content-Type": "application/wasm",
+        this.wsBuffer = Buffer.alloc(0);
+        this.ready = false;
+        this.closed = false;
+        this.currentJob = null;
+        this.nextJobId = 1;
+        this.closeError = null;
+        this.readyResolve = null;
+        this.readyReject = null;
+        this.terminalHooksEnabled = Boolean(process.stdin.isTTY);
+        this.onTerminalClosed = () => {
+            void this.exitFromTerminalClosure();
+        };
+        this.onTerminalHangup = () => {
+            void this.exitFromTerminalClosure();
+        };
+        this.readyPromise = new Promise((resolve, reject) => {
+            this.readyResolve = resolve;
+            this.readyReject = reject;
         });
-        res.end(fs.readFileSync(this.currentJob.wasmPath));
-        return;
-      }
-      if (helperUrl.length && url == helperUrl && this.currentJob.helperPath) {
-        res.writeHead(200, {
-          ...headers,
-          "Content-Type": "text/javascript; charset=utf-8",
-        });
-        res.end(fs.readFileSync(this.currentJob.helperPath, "utf8"));
-        return;
-      }
     }
-    res.writeHead(404, headers);
-    res.end("not found");
-  }
-  onWebSocketData(chunk) {
-    this.wsBuffer = Buffer.concat([this.wsBuffer, chunk]);
-    while (this.wsBuffer.length >= 2) {
-      const first = this.wsBuffer[0];
-      const second = this.wsBuffer[1];
-      const opcode = first & 0x0f;
-      const masked = (second & 0x80) !== 0;
-      let length = second & 0x7f;
-      let offset = 2;
-      if (length == 126) {
-        if (this.wsBuffer.length < offset + 2) return;
-        length = this.wsBuffer.readUInt16BE(offset);
-        offset += 2;
-      } else if (length == 127) {
-        if (this.wsBuffer.length < offset + 8) return;
-        length = Number(this.wsBuffer.readBigUInt64BE(offset));
-        offset += 8;
-      }
-      const maskLength = masked ? 4 : 0;
-      if (this.wsBuffer.length < offset + maskLength + length) return;
-      let payload = this.wsBuffer.subarray(
-        offset + maskLength,
-        offset + maskLength + length,
-      );
-      if (masked) {
-        const mask = this.wsBuffer.subarray(offset, offset + 4);
-        const unmasked = Buffer.alloc(length);
-        for (let i = 0; i < length; i++) {
-          unmasked[i] = payload[i] ^ mask[i % 4];
+    static async start(headless) {
+        const host = new PersistentWebSessionHost(headless);
+        await host.listen();
+        return host;
+    }
+    async runJob(env, label, onBinary) {
+        await this.readyPromise;
+        if (this.closed) {
+            throw this.closeError ?? new Error("web session host is already closed");
         }
-        payload = unmasked;
-      } else {
-        payload = Buffer.from(payload);
-      }
-      this.wsBuffer = this.wsBuffer.subarray(offset + maskLength + length);
-      if (opcode == 0x8) {
-        return;
-      }
-      if (opcode == 0x1) {
-        this.onControl(payload.toString("utf8"));
-        continue;
-      }
-      if (opcode == 0x2 && this.currentJob) {
-        this.currentJob.onBinary(Buffer.from(payload));
-      }
+        if (this.currentJob) {
+            throw new Error("web session host already has an active job");
+        }
+        const wasmPath = env.AS_TEST_WASM_PATH || "";
+        if (!wasmPath.length) {
+            throw new Error("AS_TEST_WASM_PATH is not set for web session job");
+        }
+        const helperPath = env.AS_TEST_HELPER_PATH?.length
+            ? env.AS_TEST_HELPER_PATH
+            : null;
+        const jobId = String(this.nextJobId++);
+        const browserEnv = {
+            ...env,
+            AS_TEST_WASM_PATH: `/job/${jobId}/${path.basename(wasmPath)}`,
+        };
+        if (helperPath) {
+            browserEnv.AS_TEST_HELPER_PATH = `/job/${jobId}/${path.basename(helperPath)}`;
+        }
+        else {
+            delete browserEnv.AS_TEST_HELPER_PATH;
+        }
+        await new Promise((resolve, reject) => {
+            this.currentJob = {
+                id: jobId,
+                env: browserEnv,
+                label,
+                wasmPath,
+                helperPath,
+                onBinary,
+                resolve: () => {
+                    this.currentJob = null;
+                    resolve();
+                },
+                reject: (error) => {
+                    this.currentJob = null;
+                    reject(error);
+                },
+                started: false,
+            };
+            this.sendControl({ kind: "load", env: browserEnv, label });
+        });
     }
-  }
-  onControl(raw) {
-    let message = null;
-    try {
-      message = JSON.parse(raw);
-    } catch {
-      return;
+    sendReply(frame) {
+        if (!this.wsSocket || !frame.length)
+            return;
+        sendWebSocketFrame(this.wsSocket, 0x2, frame);
     }
-    if (message?.kind == "ready") {
-      this.ready = true;
-      this.readyResolve?.();
-      this.readyResolve = null;
-      this.readyReject = null;
-      return;
+    async close(reason) {
+        if (this.closed)
+            return;
+        this.closed = true;
+        this.removeTerminalHooks();
+        const closeError = reason ?? new Error("web session host closed");
+        this.closeError = closeError;
+        if (!this.ready) {
+            this.readyReject?.(closeError);
+            this.readyResolve = null;
+            this.readyReject = null;
+        }
+        if (this.currentJob) {
+            this.currentJob.reject(closeError);
+        }
+        try {
+            this.sendControl({
+                kind: "shutdown",
+                ok: reason == null,
+                message: reason?.message ?? "",
+            });
+        }
+        catch { }
+        try {
+            this.wsSocket?.end();
+        }
+        catch { }
+        try {
+            this.wsSocket?.destroy();
+        }
+        catch { }
+        try {
+            this.server.closeIdleConnections?.();
+            this.server.closeAllConnections?.();
+        }
+        catch { }
+        for (const socket of this.serverSockets) {
+            try {
+                socket.destroy();
+            }
+            catch { }
+        }
+        await new Promise((resolve) => {
+            try {
+                this.server.close(() => resolve());
+            }
+            catch {
+                resolve();
+            }
+        });
+        if (this.browserProcess &&
+            this.ownsBrowserProcess &&
+            !this.browserProcess.killed) {
+            killOwnedBrowserProcess(this.browserProcess);
+        }
     }
-    if (message?.kind == "instantiated") {
-      if (this.currentJob && !this.currentJob.started) {
-        this.currentJob.started = true;
-        this.sendControl({ kind: "start" });
-      }
-      return;
+    async exitFromTerminalClosure() {
+        await this.close(new Error("terminal side closed"));
+        process.exit(0);
     }
-    if (message?.kind == "done") {
-      this.currentJob?.resolve();
-      return;
+    async listen() {
+        this.installTerminalHooks();
+        this.server.on("connection", (socket) => {
+            this.serverSockets.add(socket);
+            socket.on("close", () => {
+                this.serverSockets.delete(socket);
+            });
+        });
+        this.server.on("upgrade", (req, socket) => {
+            if ((req.url ?? "") != "/ws") {
+                socket.destroy();
+                return;
+            }
+            const key = String(req.headers["sec-websocket-key"] ?? "");
+            if (!key) {
+                socket.destroy();
+                return;
+            }
+            const accept = createHash("sha1")
+                .update(key + WEB_MAGIC)
+                .digest("base64");
+            socket.write([
+                "HTTP/1.1 101 Switching Protocols",
+                "Upgrade: websocket",
+                "Connection: Upgrade",
+                "Sec-WebSocket-Accept: " + accept,
+                "",
+                "",
+            ].join("\r\n"));
+            this.wsSocket = socket;
+            this.wsBuffer = Buffer.alloc(0);
+            socket.on("data", (chunk) => this.onWebSocketData(chunk));
+            socket.on("end", () => {
+                this.wsSocket = null;
+                if (!this.closed) {
+                    void this.close(new Error("web browser disconnected"));
+                }
+            });
+            socket.on("close", () => {
+                this.wsSocket = null;
+                if (!this.closed) {
+                    void this.close(new Error("web browser disconnected"));
+                }
+            });
+            socket.on("error", (error) => {
+                const err = error instanceof Error ? error : new Error(String(error));
+                if (!this.closed) {
+                    void this.close(err);
+                }
+            });
+        });
+        await new Promise((resolve, reject) => {
+            this.server.once("error", (error) => reject(error instanceof Error ? error : new Error(String(error))));
+            this.server.listen(0, "127.0.0.1", () => resolve());
+        });
+        const address = this.server.address();
+        if (!address || typeof address == "string") {
+            throw new Error("failed to determine web session host address");
+        }
+        const url = `http://127.0.0.1:${address.port}/`;
+        if (!this.headless && !process.env.BROWSER?.trim().length) {
+            process.stdout.write(`Open web session: ${url}\n`);
+        }
+        else {
+            const launched = launchBrowser(url, this.headless);
+            this.browserProcess = launched.process;
+            this.ownsBrowserProcess = launched.ownsProcess;
+            this.browserProcess.on("close", (code) => {
+                if (this.closed)
+                    return;
+                const error = new Error(`web browser process exited with code ${code ?? 0}`);
+                if (!this.ready && this.readyReject) {
+                    this.readyReject(error);
+                    return;
+                }
+                void this.close(error);
+            });
+        }
+        await this.readyPromise;
     }
-    if (message?.kind == "error") {
-      this.currentJob?.reject(
-        new Error(String(message.message ?? "browser runtime failed")),
-      );
+    installTerminalHooks() {
+        if (!this.terminalHooksEnabled)
+            return;
+        process.stdin.on("close", this.onTerminalClosed);
+        process.stdin.on("end", this.onTerminalClosed);
+        process.on("SIGHUP", this.onTerminalHangup);
     }
-  }
-  sendControl(message) {
-    if (!this.wsSocket) {
-      throw new Error("web session host is not connected to a browser");
+    removeTerminalHooks() {
+        if (!this.terminalHooksEnabled)
+            return;
+        process.stdin.off("close", this.onTerminalClosed);
+        process.stdin.off("end", this.onTerminalClosed);
+        process.off("SIGHUP", this.onTerminalHangup);
     }
-    sendWebSocketFrame(
-      this.wsSocket,
-      0x1,
-      Buffer.from(JSON.stringify(message), "utf8"),
-    );
-  }
+    onRequest(req, res) {
+        const headers = {
+            "Cross-Origin-Embedder-Policy": "require-corp",
+            "Cross-Origin-Opener-Policy": "same-origin",
+            "Cache-Control": "no-store",
+        };
+        const url = req.url ?? "/";
+        if (url == "/" || url.startsWith("/?")) {
+            res.writeHead(200, {
+                ...headers,
+                "Content-Type": "text/html; charset=utf-8",
+            });
+            res.end(this.html);
+            return;
+        }
+        if (url == "/client.js") {
+            res.writeHead(200, {
+                ...headers,
+                "Content-Type": "text/javascript; charset=utf-8",
+            });
+            res.end(this.client);
+            return;
+        }
+        if (url == "/worker.js") {
+            res.writeHead(200, {
+                ...headers,
+                "Content-Type": "text/javascript; charset=utf-8",
+            });
+            res.end(this.worker);
+            return;
+        }
+        if (this.currentJob) {
+            const wasmUrl = this.currentJob.env.AS_TEST_WASM_PATH;
+            const helperUrl = this.currentJob.env.AS_TEST_HELPER_PATH ?? "";
+            if (url == wasmUrl) {
+                res.writeHead(200, {
+                    ...headers,
+                    "Content-Type": "application/wasm",
+                });
+                res.end(fs.readFileSync(this.currentJob.wasmPath));
+                return;
+            }
+            if (helperUrl.length && url == helperUrl && this.currentJob.helperPath) {
+                res.writeHead(200, {
+                    ...headers,
+                    "Content-Type": "text/javascript; charset=utf-8",
+                });
+                res.end(fs.readFileSync(this.currentJob.helperPath, "utf8"));
+                return;
+            }
+        }
+        res.writeHead(404, headers);
+        res.end("not found");
+    }
+    onWebSocketData(chunk) {
+        this.wsBuffer = Buffer.concat([this.wsBuffer, chunk]);
+        while (this.wsBuffer.length >= 2) {
+            const first = this.wsBuffer[0];
+            const second = this.wsBuffer[1];
+            const opcode = first & 0x0f;
+            const masked = (second & 0x80) !== 0;
+            let length = second & 0x7f;
+            let offset = 2;
+            if (length == 126) {
+                if (this.wsBuffer.length < offset + 2)
+                    return;
+                length = this.wsBuffer.readUInt16BE(offset);
+                offset += 2;
+            }
+            else if (length == 127) {
+                if (this.wsBuffer.length < offset + 8)
+                    return;
+                length = Number(this.wsBuffer.readBigUInt64BE(offset));
+                offset += 8;
+            }
+            const maskLength = masked ? 4 : 0;
+            if (this.wsBuffer.length < offset + maskLength + length)
+                return;
+            let payload = this.wsBuffer.subarray(offset + maskLength, offset + maskLength + length);
+            if (masked) {
+                const mask = this.wsBuffer.subarray(offset, offset + 4);
+                const unmasked = Buffer.alloc(length);
+                for (let i = 0; i < length; i++) {
+                    unmasked[i] = payload[i] ^ mask[i % 4];
+                }
+                payload = unmasked;
+            }
+            else {
+                payload = Buffer.from(payload);
+            }
+            this.wsBuffer = this.wsBuffer.subarray(offset + maskLength + length);
+            if (opcode == 0x8) {
+                return;
+            }
+            if (opcode == 0x1) {
+                this.onControl(payload.toString("utf8"));
+                continue;
+            }
+            if (opcode == 0x2 && this.currentJob) {
+                this.currentJob.onBinary(Buffer.from(payload));
+            }
+        }
+    }
+    onControl(raw) {
+        let message = null;
+        try {
+            message = JSON.parse(raw);
+        }
+        catch {
+            return;
+        }
+        if (message?.kind == "ready") {
+            this.ready = true;
+            this.readyResolve?.();
+            this.readyResolve = null;
+            this.readyReject = null;
+            return;
+        }
+        if (message?.kind == "instantiated") {
+            if (this.currentJob && !this.currentJob.started) {
+                this.currentJob.started = true;
+                this.sendControl({ kind: "start" });
+            }
+            return;
+        }
+        if (message?.kind == "done") {
+            this.currentJob?.resolve();
+            return;
+        }
+        if (message?.kind == "error") {
+            this.currentJob?.reject(new Error(String(message.message ?? "browser runtime failed")));
+        }
+    }
+    sendControl(message) {
+        if (!this.wsSocket) {
+            throw new Error("web session host is not connected to a browser");
+        }
+        sendWebSocketFrame(this.wsSocket, 0x1, Buffer.from(JSON.stringify(message), "utf8"));
+    }
 }
 function sendWebSocketFrame(socket, opcode, payload) {
-  let header;
-  if (payload.length < 126) {
-    header = Buffer.from([0x80 | opcode, payload.length]);
-  } else if (payload.length < 65536) {
-    header = Buffer.alloc(4);
-    header[0] = 0x80 | opcode;
-    header[1] = 126;
-    header.writeUInt16BE(payload.length, 2);
-  } else {
-    header = Buffer.alloc(10);
-    header[0] = 0x80 | opcode;
-    header[1] = 127;
-    header.writeBigUInt64BE(BigInt(payload.length), 2);
-  }
-  socket.write(Buffer.concat([header, payload]));
+    let header;
+    if (payload.length < 126) {
+        header = Buffer.from([0x80 | opcode, payload.length]);
+    }
+    else if (payload.length < 65536) {
+        header = Buffer.alloc(4);
+        header[0] = 0x80 | opcode;
+        header[1] = 126;
+        header.writeUInt16BE(payload.length, 2);
+    }
+    else {
+        header = Buffer.alloc(10);
+        header[0] = 0x80 | opcode;
+        header[1] = 127;
+        header.writeBigUInt64BE(BigInt(payload.length), 2);
+    }
+    socket.write(Buffer.concat([header, payload]));
 }
 function launchBrowser(url, headless) {
-  if (process.env.BROWSER?.trim()) {
-    const child = spawnBrowserCommand(process.env.BROWSER, url, headless);
-    if (child) return { process: child, ownsProcess: true };
-  }
-  if (!headless) {
-    const opened = openWithSystemBrowser(url);
-    if (opened) return { process: opened, ownsProcess: false };
-  }
-  const direct = openWithInstalledBrowser(url, headless);
-  if (direct) return { process: direct, ownsProcess: true };
-  throw new Error(
-    headless
-      ? "could not find a headless-capable browser"
-      : "could not open a browser automatically",
-  );
+    if (process.env.BROWSER?.trim()) {
+        const child = spawnBrowserCommand(process.env.BROWSER, url, headless);
+        if (child)
+            return { process: child, ownsProcess: true };
+    }
+    if (!headless) {
+        const opened = openWithSystemBrowser(url);
+        if (opened)
+            return { process: opened, ownsProcess: false };
+    }
+    const direct = openWithInstalledBrowser(url, headless);
+    if (direct)
+        return { process: direct, ownsProcess: true };
+    throw new Error(headless
+        ? "could not find a headless-capable browser"
+        : "could not open a browser automatically");
 }
 function openWithSystemBrowser(url) {
-  if (process.platform == "darwin") {
-    if (!hasExecutable("open")) return null;
-    return spawn("open", [url], { stdio: "ignore", detached: true });
-  }
-  if (process.platform == "win32") {
-    if (!hasExecutable("cmd")) return null;
-    return spawn("cmd", ["/c", "start", "", url], {
-      stdio: "ignore",
-      detached: true,
-    });
-  }
-  if (!hasExecutable("xdg-open")) return null;
-  return spawn("xdg-open", [url], { stdio: "ignore", detached: true });
+    if (process.platform == "darwin") {
+        if (!hasExecutable("open"))
+            return null;
+        return spawn("open", [url], { stdio: "ignore", detached: true });
+    }
+    if (process.platform == "win32") {
+        if (!hasExecutable("cmd"))
+            return null;
+        return spawn("cmd", ["/c", "start", "", url], {
+            stdio: "ignore",
+            detached: true,
+        });
+    }
+    if (!hasExecutable("xdg-open"))
+        return null;
+    return spawn("xdg-open", [url], { stdio: "ignore", detached: true });
 }
 function openWithInstalledBrowser(url, headless) {
-  const candidates = [
-    { command: "chromium", headless: ["--headless=new"] },
-    { command: "chromium-browser", headless: ["--headless=new"] },
-    { command: "google-chrome", headless: ["--headless=new"] },
-    { command: "google-chrome-stable", headless: ["--headless=new"] },
-    { command: "chrome", headless: ["--headless=new"] },
-    { command: "msedge", headless: ["--headless=new"] },
-    { command: "firefox", headless: ["-headless"] },
-  ];
-  for (const candidate of candidates) {
-    if (!hasExecutable(candidate.command)) continue;
-    return spawn(
-      candidate.command,
-      [...(headless ? candidate.headless : []), url],
-      { stdio: "ignore", detached: true },
-    );
-  }
-  return null;
+    const candidates = [
+        { command: "chromium", headless: ["--headless=new"] },
+        { command: "chromium-browser", headless: ["--headless=new"] },
+        { command: "google-chrome", headless: ["--headless=new"] },
+        { command: "google-chrome-stable", headless: ["--headless=new"] },
+        { command: "chrome", headless: ["--headless=new"] },
+        { command: "msedge", headless: ["--headless=new"] },
+        { command: "firefox", headless: ["-headless"] },
+    ];
+    for (const candidate of candidates) {
+        if (!hasExecutable(candidate.command))
+            continue;
+        return spawn(candidate.command, [...(headless ? candidate.headless : []), url], { stdio: "ignore", detached: true });
+    }
+    return null;
 }
 function spawnBrowserCommand(commandValue, url, headless) {
-  const direct = unwrapQuotedPath(String(commandValue).trim());
-  if (hasExecutable(direct)) {
-    const args = headless ? resolveHeadlessFlags(direct) : [];
+    const direct = unwrapQuotedPath(String(commandValue).trim());
+    if (hasExecutable(direct)) {
+        const args = headless ? resolveHeadlessFlags(direct) : [];
+        args.push(url);
+        return spawn(direct, args, {
+            stdio: "ignore",
+            detached: true,
+        });
+    }
+    const parts = splitCommand(String(commandValue));
+    if (!parts.length)
+        return null;
+    const command = parts[0];
+    if (!hasExecutable(command))
+        return null;
+    const args = parts.slice(1);
+    if (headless) {
+        args.push(...resolveHeadlessFlags(commandValue));
+    }
     args.push(url);
-    return spawn(direct, args, {
-      stdio: "ignore",
-      detached: true,
+    return spawn(command, args, {
+        stdio: "ignore",
+        detached: true,
     });
-  }
-  const parts = splitCommand(String(commandValue));
-  if (!parts.length) return null;
-  const command = parts[0];
-  if (!hasExecutable(command)) return null;
-  const args = parts.slice(1);
-  if (headless) {
-    args.push(...resolveHeadlessFlags(commandValue));
-  }
-  args.push(url);
-  return spawn(command, args, {
-    stdio: "ignore",
-    detached: true,
-  });
 }
 function resolveHeadlessFlags(commandValue) {
-  const lower = commandValue.toLowerCase();
-  if (lower.includes("firefox")) return ["-headless"];
-  return [
-    "--headless=new",
-    "--disable-gpu",
-    "--no-first-run",
-    "--no-default-browser-check",
-  ];
+    const lower = commandValue.toLowerCase();
+    if (lower.includes("firefox"))
+        return ["-headless"];
+    return [
+        "--headless=new",
+        "--disable-gpu",
+        "--no-first-run",
+        "--no-default-browser-check",
+    ];
 }
 function hasExecutable(command) {
-  if (!command.length) return false;
-  if (command.includes("/") || command.includes("\\")) {
-    return fs.existsSync(command);
-  }
-  const pathValue = process.env.PATH ?? "";
-  const suffixes =
-    process.platform == "win32" ? ["", ".exe", ".cmd", ".bat"] : [""];
-  for (const base of pathValue.split(path.delimiter)) {
-    if (!base) continue;
-    for (const suffix of suffixes) {
-      if (fs.existsSync(path.join(base, command + suffix))) {
-        return true;
-      }
+    if (!command.length)
+        return false;
+    if (command.includes("/") || command.includes("\\")) {
+        return fs.existsSync(command);
     }
-  }
-  return false;
+    const pathValue = process.env.PATH ?? "";
+    const suffixes = process.platform == "win32" ? ["", ".exe", ".cmd", ".bat"] : [""];
+    for (const base of pathValue.split(path.delimiter)) {
+        if (!base)
+            continue;
+        for (const suffix of suffixes) {
+            if (fs.existsSync(path.join(base, command + suffix))) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 function splitCommand(commandValue) {
-  const parts = [];
-  let current = "";
-  let quote = "";
-  for (let i = 0; i < commandValue.length; i++) {
-    const char = commandValue[i];
-    if (quote) {
-      if (char == quote) {
-        quote = "";
-      } else if (char == "\\" && i + 1 < commandValue.length) {
-        current += commandValue[++i];
-      } else {
+    const parts = [];
+    let current = "";
+    let quote = "";
+    for (let i = 0; i < commandValue.length; i++) {
+        const char = commandValue[i];
+        if (quote) {
+            if (char == quote) {
+                quote = "";
+            }
+            else if (char == "\\" && i + 1 < commandValue.length) {
+                current += commandValue[++i];
+            }
+            else {
+                current += char;
+            }
+            continue;
+        }
+        if (char == "'" || char == '"') {
+            quote = char;
+            continue;
+        }
+        if (/\s/.test(char)) {
+            if (current.length) {
+                parts.push(current);
+                current = "";
+            }
+            continue;
+        }
+        if (char == "\\" && i + 1 < commandValue.length) {
+            current += commandValue[++i];
+            continue;
+        }
         current += char;
-      }
-      continue;
     }
-    if (char == "'" || char == '"') {
-      quote = char;
-      continue;
-    }
-    if (/\s/.test(char)) {
-      if (current.length) {
+    if (current.length) {
         parts.push(current);
-        current = "";
-      }
-      continue;
     }
-    if (char == "\\" && i + 1 < commandValue.length) {
-      current += commandValue[++i];
-      continue;
-    }
-    current += char;
-  }
-  if (current.length) {
-    parts.push(current);
-  }
-  return parts;
+    return parts;
 }
 function unwrapQuotedPath(value) {
-  if (
-    (value.startsWith('"') && value.endsWith('"')) ||
-    (value.startsWith("'") && value.endsWith("'"))
-  ) {
-    return value.slice(1, -1);
-  }
-  return value;
+    if ((value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))) {
+        return value.slice(1, -1);
+    }
+    return value;
 }
 function killOwnedBrowserProcess(browserProcess) {
-  try {
-    if (
-      process.platform != "win32" &&
-      typeof browserProcess.pid == "number" &&
-      browserProcess.pid > 0
-    ) {
-      process.kill(-browserProcess.pid, "SIGTERM");
-      return;
+    try {
+        if (process.platform != "win32" &&
+            typeof browserProcess.pid == "number" &&
+            browserProcess.pid > 0) {
+            process.kill(-browserProcess.pid, "SIGTERM");
+            return;
+        }
     }
-  } catch {}
-  try {
-    browserProcess.kill("SIGTERM");
-  } catch {}
+    catch { }
+    try {
+        browserProcess.kill("SIGTERM");
+    }
+    catch { }
 }
 function buildWebSessionHtml() {
-  return `<!doctype html>
+    return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -752,7 +761,7 @@ function buildWebSessionHtml() {
 </html>`;
 }
 function buildWebSessionClientSource() {
-  return String.raw`const runnerOrigin = location.origin;
+    return String.raw `const runnerOrigin = location.origin;
 const worker = new Worker(new URL("/worker.js", runnerOrigin), { type: "module" });
 const wsUrl = new URL("/ws", runnerOrigin);
 wsUrl.protocol = location.protocol == "https:" ? "wss:" : "ws:";
@@ -909,7 +918,7 @@ exitButton.addEventListener("click", () => {
 `;
 }
 function buildWebSessionWorkerSource() {
-  return String.raw`let replyState = null;
+    return String.raw `let replyState = null;
 let replyBytes = null;
 const WIPC_MAGIC = [0x57, 0x49, 0x50, 0x43];
 let runtimeEnv = {};

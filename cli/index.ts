@@ -284,7 +284,7 @@ function info(): void {
 
   console.log(
     chalk.dim(
-      "If this tool provides value, please consider sponsoring my open-source work! https://jairus.dev/sponsor",
+      "If this tool provides value, please consider sponsoring my open-source work! https://github.com/sponsors/JairusSW",
     ) + "\n",
   );
 
