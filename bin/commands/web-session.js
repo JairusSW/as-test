@@ -56,6 +56,10 @@ export class PersistentWebSessionHost {
       ? env.AS_TEST_HELPER_PATH
       : null;
     const jobId = String(this.nextJobId++);
+    // URL paths use only the basename — that is safe because each job has
+    // exactly one wasm and one helper, scoped by the jobId path component.
+    // Nested directory artifacts (e.g. nested/array.spec.wasm) are read
+    // from disk via `wasmPath`/`helperPath`, not via these URLs.
     const browserEnv = {
       ...env,
       AS_TEST_WASM_PATH: `/job/${jobId}/${path.basename(wasmPath)}`,

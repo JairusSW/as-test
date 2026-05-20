@@ -205,7 +205,9 @@ describe("Expectation helpers", () => {
   });
 
   test("toThrow matcher compiles and is callable", () => {
-    expect(10).toThrow();
+    expect((): void => {
+      throw new Error("boom");
+    }).toThrow();
   });
 
   test("beforeEach/afterEach are called once per test", () => {

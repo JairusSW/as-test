@@ -1,5 +1,34 @@
 # Change Log
 
+## 2026-05-20 - v1.2.0
+
+### Directory-preserving artifact layout
+
+- feat: build artifacts, fuzz artifacts, snapshots, readable logs, coverage logs, and crash records now mirror the source tree under the configured input globs instead of being flattened into a single directory with a `____`-mangled disambiguator suffix. For `assembly/__tests__/nested/array.spec.ts` the artifact is `outDir/<mode>/nested/array.spec.wasm` (previously `outDir/<mode>/array.<mode>.<target>.assembly____tests____nested.wasm`).
+- feat: filename simplified to `<stem>.wasm` — the `.<mode>.<target>` suffix has been dropped since the mode is already a directory level and the target is implied by the mode config.
+- feat: add `resolveGlobBase`, `resolveSpecRelativePath`, and `resolveArtifactPath` in `cli/util.ts` as the shared path helpers used by every code path that writes or looks up a per-spec artifact. Glob bases are computed component-wise (so `assembly/__tests` is not a prefix of `assembly/__tests__/foo.spec.ts`) and the longest matching base wins when multiple configured input patterns overlap.
+- feat: add an up-front collision check in `build()` that throws a clear error naming both source files when two configured inputs would resolve to the same artifact path.
+- fix: `ast test <one-spec>`, `ast run <one-spec>`, and `ast fuzz <one-spec>` no longer drop the disambiguator when only one of two same-basename files is being built. The build side and the runner side now compute the same path from the same configured input set.
+- fix: build sites now `mkdir -p` the artifact's parent directory before invoking `asc` — pinned `assemblyscript@0.28.17`'s `-o` flag does not create parents and would otherwise ENOENT for any new nested directory.
+- fix: `persistCrashRecord` now `mkdir -p`'s the entry's parent directory, supporting `/` in entry keys so nested specs and fuzz failures get their own crash files instead of clobbering by basename.
+- fix: replace the hardcoded `/__tests__/` and `/__fuzz__/` markers in snapshot and readable-log path resolution with proper glob-base computation, so projects with custom input layouts now nest correctly instead of falling back to basename-only paths.
+
+### `.toThrow()` is a real matcher
+
+- feat: `expect((): void => { throw new Error("boom"); }).toThrow()` now invokes the wrapped callback and asserts it threw, using try-as's `__ExceptionState.Failures` counter to detect the throw. Calling `.toThrow()` on a non-function value reports a clear "needs a function" failure.
+- feat: requires `--enable try-as`. Without the feature flag, `.toThrow()` warns once and is a no-op (existing behavior preserved).
+- chore: the bundled try-as integration spec lives at `assembly/__tests__/try-as.spec.ts` and is run by `npm test`, which now passes `--enable try-as`.
+
+### Breaking
+
+- chore: clean break on snapshot file layout — the legacy `${base}.snap.json` and `${base}.${disambiguator}.snap.json` fallbacks have been removed. After upgrading, run `--create-snapshots` or `--overwrite-snapshots` once so snapshots are written at their new relative-path locations.
+- chore: artifact filenames no longer carry the `<mode>.<target>` suffix; tooling that grepped the old shape needs adjusting. `ast clean` removes any orphan artifacts.
+- chore: `.toThrow()` no longer accepts a bare value — it now requires a `() => void` callback and the try-as feature flag.
+
+### Tooling
+
+- chore: husky pre-commit / commit-msg / pre-push hooks (build → format → typecheck → lint on commit; conventional-commits enforcement; full test gate only on push to `main` of `JairusSW/as-test`).
+
 ## 2026-05-19 - v1.1.10
 
 - feat: when the user already declares `--transform json-as/...` in `buildOptions.args` or in their referenced `asconfig.json` (top-level `options.transform`, any `targets.*.transform`, or via a single level of `extends`), as-test no longer adds its own auto-include — letting users bring their own json-as version or load path. Detection matches bare specifiers (`json-as`, `json-as/transform`), absolute paths, and `./node_modules/...` paths.

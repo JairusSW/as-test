@@ -24,7 +24,9 @@ import {
   getDefaultModeNames,
   getCliVersion,
   loadConfig,
+  resolveArtifactPath,
   resolveModeNames,
+  resolveSpecRelativePath,
 } from "./util.js";
 import { Config } from "./types.js";
 import * as path from "path";
@@ -1603,8 +1605,7 @@ async function runTestSequential(
   const results: RunResult[] = [];
   let failed = false;
   const buildIntervals: Array<{ start: number; end: number }> = [];
-  const duplicateSpecBasenames =
-    await resolveAllConfiguredDuplicateSpecBasenames(configPath);
+  const inputPatterns = await loadInputPatterns(configPath);
   for (const file of files) {
     const buildStartedAt = Date.now();
     let result: RunResult;
@@ -1617,10 +1618,7 @@ async function runTestSequential(
         modeName,
         buildFeatureToggles,
       );
-      const artifactKey = resolvePerFileArtifactKey(
-        file,
-        duplicateSpecBasenames,
-      );
+      const artifactKey = resolveArtifactStem(file, inputPatterns);
       result = await run(runFlags, configPath, [file], false, {
         reporter,
         webSession,
@@ -1628,7 +1626,7 @@ async function runTestSequential(
         emitRunStart: false,
         emitRunComplete: false,
         logFileName: `test.${artifactKey}.log.json`,
-        coverageFileName: `coverage.${artifactKey}.log.json`,
+        coverageFileName: `${artifactKey}.log.json`,
         buildCommand: formatBuildInvocation(buildInvocation),
         modeName,
       });
@@ -1931,8 +1929,7 @@ async function runRuntimeMatrix(
     failed: false,
     passed: false,
   }));
-  const duplicateSpecBasenames =
-    await resolveAllConfiguredDuplicateSpecBasenames(configPath);
+  const inputPatterns = await loadInputPatterns(configPath);
   const buildIntervals: Array<{ start: number; end: number }> = [];
 
   for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
@@ -1952,10 +1949,7 @@ async function runRuntimeMatrix(
           modeName,
           {},
         );
-        const artifactKey = resolvePerFileArtifactKey(
-          file,
-          duplicateSpecBasenames,
-        );
+        const artifactKey = resolveArtifactStem(file, inputPatterns);
         const result = await run(runFlags, configPath, [file], false, {
           reporter: silentReporter,
           reporterKind: "default",
@@ -1963,7 +1957,7 @@ async function runRuntimeMatrix(
           emitRunStart: false,
           emitRunComplete: false,
           logFileName: `run.${artifactKey}.log.json`,
-          coverageFileName: `coverage.${artifactKey}.log.json`,
+          coverageFileName: `${artifactKey}.log.json`,
           buildCommand: formatBuildInvocation(buildInvocation),
           modeName,
         });
@@ -2475,8 +2469,7 @@ async function runTestMatrix(
     failed: false,
     passed: false,
   }));
-  const duplicateSpecBasenames =
-    await resolveAllConfiguredDuplicateSpecBasenames(configPath);
+  const inputPatterns = await loadInputPatterns(configPath);
   const buildIntervals: Array<{ start: number; end: number }> = [];
 
   for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
@@ -2505,17 +2498,14 @@ async function runTestMatrix(
           modeName,
           buildFeatureToggles,
         );
-        const artifactKey = resolvePerFileArtifactKey(
-          file,
-          duplicateSpecBasenames,
-        );
+        const artifactKey = resolveArtifactStem(file, inputPatterns);
         result = await run(runFlags, configPath, [file], false, {
           reporter: silentReporter,
           reporterKind: "default",
           emitRunStart: false,
           emitRunComplete: false,
           logFileName: `test.${artifactKey}.log.json`,
-          coverageFileName: `coverage.${artifactKey}.log.json`,
+          coverageFileName: `${artifactKey}.log.json`,
           buildCommand: formatBuildInvocation(buildInvocation),
           modeName,
         });
@@ -2820,8 +2810,7 @@ async function runRuntimeMatrixParallel(
   const silentReporter: TestReporter = {};
   const modeLabels = modes.map((modeName) => modeName ?? "default");
   const showPerModeTimes = Boolean(runFlags.verbose);
-  const duplicateSpecBasenames =
-    await resolveAllConfiguredDuplicateSpecBasenames(configPath);
+  const inputPatterns = await loadInputPatterns(configPath);
   const ordered = new Array<{
     fileName: string;
     fileResults: RunResult[];
@@ -2865,10 +2854,7 @@ async function runRuntimeMatrixParallel(
             modeName,
             {},
           );
-          const artifactKey = resolvePerFileArtifactKey(
-            file,
-            duplicateSpecBasenames,
-          );
+          const artifactKey = resolveArtifactStem(file, inputPatterns);
           result = await run(runFlags, configPath, [file], false, {
             reporter: silentReporter,
             reporterKind: "default",
@@ -2876,7 +2862,7 @@ async function runRuntimeMatrixParallel(
             emitRunStart: false,
             emitRunComplete: false,
             logFileName: `run.${artifactKey}.log.json`,
-            coverageFileName: `coverage.${artifactKey}.log.json`,
+            coverageFileName: `${artifactKey}.log.json`,
             buildCommand: formatBuildInvocation(buildInvocation),
             modeName,
           });
@@ -2989,8 +2975,7 @@ async function runTestSingleParallel(
     snapshotEnabled,
     createSnapshots: runFlags.createSnapshots,
   });
-  const duplicateSpecBasenames =
-    await resolveAllConfiguredDuplicateSpecBasenames(configPath);
+  const inputPatterns = await loadInputPatterns(configPath);
   const results = new Array<RunResult>(files.length);
   const useQueueDisplay = reporterSession.reporterKind == "default";
   const queueDisplay = new ParallelQueueDisplay(
@@ -3033,10 +3018,7 @@ async function runTestSingleParallel(
             modeName,
             buildFeatureToggles,
           );
-          const artifactKey = resolvePerFileArtifactKey(
-            file,
-            duplicateSpecBasenames,
-          );
+          const artifactKey = resolveArtifactStem(file, inputPatterns);
           result = await run(
             { ...runFlags, clean: true },
             configPath,
@@ -3048,7 +3030,7 @@ async function runTestSingleParallel(
               suiteSelectors,
               emitRunComplete: false,
               logFileName: `test.${artifactKey}.log.json`,
-              coverageFileName: `coverage.${artifactKey}.log.json`,
+              coverageFileName: `${artifactKey}.log.json`,
               buildCommand: formatBuildInvocation(buildInvocation),
               modeName,
             },
@@ -3180,8 +3162,7 @@ async function runTestMatrixParallel(
   const silentReporter: TestReporter = {};
   const modeLabels = modes.map((modeName) => modeName ?? "default");
   const showPerModeTimes = Boolean(runFlags.verbose);
-  const duplicateSpecBasenames =
-    await resolveAllConfiguredDuplicateSpecBasenames(configPath);
+  const inputPatterns = await loadInputPatterns(configPath);
   const ordered = new Array<{
     fileName: string;
     fileResults: RunResult[];
@@ -3225,10 +3206,7 @@ async function runTestMatrixParallel(
             modeName,
             buildFeatureToggles,
           );
-          const artifactKey = resolvePerFileArtifactKey(
-            file,
-            duplicateSpecBasenames,
-          );
+          const artifactKey = resolveArtifactStem(file, inputPatterns);
           result = await run(runFlags, configPath, [file], false, {
             reporter: silentReporter,
             reporterKind: "default",
@@ -3236,7 +3214,7 @@ async function runTestMatrixParallel(
             emitRunStart: false,
             emitRunComplete: false,
             logFileName: `test.${artifactKey}.log.json`,
-            coverageFileName: `coverage.${artifactKey}.log.json`,
+            coverageFileName: `${artifactKey}.log.json`,
             buildCommand: formatBuildInvocation(buildInvocation),
             modeName,
           });
@@ -4200,95 +4178,30 @@ function stripSuiteSuffix(selector: string): string {
   return selector.replace(/\.spec\.ts$/, "").replace(/\.ts$/, "");
 }
 
-function resolveDuplicateSpecBasenames(files: string[]): Set<string> {
-  const counts = new Map<string, number>();
-  for (const file of files) {
-    const base = path.basename(file);
-    counts.set(base, (counts.get(base) ?? 0) + 1);
-  }
-  const duplicates = new Set<string>();
-  for (const [base, count] of counts) {
-    if (count > 1) duplicates.add(base);
-  }
-  return duplicates;
+// Returns the spec relative path (under the configured input base) with the
+// trailing ".ts" stripped, suitable for use as a stable per-file key for
+// coverage and log filenames.
+function resolveArtifactStem(
+  file: string,
+  inputPatterns: string[] | string,
+): string {
+  return resolveSpecRelativePath(file, inputPatterns).replace(/\.ts$/i, "");
 }
 
-// Disambiguation must consider the full configured input set, not the
-// selector-filtered subset, otherwise running a single spec writes/looks up an
-// artifact name that the rest of the toolchain doesn't agree on.
-async function resolveAllConfiguredDuplicateSpecBasenames(
+async function loadInputPatterns(
   configPath: string | undefined,
-): Promise<Set<string>> {
+): Promise<string[] | string> {
   const resolvedConfigPath =
     configPath ?? path.join(process.cwd(), "./as-test.config.json");
-  const config = loadConfig(resolvedConfigPath, false);
-  return resolveDuplicateBasenamesForPatterns(config.input);
+  return loadConfig(resolvedConfigPath, false).input;
 }
 
-async function resolveAllConfiguredDuplicateFuzzBasenames(
+async function loadFuzzInputPatterns(
   configPath: string | undefined,
-): Promise<Set<string>> {
+): Promise<string[] | string> {
   const resolvedConfigPath =
     configPath ?? path.join(process.cwd(), "./as-test.config.json");
-  const config = loadConfig(resolvedConfigPath, false);
-  return resolveDuplicateBasenamesForPatterns(config.fuzz.input);
-}
-
-async function resolveDuplicateBasenamesForPatterns(
-  configured: string[] | string,
-): Promise<Set<string>> {
-  const patterns = Array.isArray(configured) ? configured : [configured];
-  const files = await glob(patterns);
-  return resolveDuplicateSpecBasenames(files);
-}
-
-function resolvePerFileArtifactKey(
-  file: string,
-  duplicateSpecBasenames: Set<string>,
-): string {
-  const base = path.basename(file);
-  let raw = base;
-  if (duplicateSpecBasenames.has(base)) {
-    const disambiguator = resolvePerFileDisambiguator(file);
-    if (disambiguator.length) {
-      raw = `${base}.${disambiguator}`;
-    }
-  }
-  return raw.replace(/[^a-zA-Z0-9._-]/g, "_");
-}
-
-function resolvePerFileDisambiguator(file: string): string {
-  const relDir = path.dirname(path.relative(process.cwd(), file));
-  if (!relDir.length || relDir == ".") return "";
-  return relDir
-    .replace(/[\\/]+/g, "__")
-    .replace(/[^A-Za-z0-9._-]/g, "_")
-    .replace(/^_+|_+$/g, "");
-}
-
-function resolveArtifactFileNameForPreview(
-  file: string,
-  target: string,
-  modeName: string | undefined,
-  duplicateSpecBasenames: Set<string>,
-): string {
-  const base = path
-    .basename(file)
-    .replace(/\.spec\.ts$/, "")
-    .replace(/\.ts$/, "");
-  const legacy = !modeName
-    ? `${path.basename(file).replace(".ts", ".wasm")}`
-    : `${base}.${modeName}.${target}.wasm`;
-  if (!duplicateSpecBasenames.has(path.basename(file))) {
-    return legacy;
-  }
-  const disambiguator = resolvePerFileDisambiguator(file);
-  if (!disambiguator.length) {
-    return legacy;
-  }
-  const ext = path.extname(legacy);
-  const stem = ext.length ? legacy.slice(0, -ext.length) : legacy;
-  return `${stem}.${disambiguator}${ext}`;
+  return loadConfig(resolvedConfigPath, false).fuzz.input;
 }
 
 async function ensureWebBrowsersReady(
@@ -4868,10 +4781,8 @@ async function listExecutionPlan(
         : `No test files matched: ${scope}`,
     );
   }
-  const duplicateSpecBasenames =
-    await resolveAllConfiguredDuplicateSpecBasenames(configPath);
-  const duplicateFuzzBasenames =
-    await resolveAllConfiguredDuplicateFuzzBasenames(configPath);
+  const inputPatterns = await loadInputPatterns(configPath);
+  const fuzzInputPatterns = await loadFuzzInputPatterns(configPath);
 
   if (specFiles.length) {
     process.stdout.write(chalk.bold("Resolved files:\n"));
@@ -4929,12 +4840,7 @@ async function listExecutionPlan(
     if (specFiles.length) {
       process.stdout.write("  artifacts:\n");
       for (const file of specFiles) {
-        const artifactName = resolveArtifactFileNameForPreview(
-          file,
-          active.buildOptions.target,
-          modeName,
-          duplicateSpecBasenames,
-        );
+        const artifactName = resolveArtifactPath(file, inputPatterns);
         process.stdout.write(
           `    - ${path.join(active.outDir, artifactName)}\n`,
         );
@@ -4943,12 +4849,7 @@ async function listExecutionPlan(
     if (fuzzFiles.length && command == "test") {
       process.stdout.write("  fuzz artifacts:\n");
       for (const file of fuzzFiles) {
-        const artifactName = resolveArtifactFileNameForPreview(
-          file,
-          "bindings",
-          modeName,
-          duplicateFuzzBasenames,
-        );
+        const artifactName = resolveArtifactPath(file, fuzzInputPatterns);
         process.stdout.write(
           `    - ${path.join(active.outDir, artifactName)}\n`,
         );
@@ -4956,12 +4857,7 @@ async function listExecutionPlan(
     } else if (command == "fuzz") {
       process.stdout.write("  artifacts:\n");
       for (const file of fuzzFiles) {
-        const artifactName = resolveArtifactFileNameForPreview(
-          file,
-          "bindings",
-          modeName,
-          duplicateFuzzBasenames,
-        );
+        const artifactName = resolveArtifactPath(file, fuzzInputPatterns);
         process.stdout.write(
           `    - ${path.join(active.outDir, artifactName)}\n`,
         );

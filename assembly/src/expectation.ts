@@ -457,15 +457,21 @@ export class Expectation<T> extends Tests {
   }
 
   /**
-   * Delegates throw assertions to try-as when available.
-   * If try-as is unavailable, this matcher is disabled and warns once.
+   * Invokes the wrapped function inside a try/catch and asserts it threw.
+   * Requires the try-as feature (`--enable try-as`).
+   *
+   *   expect((): void => { throw new Error("boom"); }).toThrow();
+   *
+   * The value passed to `expect()` must be a `() => void` callback — calling
+   * `.toThrow()` on a non-function value records a failure that explains the
+   * usage.
    */
   toThrow(message: string = ""): void {
     // @ts-ignore
     if (!isDefined(AS_TEST_TRY_AS)) {
       if (!warnedToThrowDisabled) {
         sendWarning(
-          'toThrow() is disabled because try-as is not installed. Install and import "try-as" to enable it.',
+          "toThrow() requires the try-as feature. Enable with --enable try-as.",
         );
         warnedToThrowDisabled = true;
       }
@@ -473,13 +479,42 @@ export class Expectation<T> extends Tests {
       return;
     }
 
-    // @ts-ignore
-    const passed = __ExceptionState.Failures > 0;
-    if (passed) {
-      // @ts-ignore
-      __ExceptionState.Failures--;
+    if (!isFunction<T>()) {
+      this._resolve(
+        false,
+        "toThrow",
+        q("non-function"),
+        q("() => void"),
+        message.length
+          ? message
+          : "toThrow() requires a function: expect((): void => { ... }).toThrow()",
+      );
+      return;
     }
-    this._resolve(passed, "toThrow", q("throws"), q("throws"), message);
+
+    // try-as rewrites the throw inside the callback to bump
+    // __ExceptionState.Failures and return early from the arrow. We never
+    // wrap the call in try/catch here because try-as's source linker does not
+    // follow chained method calls (`expect(...).toThrow()`) and so it would
+    // not rewrite a `try` placed in this method body. Compare the failure
+    // counter before/after instead and consume any failure we observed.
+    // @ts-ignore: __ExceptionState is provided by the try-as transform
+    const beforeFailures = __ExceptionState.Failures;
+    // @ts-ignore: guarded by isFunction<T>() above
+    (this._left as () => void)();
+    // @ts-ignore
+    const threw = __ExceptionState.Failures > beforeFailures;
+    if (threw) {
+      // @ts-ignore
+      __ExceptionState.Failures = beforeFailures;
+    }
+    this._resolve(
+      threw,
+      "toThrow",
+      q(threw ? "threw" : "did not throw"),
+      q("throws"),
+      message,
+    );
   }
 
   /**

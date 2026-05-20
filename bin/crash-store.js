@@ -5,9 +5,9 @@ export function persistCrashRecord(rootDir, record) {
     ? record.entryKey
     : crashEntryKey(record.file);
   const dir = path.resolve(process.cwd(), rootDir);
-  mkdirSync(dir, { recursive: true });
   const jsonPath = path.join(dir, `${entry}.json`);
   const logPath = path.join(dir, `${entry}.log`);
+  mkdirSync(path.dirname(jsonPath), { recursive: true });
   const payload = {
     timestamp: new Date().toISOString(),
     ...record,

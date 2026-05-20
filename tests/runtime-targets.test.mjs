@@ -92,10 +92,10 @@ test("runtime failures print repro and resolved commands", async () => {
     assert.match(output, /Mode\(s\): node:wasi/);
     assert.match(output, /To reproduce, run the following commands:/);
     assert.match(output, /Mode: node:wasi/);
-    assert.match(output, /Build: .*__tmp_runtime_fail\.node:wasi\.wasi\.wasm/);
+    assert.match(output, /Build: .*__tmp_runtime_fail\.spec\.wasm/);
     assert.match(
       output,
-      /Run: .*default\.wasi\.js .*__tmp_runtime_fail\.node:wasi\.wasi\.wasm/,
+      /Run: .*default\.wasi\.js .*__tmp_runtime_fail\.spec\.wasm/,
     );
     assert.match(output, /Here's a log dump too:/);
   } finally {
@@ -135,7 +135,7 @@ test("parallel test mode reports build failures after other files finish", async
     assert.match(output, /FAIL\s+__tmp_build_fail\.spec\.ts#1/);
     assert.match(output, /Oops! Looks like the test failed to build!/);
     assert.match(output, /Mode\(s\): node:wasi/);
-    assert.match(output, /Build: .*__tmp_build_fail\.node:wasi\.wasi\.wasm/);
+    assert.match(output, /Build: .*__tmp_build_fail\.spec\.wasm/);
     assert.match(output, /Crash log:/);
   } finally {
     await fs.rm(badSpecPath, { force: true });

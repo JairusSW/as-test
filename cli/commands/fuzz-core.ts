@@ -3,7 +3,12 @@ import * as path from "path";
 import { pathToFileURL } from "url";
 import { glob } from "glob";
 import { build } from "./build-core.js";
-import { applyMode, loadConfig } from "../util.js";
+import {
+  applyMode,
+  loadConfig,
+  resolveArtifactPath,
+  resolveSpecRelativePath,
+} from "../util.js";
 import type { FuzzConfig } from "../types.js";
 import { persistCrashRecord } from "../crash-store.js";
 
@@ -97,13 +102,6 @@ export async function fuzz(
     );
   }
 
-  // Disambiguation must consider the full configured fuzz input set, not the
-  // selector-filtered subset, so artifact names stay consistent across runs.
-  const fullPatterns = Array.isArray(config.input)
-    ? config.input
-    : [config.input];
-  const allFuzzFiles = await glob(fullPatterns);
-  const duplicateBasenames = resolveDuplicateBasenames(allFuzzFiles);
   const results: FuzzResult[] = [];
   for (const file of inputFiles) {
     const buildStartedAt = Date.now();
@@ -121,7 +119,6 @@ export async function fuzz(
       await runFuzzTarget(
         file,
         activeConfig.outDir,
-        duplicateBasenames,
         config,
         fuzzerSelectors,
         buildStartedAt,
@@ -186,7 +183,6 @@ function encodeRunsOverrideKind(kind: FuzzRunOverride["kind"]): number {
 async function runFuzzTarget(
   file: string,
   outDir: string,
-  duplicateBasenames: Set<string>,
   config: FuzzConfig,
   fuzzerSelectors: string[],
   buildStartedAt: number,
@@ -195,7 +191,7 @@ async function runFuzzTarget(
   modeName?: string,
 ): Promise<FuzzResult> {
   const startedAt = Date.now();
-  const artifact = resolveArtifactFileName(file, duplicateBasenames, modeName);
+  const artifact = resolveArtifactPath(file, config.input);
   const wasmPath = path.resolve(process.cwd(), outDir, artifact);
   const jsPath = resolveBindingsHelperPath(wasmPath);
   const helper = await import(pathToFileURL(jsPath).href + `?t=${Date.now()}`);
@@ -265,7 +261,11 @@ async function runFuzzTarget(
     const crash = persistCrashRecord(config.crashDir, {
       kind: "fuzz",
       file,
-      entryKey: buildFuzzCrashEntryKey(file, modeName ?? "default"),
+      entryKey: buildFuzzCrashEntryKey(
+        file,
+        config.input,
+        modeName ?? "default",
+      ),
       mode: modeName ?? "default",
       seed: config.seed,
       error: crashMessage,
@@ -313,7 +313,11 @@ async function runFuzzTarget(
     const crash = persistCrashRecord(config.crashDir, {
       kind: "fuzz",
       file,
-      entryKey: buildFuzzCrashEntryKey(file, modeName ?? "default"),
+      entryKey: buildFuzzCrashEntryKey(
+        file,
+        config.input,
+        modeName ?? "default",
+      ),
       mode: modeName ?? "default",
       seed: config.seed,
       error: `${reportParseError ? `invalid fuzz report payload: ${reportParseError}` : `missing fuzz report payload from ${path.basename(file)}`} (${diagnostics})`,
@@ -351,6 +355,7 @@ async function runFuzzTarget(
       file,
       entryKey: buildFuzzFailureEntryKey(
         file,
+        config.input,
         fuzzer.name,
         modeName ?? "default",
       ),
@@ -440,14 +445,27 @@ function buildFuzzReproCommand(
 
 function buildFuzzFailureEntryKey(
   file: string,
+  inputPatterns: string[] | string,
   name: string,
   modeName: string,
 ): string {
-  return `${path.basename(file).replace(/\.ts$/, "")}.${sanitizeEntryName(modeName)}.${sanitizeEntryName(name)}`;
+  const stem = resolveSpecRelativePath(file, inputPatterns).replace(
+    /\.ts$/i,
+    "",
+  );
+  return `${stem}.${sanitizeEntryName(modeName)}.${sanitizeEntryName(name)}`;
 }
 
-function buildFuzzCrashEntryKey(file: string, modeName: string): string {
-  return `${path.basename(file).replace(/\.ts$/, "")}.${sanitizeEntryName(modeName)}`;
+function buildFuzzCrashEntryKey(
+  file: string,
+  inputPatterns: string[] | string,
+  modeName: string,
+): string {
+  const stem = resolveSpecRelativePath(file, inputPatterns).replace(
+    /\.ts$/i,
+    "",
+  );
+  return `${stem}.${sanitizeEntryName(modeName)}`;
 }
 
 function sanitizeEntryName(name: string): string {
@@ -577,52 +595,6 @@ function resolveFuzzInputPatterns(
     patterns.add(selector);
   }
   return [...patterns];
-}
-
-function resolveArtifactFileName(
-  file: string,
-  duplicateBasenames: Set<string>,
-  modeName?: string,
-): string {
-  const base = path
-    .basename(file)
-    .replace(/\.spec\.ts$/, "")
-    .replace(/\.ts$/, "");
-  const legacy = !modeName
-    ? `${path.basename(file).replace(".ts", ".wasm")}`
-    : `${base}.${modeName}.bindings.wasm`;
-  if (!duplicateBasenames.has(path.basename(file))) {
-    return legacy;
-  }
-  const disambiguator = resolveDisambiguator(file);
-  if (!disambiguator.length) {
-    return legacy;
-  }
-  const ext = path.extname(legacy);
-  const stem = ext.length ? legacy.slice(0, -ext.length) : legacy;
-  return `${stem}.${disambiguator}${ext}`;
-}
-
-function resolveDuplicateBasenames(files: string[]): Set<string> {
-  const counts = new Map<string, number>();
-  for (const file of files) {
-    const base = path.basename(file);
-    counts.set(base, (counts.get(base) ?? 0) + 1);
-  }
-  const duplicates = new Set<string>();
-  for (const [base, count] of counts) {
-    if (count > 1) duplicates.add(base);
-  }
-  return duplicates;
-}
-
-function resolveDisambiguator(file: string): string {
-  const relDir = path.dirname(path.relative(process.cwd(), file));
-  if (!relDir.length || relDir == ".") return "";
-  return relDir
-    .replace(/[\\/]+/g, "__")
-    .replace(/[^A-Za-z0-9._-]/g, "_")
-    .replace(/^_+|_+$/g, "");
 }
 
 function resolveBindingsHelperPath(wasmPath: string): string {
