@@ -67,6 +67,16 @@ class LabelledPoint {
   }
 }
 
+const WHERE_POINT_ACTUAL: Point = new Point(3, 4);
+const WHERE_POINT_EXPECTED: Point = new Point(3, 4);
+
+function wherePointMatches(): bool {
+  return (
+    WHERE_POINT_ACTUAL.x == WHERE_POINT_EXPECTED.x &&
+    WHERE_POINT_ACTUAL.y == WHERE_POINT_EXPECTED.y
+  );
+}
+
 beforeEach(() => {
   beforeCount++;
 });
@@ -210,8 +220,43 @@ describe("Expectation helpers", () => {
     }).toThrow();
   });
 
+  test("where accepts a bool predicate", () => {
+    expect(7).where(true);
+    expect(7).not.where(false);
+    expect(7).where(7 > 0 && 7 < 10);
+  });
+
+  test("where accepts a () => bool lambda", () => {
+    expect(7).where((): bool => true);
+    expect(7).not.where((): bool => false);
+  });
+
+  test("where lambda can delegate to a module-level helper", () => {
+    expect<Point>(WHERE_POINT_ACTUAL).where((): bool => wherePointMatches());
+  });
+
+  test("matchers chain into where as independent assertions", () => {
+    expect(7)
+      .toBe(7)
+      .where((): bool => true);
+    expect(10)
+      .toBeGreaterThan(5)
+      .where(10 < 100);
+    expect("as-test")
+      .toBeString()
+      .toStartWith("as")
+      .where((): bool => true);
+  });
+
+  test("skip swallows a failing where", () => {
+    expect(7).skip().where(false);
+    expect(7)
+      .skip()
+      .where((): bool => false);
+  });
+
   test("beforeEach/afterEach are called once per test", () => {
-    expect(beforeCount).toBe(13);
-    expect(afterCount).toBe(12);
+    expect(beforeCount).toBe(18);
+    expect(afterCount).toBe(17);
   });
 });

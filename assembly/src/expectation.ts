@@ -57,6 +57,41 @@ export class Expectation<T> extends Tests {
     return this;
   }
 
+  /**
+   * Asserts that a custom predicate holds. Accepts either a bool or a
+   * `() => bool` lambda. Useful when the verdict isn't expressible via the
+   * built-in matchers — e.g. delegating to a hand-written comparator.
+   *
+   *   expect(x).where(x > 0 && x < 10);
+   *   expect(actual).where((): bool => deepEqual(GLOBAL_A, GLOBAL_B));
+   *
+   * Chains with other matchers as an independent assertion:
+   *
+   *   expect(7).toBe(7).where((): bool => isFresh());
+   *
+   * Note: AssemblyScript does not implement closures, so the lambda cannot
+   * capture local variables from the enclosing scope. Use the bool form when
+   * the predicate references locals, or refer to module-level values from
+   * inside the lambda.
+   */
+  where<W>(predicate: W, message: string = ""): Expectation<T> {
+    let passed: bool;
+    if (isFunction<W>()) {
+      passed = (predicate as () => bool)();
+    } else {
+      // @ts-ignore: W is a bool-compatible primitive in this branch
+      passed = predicate as bool;
+    }
+    this._resolve(
+      passed,
+      "where",
+      q(passed ? "true" : "false"),
+      q("true"),
+      message,
+    );
+    return this;
+  }
+
   private _resolve(
     passed: bool,
     instr: string,
@@ -74,14 +109,26 @@ export class Expectation<T> extends Tests {
       return;
     }
     const isFail = this._not ? passed : !passed;
-    this.verdict = isFail ? "fail" : "ok";
-    this.instr = instr;
-    this.left = left;
-    this.right = right;
     const resolvedMessage = message.length ? message : this._message;
-    this.message = isFail ? resolvedMessage : "";
+    // When matchers chain, later ones must not overwrite an earlier failure's
+    // recorded state — otherwise a passing matcher after a failed one would
+    // flip the suite's verdict back to "ok". Each matcher still fires its own
+    // IPC failure independently below.
+    if (this.verdict != "fail") {
+      this.verdict = isFail ? "fail" : "ok";
+      this.instr = instr;
+      this.left = left;
+      this.right = right;
+      this.message = isFail ? resolvedMessage : "";
+    }
     if (isFail) {
-      sendAssertionFailure(this._snapshotKey, instr, left, right, this.message);
+      sendAssertionFailure(
+        this._snapshotKey,
+        instr,
+        left,
+        right,
+        resolvedMessage,
+      );
       // @ts-ignore
       if (isDefined(AS_TEST_FUZZ)) {
         // @ts-ignore
@@ -95,7 +142,7 @@ export class Expectation<T> extends Tests {
           // @ts-ignore
           __as_test_fuzz_failure_right = right;
           // @ts-ignore
-          __as_test_fuzz_failure_message = this.message;
+          __as_test_fuzz_failure_message = resolvedMessage;
         }
       }
     }
@@ -105,7 +152,7 @@ export class Expectation<T> extends Tests {
   /**
    * Tests if a == null
    */
-  toBeNull(message: string = ""): void {
+  toBeNull(message: string = ""): Expectation<T> {
     const passed =
       (isNullable<T>() && changetype<usize>(this._left) == 0) ||
       (isInteger<T>() && nameof<T>() == "usize" && this._left == 0);
@@ -121,12 +168,13 @@ export class Expectation<T> extends Tests {
       ),
       message,
     );
+    return this;
   }
 
   /**
    * Tests if a > b
    */
-  toBeGreaterThan(value: T, message: string = ""): void {
+  toBeGreaterThan(value: T, message: string = ""): Expectation<T> {
     if (!isInteger<T>() && !isFloat<T>())
       ERROR("toBeGreaterThan() can only be used on number types!");
 
@@ -144,12 +192,13 @@ export class Expectation<T> extends Tests {
       ),
       message,
     );
+    return this;
   }
 
   /**
    * Tests if a >= b
    */
-  toBeGreaterOrEqualTo(value: T, message: string = ""): void {
+  toBeGreaterOrEqualTo(value: T, message: string = ""): Expectation<T> {
     if (!isInteger<T>() && !isFloat<T>())
       ERROR("toBeGreaterOrEqualTo() can only be used on number types!");
 
@@ -167,12 +216,13 @@ export class Expectation<T> extends Tests {
       ),
       message,
     );
+    return this;
   }
 
   /**
    * Tests if a < b
    */
-  toBeLessThan(value: T, message: string = ""): void {
+  toBeLessThan(value: T, message: string = ""): Expectation<T> {
     if (!isInteger<T>() && !isFloat<T>())
       ERROR("toBeLessThan() can only be used on number types!");
 
@@ -190,12 +240,13 @@ export class Expectation<T> extends Tests {
       ),
       message,
     );
+    return this;
   }
 
   /**
    * Tests if a <= b
    */
-  toBeLessThanOrEqualTo(value: T, message: string = ""): void {
+  toBeLessThanOrEqualTo(value: T, message: string = ""): Expectation<T> {
     if (!isInteger<T>() && !isFloat<T>())
       ERROR("toBeLessThanOrEqualTo() can only be used on number types!");
 
@@ -213,12 +264,13 @@ export class Expectation<T> extends Tests {
       ),
       message,
     );
+    return this;
   }
 
   /**
    * Tests if a is string
    */
-  toBeString(message: string = ""): void {
+  toBeString(message: string = ""): Expectation<T> {
     this._resolve(
       isString<T>(),
       "toBeString",
@@ -226,12 +278,13 @@ export class Expectation<T> extends Tests {
       q("string"),
       message,
     );
+    return this;
   }
 
   /**
    * Tests if a is boolean
    */
-  toBeBoolean(message: string = ""): void {
+  toBeBoolean(message: string = ""): Expectation<T> {
     this._resolve(
       isBoolean<T>(),
       "toBeBoolean",
@@ -239,12 +292,13 @@ export class Expectation<T> extends Tests {
       q("boolean"),
       message,
     );
+    return this;
   }
 
   /**
    * Tests if a is array
    */
-  toBeArray(message: string = ""): void {
+  toBeArray(message: string = ""): Expectation<T> {
     this._resolve(
       isArray<T>(),
       "toBeArray",
@@ -252,12 +306,13 @@ export class Expectation<T> extends Tests {
       q("Array<any>"),
       message,
     );
+    return this;
   }
 
   /**
    * Tests if a is number
    */
-  toBeNumber(message: string = ""): void {
+  toBeNumber(message: string = ""): Expectation<T> {
     this._resolve(
       isFloat<T>() || isInteger<T>(),
       "toBeNumber",
@@ -265,12 +320,13 @@ export class Expectation<T> extends Tests {
       q("number"),
       message,
     );
+    return this;
   }
 
   /**
    * Tests if a is integer
    */
-  toBeInteger(message: string = ""): void {
+  toBeInteger(message: string = ""): Expectation<T> {
     this._resolve(
       isInteger<T>(),
       "toBeInteger",
@@ -278,12 +334,13 @@ export class Expectation<T> extends Tests {
       q("integer"),
       message,
     );
+    return this;
   }
 
   /**
    * Tests if a is float
    */
-  toBeFloat(message: string = ""): void {
+  toBeFloat(message: string = ""): Expectation<T> {
     this._resolve(
       isFloat<T>(),
       "toBeFloat",
@@ -291,21 +348,23 @@ export class Expectation<T> extends Tests {
       q("float"),
       message,
     );
+    return this;
   }
 
   /**
    * Tests if a is finite
    */
-  toBeFinite(message: string = ""): void {
+  toBeFinite(message: string = ""): Expectation<T> {
     // @ts-ignore
     const passed = (isFloat<T>() || isInteger<T>()) && isFinite(this._left);
     this._resolve(passed, "toBeFinite", q("Infinity"), q("Finite"), message);
+    return this;
   }
 
   /**
    * Tests if a value is truthy
    */
-  toBeTruthy(message: string = ""): void {
+  toBeTruthy(message: string = ""): Expectation<T> {
     this._resolve(
       isTruthy<T>(this._left),
       "toBeTruthy",
@@ -313,12 +372,13 @@ export class Expectation<T> extends Tests {
       q("truthy"),
       message,
     );
+    return this;
   }
 
   /**
    * Tests if a value is falsy
    */
-  toBeFalsy(message: string = ""): void {
+  toBeFalsy(message: string = ""): Expectation<T> {
     this._resolve(
       !isTruthy<T>(this._left),
       "toBeFalsy",
@@ -326,12 +386,14 @@ export class Expectation<T> extends Tests {
       q("falsy"),
       message,
     );
+    return this;
   }
 
   /**
    * Tests if a floating-point number is close to expected
    */
-  toBeCloseTo(expected: T, precision: i32 = 2, message: string = ""): void {
+  // prettier-ignore
+  toBeCloseTo(expected: T, precision: i32 = 2, message: string = ""): Expectation<T> {
     if (!isFloat<T>() && !isInteger<T>())
       ERROR("toBeCloseTo() can only be used on number types!");
     const factor = Math.pow(10, precision as f64);
@@ -344,12 +406,13 @@ export class Expectation<T> extends Tests {
       visualize<T>(expected),
       message,
     );
+    return this;
   }
 
   /**
    * Tests if a string contains substring
    */
-  toMatch(value: string, message: string = ""): void {
+  toMatch(value: string, message: string = ""): Expectation<T> {
     if (!isString<T>()) ERROR("toMatch() can only be used on string types!");
     // @ts-ignore
     const passed = this._left.indexOf(value) >= 0;
@@ -361,36 +424,39 @@ export class Expectation<T> extends Tests {
       q(value),
       message,
     );
+    return this;
   }
 
   /**
    * Tests if a string starts with the provided prefix.
    */
-  toStartWith(value: string, message: string = ""): void {
+  toStartWith(value: string, message: string = ""): Expectation<T> {
     if (!isString<T>())
       ERROR("toStartWith() can only be used on string types!");
     // @ts-ignore
     const left = this._left as string;
     const passed = left.indexOf(value) == 0;
     this._resolve(passed, "toStartWith", q(left), q(value), message);
+    return this;
   }
 
   /**
    * Tests if a string ends with the provided suffix.
    */
-  toEndWith(value: string, message: string = ""): void {
+  toEndWith(value: string, message: string = ""): Expectation<T> {
     if (!isString<T>()) ERROR("toEndWith() can only be used on string types!");
     // @ts-ignore
     const left = this._left as string;
     const idx = left.lastIndexOf(value);
     const passed = idx >= 0 && idx + value.length == left.length;
     this._resolve(passed, "toEndWith", q(left), q(value), message);
+    return this;
   }
 
   /**
    * Tests if an array has length x
    */
-  toHaveLength(value: i32, message: string = ""): void {
+  toHaveLength(value: i32, message: string = ""): Expectation<T> {
     // @ts-ignore
     const leftLen = this._left.length as i32;
     // @ts-ignore
@@ -402,13 +468,14 @@ export class Expectation<T> extends Tests {
       value.toString(),
       message,
     );
+    return this;
   }
 
   /**
    * Tests if an array or string contains a value
    */
   // @ts-ignore
-  toContain(value: valueof<T>, message: string = ""): void {
+  toContain(value: valueof<T>, message: string = ""): Expectation<T> {
     if (isString<T>()) {
       // @ts-ignore
       const left = this._left as string;
@@ -416,7 +483,7 @@ export class Expectation<T> extends Tests {
       const needle = value as string;
       const passed = left.indexOf(needle) >= 0;
       this._resolve(passed, "toContain", q(left), q(needle), message);
-      return;
+      return this;
     }
 
     if (isArray<T>()) {
@@ -429,24 +496,25 @@ export class Expectation<T> extends Tests {
         JSON.stringify<valueof<T>>(value),
         message,
       );
-      return;
+      return this;
     }
 
     ERROR("toContain() can only be used on string and array types!");
+    return this;
   }
 
   /**
    * Alias for toContain().
    */
   // @ts-ignore
-  toContains(value: valueof<T>, message: string = ""): void {
-    this.toContain(value, message);
+  toContains(value: valueof<T>, message: string = ""): Expectation<T> {
+    return this.toContain(value, message);
   }
 
   /**
    * Tests if serialized value matches stored snapshot.
    */
-  toMatchSnapshot(name: string = "", message: string = ""): void {
+  toMatchSnapshot(name: string = "", message: string = ""): Expectation<T> {
     let key = name.length
       ? namedSnapshotKey(this._snapshotKey, name)
       : nextUnnamedSnapshotKey(this._snapshotKey);
@@ -454,6 +522,7 @@ export class Expectation<T> extends Tests {
     const actual = JSON.stringify<T>(this._left);
     const res = snapshotAssert(key, actual);
     this._resolve(res.ok, "toMatchSnapshot", actual, res.expected, message);
+    return this;
   }
 
   /**
@@ -466,7 +535,7 @@ export class Expectation<T> extends Tests {
    * `.toThrow()` on a non-function value records a failure that explains the
    * usage.
    */
-  toThrow(message: string = ""): void {
+  toThrow(message: string = ""): Expectation<T> {
     // @ts-ignore
     if (!isDefined(AS_TEST_TRY_AS)) {
       if (!warnedToThrowDisabled) {
@@ -476,7 +545,7 @@ export class Expectation<T> extends Tests {
         warnedToThrowDisabled = true;
       }
       this._resolve(true, "toThrow", q("disabled"), q("disabled"), message);
-      return;
+      return this;
     }
 
     if (!isFunction<T>()) {
@@ -489,7 +558,7 @@ export class Expectation<T> extends Tests {
           ? message
           : "toThrow() requires a function: expect((): void => { ... }).toThrow()",
       );
-      return;
+      return this;
     }
 
     // try-as rewrites the throw inside the callback to bump
@@ -515,12 +584,13 @@ export class Expectation<T> extends Tests {
       q("throws"),
       message,
     );
+    return this;
   }
 
   /**
    * Tests for equality
    */
-  toBe(equals: T, message: string = ""): void {
+  toBe(equals: T, message: string = ""): Expectation<T> {
     const passed = this._left === equals;
 
     this._resolve(
@@ -530,12 +600,13 @@ export class Expectation<T> extends Tests {
       JSON.stringify<T>(equals),
       message,
     );
+    return this;
   }
 
   /**
    * Tests for deep equality
    */
-  toEqual(equals: T, message: string = ""): void {
+  toEqual(equals: T, message: string = ""): Expectation<T> {
     const passed = valueEquals<T>(this._left, equals, false);
     this._resolve(
       passed,
@@ -544,12 +615,13 @@ export class Expectation<T> extends Tests {
       JSON.stringify<T>(equals),
       message,
     );
+    return this;
   }
 
   /**
    * Tests for strict deep equality
    */
-  toStrictEqual(equals: T, message: string = ""): void {
+  toStrictEqual(equals: T, message: string = ""): Expectation<T> {
     const passed = valueEquals<T>(this._left, equals, true);
     this._resolve(
       passed,
@@ -558,6 +630,7 @@ export class Expectation<T> extends Tests {
       JSON.stringify<T>(equals),
       message,
     );
+    return this;
   }
 }
 
