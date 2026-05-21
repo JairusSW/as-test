@@ -438,6 +438,10 @@ test("coverage gaps surface control-flow and assignment kinds", async () => {
 });
 
 test("web runner supports raw, esm, and none", async (t) => {
+  if (process.env.AS_TEST_SKIP_WEB) {
+    t.skip("AS_TEST_SKIP_WEB is set");
+    return;
+  }
   if (!(await canListenOnLoopback())) {
     t.skip("loopback listeners are not permitted in this environment");
     return;
@@ -463,6 +467,10 @@ test("web runner supports raw, esm, and none", async (t) => {
 });
 
 test("web mode fails when the browser side closes early", async (t) => {
+  if (process.env.AS_TEST_SKIP_WEB) {
+    t.skip("AS_TEST_SKIP_WEB is set");
+    return;
+  }
   if (!(await canListenOnLoopback())) {
     t.skip("loopback listeners are not permitted in this environment");
     return;

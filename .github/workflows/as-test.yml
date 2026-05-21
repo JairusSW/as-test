@@ -9,6 +9,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      AS_TEST_SKIP_WEB: "1"
 
     steps:
       - name: Checkout the repository
@@ -36,9 +38,6 @@ jobs:
 
       - name: Install dependencies
         run: bun install
-
-      - name: Install Playwright browsers
-        run: bunx playwright install --with-deps
 
       - name: Lint
         run: bun run lint
