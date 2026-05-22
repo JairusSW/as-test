@@ -20,3 +20,4 @@ as-tral
 .claude/
 .npm-cache/
 .codex
+# Include essential as-test artifacts

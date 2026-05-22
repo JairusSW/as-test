@@ -1,9 +1,10 @@
 {
-  "$schema": "node_modules/as-test/as-test.config.schema.json",
+  "$schema": "./as-test.config.schema.json",
   "input": ["assembly/__tests__/**/*.spec.ts"],
   "output": ".as-test/",
   "config": "none",
   "coverage": false,
+  "features": ["try-as"],
   "env": {},
   "fuzz": {
     "input": ["assembly/__fuzz__/**/*.fuzz.ts"],

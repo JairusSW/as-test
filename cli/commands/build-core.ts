@@ -1,5 +1,9 @@
 import { existsSync, mkdirSync, readFileSync } from "fs";
-import { Config } from "../types.js";
+import {
+  Config,
+  INTERNAL_FEATURE_NAMES,
+  normalizeFeatureName,
+} from "../types.js";
 import { glob } from "glob";
 import chalk from "chalk";
 import { spawn } from "child_process";
@@ -23,8 +27,8 @@ import { BuildWorkerPool } from "../build-worker-pool.js";
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 
 export type BuildFeatureToggles = {
-  tryAs?: boolean;
   coverage?: boolean;
+  featureOverrides?: Record<string, boolean>;
 };
 
 export type BuildConfigOverrides = {
@@ -114,6 +118,7 @@ export async function build(
     a.localeCompare(b),
   );
   await assertNoArtifactCollisions(sourceInputPatterns);
+  warnOnUnknownModeReferences(inputFiles, loadedConfig.modes ?? {});
 
   const coverageEnabled = resolveCoverageEnabled(
     config.coverage,
@@ -123,6 +128,7 @@ export async function build(
     ...mode.env,
     ...config.buildOptions.env,
     AS_TEST_COVERAGE_ENABLED: coverageEnabled ? "1" : "0",
+    AS_TEST_MODE_NAME: modeName ?? "default",
   };
 
   if (
@@ -315,6 +321,7 @@ export async function getBuildReuseInfo(
     ...mode.env,
     ...config.buildOptions.env,
     AS_TEST_COVERAGE_ENABLED: coverageEnabled ? "1" : "0",
+    AS_TEST_MODE_NAME: modeName ?? "default",
   };
   return {
     signature: JSON.stringify({
@@ -329,6 +336,142 @@ export async function getBuildReuseInfo(
 
 function hasCustomBuildCommand(config: Config): boolean {
   return !!config.buildOptions.cmd.trim().length;
+}
+
+// Scans input spec files for `mode([...], fn)` calls whose entries reference
+// mode names not present in the configured set. Collects all (file, name)
+// hits and prints a single formatted block to stdout. The implicit "default"
+// name is only valid when no configured mode has `default: true` — otherwise
+// a named mode always runs and `AS_TEST_MODE_NAME` is never literal "default".
+const MODE_CALL_RE = /\bmode\s*\(\s*\[([^\]]*)\]/g;
+const MODE_STRING_RE = /["']([^"']*)["']/g;
+const STRIP_COMMENTS_RE = /\/\*[\s\S]*?\*\/|\/\/.*$/gm;
+const reportedModeWarnings = new Set<string>();
+export type ModeWarning = { name: string; suggestion: string | null };
+const pendingModeWarningsByFile = new Map<string, ModeWarning[]>();
+
+// Scans input spec files for `mode([...], fn)` calls whose entries reference
+// mode names not present in the configured set, and buffers them for later
+// printing via flushModeWarnings(). Called as early as possible (before the
+// reporter starts streaming progress). De-duplicates across invocations.
+export function warnOnUnknownModeReferences(
+  files: string[],
+  configuredModes: Record<string, { default?: boolean }>,
+): void {
+  const modeEntries = Object.entries(configuredModes ?? {});
+  const fallsBackToImplicitDefault =
+    modeEntries.length === 0 ||
+    modeEntries.every(([, mode]) => mode?.default === false);
+  const knownModes = new Set<string>(modeEntries.map(([name]) => name));
+  if (fallsBackToImplicitDefault) knownModes.add("default");
+  const knownList = [...knownModes].sort();
+
+  for (const file of files) {
+    let text: string;
+    try {
+      text = readFileSync(file, "utf8");
+    } catch {
+      continue;
+    }
+    text = text.replace(STRIP_COMMENTS_RE, "");
+    for (const callMatch of text.matchAll(MODE_CALL_RE)) {
+      const arrayContents = callMatch[1] ?? "";
+      for (const strMatch of arrayContents.matchAll(MODE_STRING_RE)) {
+        let value = strMatch[1] ?? "";
+        if (value.length === 0) continue;
+        if (value.charCodeAt(0) === 33 /* '!' */) value = value.slice(1);
+        if (value.length === 0) continue;
+        if (knownModes.has(value)) continue;
+        const key = `${file}\x1f${value}`;
+        if (reportedModeWarnings.has(key)) continue;
+        reportedModeWarnings.add(key);
+        const warning: ModeWarning = {
+          name: value,
+          suggestion: closestKnownMode(value, knownList),
+        };
+        const list = pendingModeWarningsByFile.get(file);
+        if (list) list.push(warning);
+        else pendingModeWarningsByFile.set(file, [warning]);
+      }
+    }
+  }
+}
+
+// Drains buffered mode warnings. When `showAll` is true, prints the full
+// per-warning block; otherwise prints a one-line summary that tells the user
+// to re-run with `--show-warnings`. No-op when there are no warnings.
+export function flushModeWarnings(showAll: boolean): void {
+  if (pendingModeWarningsByFile.size === 0) return;
+  type Hit = { file: string; name: string; suggestion: string | null };
+  const hits: Hit[] = [];
+  for (const [file, list] of pendingModeWarningsByFile) {
+    for (const w of list) {
+      hits.push({ file, name: w.name, suggestion: w.suggestion });
+    }
+  }
+  pendingModeWarningsByFile.clear();
+  if (hits.length === 0) return;
+
+  if (!showAll) {
+    const count = hits.length;
+    const noun = count === 1 ? "warning" : "warnings";
+    process.stdout.write(
+      `\nFound ${chalk.yellow.bold(count)} ${noun}. Run with ${chalk.dim("--show-warnings")} to view.\n`,
+    );
+    return;
+  }
+
+  const lines: string[] = [chalk.yellow.bold("WARNINGS:")];
+  for (const hit of hits) {
+    let line = ` - unknown mode reference ${chalk.bold(`"${hit.name}"`)} in ${chalk.dim(hit.file)}`;
+    if (hit.suggestion) {
+      line += ` - did you mean ${chalk.cyan(`"${hit.suggestion}"`)}?`;
+    }
+    lines.push(line);
+  }
+  process.stdout.write("\n" + lines.join("\n") + "\n");
+}
+
+// Returns the configured mode whose Levenshtein distance to `name` is below
+// a small threshold (proportional to the longer string's length). Returns
+// null when nothing's close enough — avoids suggesting wildly different names.
+function closestKnownMode(name: string, candidates: string[]): string | null {
+  let best: string | null = null;
+  let bestDist = Infinity;
+  for (const candidate of candidates) {
+    const d = levenshtein(name, candidate);
+    const threshold = Math.max(
+      2,
+      Math.floor(Math.max(name.length, candidate.length) * 0.4),
+    );
+    if (d < bestDist && d <= threshold) {
+      bestDist = d;
+      best = candidate;
+    }
+  }
+  return best;
+}
+
+function levenshtein(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  let prev = new Array<number>(n + 1);
+  let curr = new Array<number>(n + 1);
+  for (let j = 0; j <= n; j++) prev[j] = j;
+  for (let i = 1; i <= m; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const cost = a.charCodeAt(i - 1) === b.charCodeAt(j - 1) ? 0 : 1;
+      const del = prev[j]! + 1;
+      const ins = curr[j - 1]! + 1;
+      const sub = prev[j - 1]! + cost;
+      curr[j] = Math.min(del, ins, sub);
+    }
+    [prev, curr] = [curr, prev];
+  }
+  return prev[n]!;
 }
 
 function getBuildCommand(
@@ -689,7 +832,8 @@ function getDefaultBuildArgs(
   featureToggles: BuildFeatureToggles,
 ): string[] {
   const buildArgs: string[] = [];
-  const tryAsEnabled = resolveTryAsEnabled(featureToggles.tryAs);
+  const effectiveFeatures = resolveEffectiveFeatures(config, featureToggles);
+  const tryAsEnabled = resolveTryAsEnabled(effectiveFeatures.has("try-as"));
 
   buildArgs.push("--transform", "as-test/transform");
   if (
@@ -708,6 +852,11 @@ function getDefaultBuildArgs(
 
   if (tryAsEnabled) {
     buildArgs.push("--use", "AS_TEST_TRY_AS=1");
+  }
+
+  for (const feature of effectiveFeatures) {
+    if (INTERNAL_FEATURE_NAMES.has(feature)) continue;
+    buildArgs.push("--enable", feature);
   }
   // Should also strip any bindings-enabling from asconfig
   if (
@@ -817,16 +966,33 @@ function transformsContainJsonAs(value: unknown): boolean {
   return false;
 }
 
-function resolveTryAsEnabled(override?: boolean): boolean {
-  const installed = hasTryAsRuntime();
-  if (override === false) return false;
-  if (override === true && !installed) {
+function resolveEffectiveFeatures(
+  config: Config,
+  featureToggles: BuildFeatureToggles,
+): Set<string> {
+  const effective = new Set<string>();
+  for (const name of config.features) {
+    effective.add(normalizeFeatureName(name));
+  }
+  const overrides = featureToggles.featureOverrides ?? {};
+  for (const [name, enabled] of Object.entries(overrides)) {
+    const key = normalizeFeatureName(name);
+    if (!key.length) continue;
+    if (enabled) effective.add(key);
+    else effective.delete(key);
+  }
+  effective.delete("");
+  return effective;
+}
+
+function resolveTryAsEnabled(enabled: boolean): boolean {
+  if (!enabled) return false;
+  if (!hasTryAsRuntime()) {
     throw new Error(
       'try-as feature was enabled, but package "try-as" is not installed',
     );
   }
-  if (override === true) return true;
-  return false;
+  return true;
 }
 
 function resolveCoverageEnabled(

@@ -11,8 +11,8 @@ export async function executeTestCommand(
   const listFlags = deps.resolveListFlags(rawArgs, "test");
   const featureToggles = deps.resolveFeatureToggles(rawArgs, "test");
   const buildFeatureToggles = {
-    tryAs: featureToggles.tryAs,
     coverage: featureToggles.coverage,
+    featureOverrides: featureToggles.featureOverrides,
   };
   const showCoverageMode = deps.resolveShowCoverageMode(rawArgs, "test");
   const runFlags = {

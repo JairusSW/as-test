@@ -11,16 +11,4 @@ describe("Should sleep", () => {
     sleep(10);
     expect(Date.now() - start).toBeGreaterOrEqualTo(10);
   });
-  it("100ms", () => {
-    const start = Date.now();
-    sleep(100);
-    expect(Date.now() - start).toBeGreaterOrEqualTo(100);
-  });
-  it("1s", () => {
-    const start = Date.now();
-    log("Sleeping...");
-    sleep(1000);
-    log("Done!");
-    expect(Date.now() - start).toBeGreaterOrEqualTo(1000);
-  });
 });

@@ -7,6 +7,12 @@ import { getCliVersion } from "../util.js";
 import { buildWebRunnerSource } from "./web-runner-source.js";
 const TARGETS = ["wasi", "bindings", "web"];
 const EXAMPLE_MODES = ["minimal", "full", "none"];
+const FEATURE_KEYS = ["coverage", "tryAs"];
+const FEATURE_LABELS = {
+  coverage: "coverage (runtime coverage points + report)",
+  tryAs:
+    "try-as (try/catch/finally + toThrow assertions + throwable rewriting)",
+};
 export async function init(rawArgs) {
   const options = parseInitArgs(rawArgs);
   const rl = options.yes
@@ -23,6 +29,10 @@ export async function init(rawArgs) {
           target: options.target ?? "wasi",
           example: options.example ?? "minimal",
           fuzzExample: options.fuzzExample ?? false,
+          features: resolveFeatures(options.features, {
+            coverage: false,
+            tryAs: false,
+          }),
           installDependenciesNow: options.install ?? false,
         }
       : await runInteractiveOnboarding(options, rl);
@@ -35,6 +45,7 @@ export async function init(rawArgs) {
       answers.target,
       answers.example,
       answers.fuzzExample,
+      answers.features,
       answers.installDependenciesNow,
     );
     if (!options.yes) {
@@ -49,6 +60,7 @@ export async function init(rawArgs) {
       answers.target,
       answers.example,
       answers.fuzzExample,
+      answers.features,
       options.force,
     );
     printSummary(summary);
@@ -67,6 +79,7 @@ export async function init(rawArgs) {
 }
 function parseInitArgs(rawArgs) {
   const options = {
+    features: {},
     yes: false,
     force: false,
     dir: ".",
@@ -93,6 +106,30 @@ function parseInitArgs(rawArgs) {
     }
     if (arg == "--no-fuzz-example") {
       options.fuzzExample = false;
+      continue;
+    }
+    if (arg == "--enable" || arg == "--disable") {
+      const next = rawArgs[i + 1];
+      if (!next || next.startsWith("-")) {
+        throw new Error(`${arg} requires a value: coverage|try-as`);
+      }
+      for (const name of splitInitFeatureList(next)) {
+        applyInitFeatureToggle(options.features, name, arg == "--enable");
+      }
+      i++;
+      continue;
+    }
+    if (arg.startsWith("--enable=") || arg.startsWith("--disable=")) {
+      const eq = arg.indexOf("=");
+      const flag = arg.slice(0, eq);
+      const value = arg.slice(eq + 1);
+      const names = splitInitFeatureList(value);
+      if (!names.length) {
+        throw new Error(`${flag} requires a value: coverage|try-as`);
+      }
+      for (const name of names) {
+        applyInitFeatureToggle(options.features, name, flag == "--enable");
+      }
       continue;
     }
     if (arg == "--target") {
@@ -158,10 +195,36 @@ function parseInitArgs(rawArgs) {
   }
   if (positional.length > 0) {
     throw new Error(
-      `Unknown init argument(s): ${positional.join(", ")}. Usage: init [dir] [--target wasi|bindings|web] [--example minimal|full|none] [--fuzz-example|--no-fuzz-example] [--install] [--yes] [--force] [--dir <path>]`,
+      `Unknown init argument(s): ${positional.join(", ")}. Usage: init [dir] [--target wasi|bindings|web] [--example minimal|full|none] [--fuzz-example|--no-fuzz-example] [--enable coverage|try-as] [--disable coverage|try-as] [--install] [--yes] [--force] [--dir <path>]`,
     );
   }
   return options;
+}
+function splitInitFeatureList(value) {
+  return value
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+}
+function applyInitFeatureToggle(out, rawFeature, enabled) {
+  const key = rawFeature.trim().toLowerCase();
+  if (key == "coverage") {
+    out.coverage = enabled;
+    return;
+  }
+  if (key == "try-as" || key == "try_as" || key == "tryas") {
+    out.tryAs = enabled;
+    return;
+  }
+  throw new Error(
+    `unknown feature "${rawFeature}". Supported features: coverage, try-as`,
+  );
+}
+function resolveFeatures(overrides, defaults) {
+  return {
+    coverage: overrides.coverage ?? defaults.coverage,
+    tryAs: overrides.tryAs ?? defaults.tryAs,
+  };
 }
 async function runInteractiveOnboarding(options, face) {
   printOnboardingIntro();
@@ -231,6 +294,25 @@ async function runInteractiveOnboarding(options, face) {
   if (options.target || onboardingMode == "quick") {
     printPromptAndSelectionLine("Build target", target);
   }
+  const featureDefaults = { coverage: false, tryAs: false };
+  const explicitFeatures =
+    options.features.coverage !== undefined ||
+    options.features.tryAs !== undefined;
+  const features =
+    explicitFeatures || onboardingMode == "quick"
+      ? resolveFeatures(options.features, featureDefaults)
+      : await askMultiToggle(
+          "Features (↑/↓ to move, space to toggle, enter to confirm)",
+          FEATURE_KEYS.map((key) => ({
+            value: key,
+            label: FEATURE_LABELS[key],
+          })),
+          face,
+          resolveFeatures(options.features, featureDefaults),
+        );
+  if (explicitFeatures || onboardingMode == "quick") {
+    printPromptAndSelectionLine("Features", formatFeatureSelection(features));
+  }
   const example =
     options.example ??
     (onboardingMode == "quick"
@@ -275,8 +357,15 @@ async function runInteractiveOnboarding(options, face) {
     target,
     example,
     fuzzExample,
+    features,
     installDependenciesNow,
   };
+}
+function formatFeatureSelection(features) {
+  const labels = [];
+  if (features.coverage) labels.push("coverage");
+  if (features.tryAs) labels.push("try-as");
+  return labels.length ? labels.join(", ") : "none";
 }
 function printOnboardingHeader() {
   // console.log(
@@ -375,7 +464,7 @@ function isTarget(value) {
 function isExampleMode(value) {
   return EXAMPLE_MODES.includes(value);
 }
-function printPlan(root, target, example, fuzzExample, install) {
+function printPlan(root, target, example, fuzzExample, features, install) {
   const displayRoot = () => {
     const rel = path.relative(process.cwd(), root).split(path.sep).join("/");
     if (!rel || rel == ".") return "./";
@@ -483,6 +572,9 @@ function printPlan(root, target, example, fuzzExample, install) {
   console.log(
     "│" + chalk.dim(`  - Fuzzer example: ${fuzzExample ? "yes" : "no"}`),
   );
+  console.log(
+    "│" + chalk.dim(`  - Features: ${formatFeatureSelection(features)}`),
+  );
   console.log("│" + chalk.dim(`  - Directory: ${displayRoot()}`));
   console.log(
     "│" + chalk.dim(`  - Install dependencies: ${install ? "yes" : "no"}`),
@@ -494,7 +586,7 @@ function printPlan(root, target, example, fuzzExample, install) {
   }
   console.log("│");
 }
-function applyInit(root, target, example, fuzzExample, force) {
+function applyInit(root, target, example, fuzzExample, features, force) {
   const summary = {
     created: [],
     updated: [],
@@ -518,13 +610,16 @@ function applyInit(root, target, example, fuzzExample, force) {
     summary,
     "assembly/tsconfig.json",
   );
+  const featuresArray = [];
+  if (features.tryAs) featuresArray.push("try-as");
   const configPath = path.join(root, "as-test.config.json");
   const config = {
     $schema: "node_modules/as-test/as-test.config.schema.json",
     input: ["assembly/__tests__/*.spec.ts"],
     output: ".as-test/",
     config: "none",
-    coverage: false,
+    coverage: features.coverage,
+    features: featuresArray,
     env: {},
     ...(fuzzExample
       ? {
@@ -658,6 +753,9 @@ function applyInit(root, target, example, fuzzExample, force) {
   }
   if (target == "wasi" && !devDependencies["@assemblyscript/wasi-shim"]) {
     devDependencies["@assemblyscript/wasi-shim"] = "^0.1.0";
+  }
+  if (features.tryAs && !hasDependency(pkg, "try-as")) {
+    devDependencies["try-as"] = "^1.1.0";
   }
   if (target == "bindings" && !pkg.type) {
     pkg.type = "module";
@@ -814,6 +912,21 @@ async function askMenuChoice(label, choices, face, fallback) {
   }
   return askMenuChoiceWithArrows(label, choices, face, fallbackValue);
 }
+async function askMultiToggle(label, choices, face, initial) {
+  if (!face) return { ...initial };
+  if (canUseArrowMenu(face)) {
+    return askMultiToggleWithArrows(label, choices, face, initial);
+  }
+  const result = { ...initial };
+  for (const choice of choices) {
+    result[choice.value] = await askYesNo(
+      `${label} — enable ${choice.label}?`,
+      face,
+      initial[choice.value],
+    );
+  }
+  return result;
+}
 async function askYesNo(label, face, fallback) {
   if (!face) return fallback;
   if (canUseArrowMenu(face)) {
@@ -887,7 +1000,7 @@ async function askMenuChoiceWithArrows(label, choices, face, fallback) {
     }
     const totalLineCount = Math.max(lines.length, renderedLineCount);
     for (let i = 0; i < totalLineCount; i++) {
-      process.stdout.write("\x1b[2K");
+      process.stdout.write("\r\x1b[2K");
       if (i < lines.length) {
         process.stdout.write(lines[i]);
       }
@@ -975,6 +1088,141 @@ async function askMenuChoiceWithArrows(label, choices, face, fallback) {
       }
       if (input == "\r" || input == "\n") {
         finish(choices[selectedIndex].value);
+        return;
+      }
+    };
+    face.pause();
+    if (stdin.isTTY) {
+      stdin.setRawMode(true);
+    }
+    stdin.resume();
+    stdin.on("data", onData);
+    writeLines(menuLines());
+  });
+}
+async function askMultiToggleWithArrows(label, choices, face, initial) {
+  const stdin = process.stdin;
+  const stdout = process.stdout;
+  const selected = { ...initial };
+  let cursorIndex = 0;
+  let renderedLineCount = 0;
+  const previousRawMode = Boolean(stdin.isRaw);
+  const lineWidth = Math.max(20, (stdout.columns ?? 80) - 2);
+  const clamp = (value, max) => {
+    if (value.length <= max) return value;
+    if (max <= 1) return value.slice(0, max);
+    return `${value.slice(0, max - 1)}…`;
+  };
+  const titleLine = () =>
+    chalk.bold.blue(`◆  ${clamp(label, Math.max(8, lineWidth - 3))}`);
+  const menuLines = () => {
+    const lines = [titleLine()];
+    for (let i = 0; i < choices.length; i++) {
+      const choice = choices[i];
+      const isOn = Boolean(selected[choice.value]);
+      const cursor = i == cursorIndex ? chalk.blue("›") : " ";
+      const marker = isOn ? chalk.blue("●") : chalk.dim("○");
+      const text = clamp(choice.label, Math.max(8, lineWidth - 6));
+      const painted = i == cursorIndex ? chalk.bold(text) : text;
+      lines.push(`│  ${cursor} ${marker} ${painted}`);
+    }
+    lines.push("│");
+    return lines;
+  };
+  const collapsedLines = () => {
+    const enabled = choices
+      .filter((choice) => selected[choice.value])
+      .map((choice) => choice.value);
+    const summary = enabled.length ? enabled.join(", ") : "none";
+    return [`│  ${chalk.gray(clamp(summary, Math.max(8, lineWidth - 4)))}`];
+  };
+  const writeLines = (lines) => {
+    if (renderedLineCount > 0) {
+      process.stdout.write(`\x1b[${renderedLineCount}A`);
+    }
+    const totalLineCount = Math.max(lines.length, renderedLineCount);
+    for (let i = 0; i < totalLineCount; i++) {
+      process.stdout.write("\r\x1b[2K");
+      if (i < lines.length) {
+        process.stdout.write(lines[i]);
+      }
+      process.stdout.write("\n");
+    }
+    renderedLineCount = lines.length;
+  };
+  const collapseInPlace = () => {
+    const lines = collapsedLines();
+    if (renderedLineCount > 0) {
+      process.stdout.write(`\x1b[${renderedLineCount}A`);
+    }
+    const totalLineCount = Math.max(renderedLineCount, lines.length);
+    for (let i = 0; i < totalLineCount; i++) {
+      process.stdout.write("\r\x1b[2K");
+      if (i < lines.length) {
+        process.stdout.write(lines[i]);
+      }
+      process.stdout.write("\n");
+    }
+    const extraLines = totalLineCount - lines.length;
+    if (extraLines > 0) {
+      process.stdout.write(`\x1b[${extraLines}A`);
+    }
+    renderedLineCount = 0;
+  };
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const cleanup = () => {
+      stdin.off("data", onData);
+      if (stdin.isTTY) {
+        stdin.setRawMode(previousRawMode);
+      }
+      const isClosed = Boolean(face.closed);
+      if (!isClosed) {
+        try {
+          face.resume();
+        } catch {
+          // noop: readline may already be closed during shutdown/cancel paths.
+        }
+      }
+    };
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      collapseInPlace();
+      cleanup();
+      resolve(selected);
+    };
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+    const onData = (chunk) => {
+      const input = typeof chunk == "string" ? chunk : chunk.toString("utf8");
+      if (!input.length) return;
+      if (input == "\u0003") {
+        fail(new Error(chalk.bold.red("◆  Cancelled")));
+        return;
+      }
+      if (input == "\x1b[A" || input == "\x1bOA") {
+        cursorIndex = (cursorIndex - 1 + choices.length) % choices.length;
+        writeLines(menuLines());
+        return;
+      }
+      if (input == "\x1b[B" || input == "\x1bOB") {
+        cursorIndex = (cursorIndex + 1) % choices.length;
+        writeLines(menuLines());
+        return;
+      }
+      if (input == " ") {
+        const key = choices[cursorIndex].value;
+        selected[key] = !selected[key];
+        writeLines(menuLines());
+        return;
+      }
+      if (input == "\r" || input == "\n") {
+        finish();
         return;
       }
     };

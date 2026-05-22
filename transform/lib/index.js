@@ -5,8 +5,10 @@ import { MockTransform } from "./mock.js";
 import { LocationTransform } from "./location.js";
 import { LogTransform } from "./log.js";
 import { isStdlib } from "./util.js";
+import { NodeKind } from "./types.js";
 export default class Transformer extends Transform {
     afterParse(parser) {
+        patchModeName(parser, process.env.AS_TEST_MODE_NAME ?? "default");
         const mock = new MockTransform();
         const location = new LocationTransform();
         const log = new LogTransform(parser);
@@ -78,6 +80,30 @@ export default class Transformer extends Transform {
         }
         if (coverage) {
             coverage.globalStatements = [];
+        }
+    }
+}
+function patchModeName(parser, modeName) {
+    for (const source of parser.sources) {
+        if (!source.normalizedPath.endsWith("assembly/src/mode.ts"))
+            continue;
+        for (const stmt of source.statements) {
+            if (stmt.kind !== NodeKind.Variable)
+                continue;
+            const decls = stmt.declarations;
+            for (const decl of decls) {
+                if (decl.name.text !== "AS_TEST_MODE_NAME")
+                    continue;
+                if (!decl.initializer)
+                    continue;
+                if (decl.initializer.kind !== NodeKind.Literal)
+                    continue;
+                const literal = decl.initializer;
+                if (literal.literalKind !== 2)
+                    continue;
+                literal.value = modeName;
+                return;
+            }
         }
     }
 }

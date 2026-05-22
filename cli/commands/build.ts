@@ -10,6 +10,8 @@ export {
   formatInvocation,
   getBuildInvocationPreview,
   getBuildReuseInfo,
+  warnOnUnknownModeReferences,
+  flushModeWarnings,
 } from "./build-core.js";
 export type { BuildFeatureToggles } from "./build-core.js";
 
@@ -55,8 +57,8 @@ export async function executeBuildCommand(
   const featureToggles = deps.resolveFeatureToggles(rawArgs, "build");
   const parallel = deps.resolveBuildParallelJobs(rawArgs);
   const buildFeatureToggles: BuildFeatureToggles = {
-    tryAs: featureToggles.tryAs,
     coverage: featureToggles.coverage,
+    featureOverrides: featureToggles.featureOverrides,
   };
   const modeTargets = deps.resolveExecutionModes(configPath, selectedModes);
   if (listFlags.list || listFlags.listModes) {

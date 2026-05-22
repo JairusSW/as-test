@@ -5,8 +5,10 @@ import {
   build,
   BuildFailureError,
   BuildFeatureToggles,
+  flushModeWarnings,
   formatInvocation as formatBuildInvocation,
   getBuildInvocationPreview,
+  warnOnUnknownModeReferences,
 } from "./commands/build.js";
 import { createRunReporter, run, RunResult } from "./commands/run.js";
 import { executeBuildCommand } from "./commands/build.js";
@@ -28,7 +30,7 @@ import {
   resolveModeNames,
   resolveSpecRelativePath,
 } from "./util.js";
-import { Config } from "./types.js";
+import { Config, normalizeFeatureName } from "./types.js";
 import * as path from "path";
 import { spawnSync } from "child_process";
 import { glob } from "glob";
@@ -60,7 +62,7 @@ const COMMANDS: string[] = [
 ];
 type CliFeatureToggles = {
   coverage?: boolean;
-  tryAs?: boolean;
+  featureOverrides: Record<string, boolean>;
 };
 type CliListFlags = {
   list: boolean;
@@ -330,10 +332,10 @@ function printCommandHelp(command: string): void {
       "  --mode <name[,name...]>  Run one or multiple named config modes\n",
     );
     process.stdout.write(
-      "  --enable <feature>       Enable build feature (coverage|try-as)\n",
+      "  --enable <list>          Enable features, comma-separated (e.g. coverage,try-as,simd)\n",
     );
     process.stdout.write(
-      "  --disable <feature>      Disable build feature (coverage|try-as)\n",
+      "  --disable <list>         Disable features, comma-separated\n",
     );
     process.stdout.write(
       "  --parallel              Run files through an ordered worker pool using an automatic worker count\n",
@@ -398,10 +400,10 @@ function printCommandHelp(command: string): void {
     );
     process.stdout.write("  --suites <name[,name...]> Alias for --suite\n");
     process.stdout.write(
-      "  --enable <feature>       Enable feature (coverage|try-as)\n",
+      "  --enable <list>          Enable features, comma-separated (e.g. coverage,try-as,simd)\n",
     );
     process.stdout.write(
-      "  --disable <feature>      Disable feature (coverage|try-as)\n",
+      "  --disable <list>         Disable features, comma-separated\n",
     );
     process.stdout.write(
       "  --reporter <name|path>   Use built-in reporter (default|tap) or custom module path\n",
@@ -471,10 +473,10 @@ function printCommandHelp(command: string): void {
     );
     process.stdout.write("  --suites <name[,name...]> Alias for --suite\n");
     process.stdout.write(
-      "  --enable <feature>       Enable feature (coverage|try-as)\n",
+      "  --enable <list>          Enable features, comma-separated (e.g. coverage,try-as,simd)\n",
     );
     process.stdout.write(
-      "  --disable <feature>      Disable feature (coverage|try-as)\n",
+      "  --disable <list>         Disable features, comma-separated\n",
     );
     process.stdout.write(
       "  --fuzz                   Run fuzz targets after the normal test pass\n",
@@ -578,6 +580,12 @@ function printCommandHelp(command: string): void {
     );
     process.stdout.write(
       "  --example <minimal|full|none>           Set example template\n",
+    );
+    process.stdout.write(
+      "  --enable <list>                         Enable features, comma-separated (coverage,try-as)\n",
+    );
+    process.stdout.write(
+      "  --disable <list>                        Disable features, comma-separated\n",
     );
     process.stdout.write(
       "  --install                               Install dependencies after scaffolding\n",
@@ -764,9 +772,10 @@ function resolveFeatureToggles(
   rawArgs: string[],
   command: string,
 ): CliFeatureToggles {
-  if (command !== "build" && command !== "run" && command !== "test") return {};
+  if (command !== "build" && command !== "run" && command !== "test")
+    return { featureOverrides: {} };
 
-  const out: CliFeatureToggles = {};
+  const out: CliFeatureToggles = { featureOverrides: {} };
   let seenCommand = false;
 
   for (let i = 0; i < rawArgs.length; i++) {
@@ -780,7 +789,9 @@ function resolveFeatureToggles(
       const enabled = arg == "--enable";
       const next = rawArgs[i + 1];
       if (next && !next.startsWith("-")) {
-        applyFeatureToggle(out, next, enabled);
+        for (const name of splitFeatureList(next)) {
+          applyFeatureToggle(out, name, enabled);
+        }
         i++;
       }
       continue;
@@ -788,9 +799,9 @@ function resolveFeatureToggles(
     if (arg.startsWith("--enable=") || arg.startsWith("--disable=")) {
       const enabled = arg.startsWith("--enable=");
       const eq = arg.indexOf("=");
-      const value = arg.slice(eq + 1).trim();
-      if (value.length) {
-        applyFeatureToggle(out, value, enabled);
+      const value = arg.slice(eq + 1);
+      for (const name of splitFeatureList(value)) {
+        applyFeatureToggle(out, name, enabled);
       }
     }
   }
@@ -1478,23 +1489,29 @@ function parseIntegerFlag(flag: string, value: string): number {
   return Math.floor(parsed);
 }
 
+function splitFeatureList(value: string): string[] {
+  return value
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+}
+
 function applyFeatureToggle(
   out: CliFeatureToggles,
   rawFeature: string,
   enabled: boolean,
 ): void {
-  const key = rawFeature.trim().toLowerCase();
+  const key = normalizeFeatureName(rawFeature);
+  if (!key.length) {
+    throw new Error(
+      `empty feature name passed to ${enabled ? "--enable" : "--disable"}`,
+    );
+  }
   if (key == "coverage") {
     out.coverage = enabled;
     return;
   }
-  if (key == "try-as" || key == "try_as" || key == "tryas") {
-    out.tryAs = enabled;
-    return;
-  }
-  throw new Error(
-    `unknown feature "${rawFeature}". Supported features: coverage, try-as`,
-  );
+  out.featureOverrides[key] = enabled;
 }
 
 function resolveCommandTokens(rawArgs: string[], command: string): string[] {
@@ -1663,6 +1680,7 @@ async function runTestSequential(
       ),
     });
     reporter.flush?.();
+    flushModeWarnings(process.argv.includes("--show-warnings"));
   }
   return {
     failed,
@@ -2182,6 +2200,7 @@ async function runTestModesCore(
           ),
         });
         reporterSession.reporter.flush?.();
+        flushModeWarnings(process.argv.includes("--show-warnings"));
       }
     }
   } finally {
@@ -2430,6 +2449,14 @@ async function runTestMatrix(
   fuzzOverrides: FuzzOverrides,
 ): Promise<boolean> {
   const files = await resolveSelectedFiles(configPath, selectors);
+  if (files.length && configPath) {
+    try {
+      const loaded = loadConfig(configPath, false);
+      warnOnUnknownModeReferences(files, loaded.modes ?? {});
+    } catch {
+      // Best-effort: never fail the run on a scan error.
+    }
+  }
   if (!files.length) {
     if (!fuzzEnabled) {
       throw await buildNoTestFilesMatchedError(configPath, selectors);
@@ -2592,6 +2619,7 @@ async function runTestMatrix(
     modeSummary: buildModeSummary(modeState, modeSummaryTotal),
   });
   reporter.flush?.();
+  flushModeWarnings(process.argv.includes("--show-warnings"));
   return failed;
 }
 
@@ -2765,6 +2793,7 @@ async function runRuntimeSingleParallel(
     ),
   });
   reporter.flush?.();
+  flushModeWarnings(process.argv.includes("--show-warnings"));
   return results.some((result) => result.failed);
 }
 
@@ -2927,6 +2956,7 @@ async function runRuntimeMatrixParallel(
     modeSummary: buildModeSummary(modeState, modeSummaryTotal),
   });
   reporter.flush?.();
+  flushModeWarnings(process.argv.includes("--show-warnings"));
   return allResults.some((result) => result.failed);
 }
 
@@ -3103,6 +3133,7 @@ async function runTestSingleParallel(
     ),
   });
   reporter.flush?.();
+  flushModeWarnings(process.argv.includes("--show-warnings"));
   return failed;
 }
 
@@ -3133,6 +3164,14 @@ async function runTestMatrixParallel(
   fuzzOverrides: FuzzOverrides,
 ): Promise<boolean> {
   const files = await resolveSelectedFiles(configPath, selectors);
+  if (files.length && configPath) {
+    try {
+      const loaded = loadConfig(configPath, false);
+      warnOnUnknownModeReferences(files, loaded.modes ?? {});
+    } catch {
+      // Best-effort: never fail the run on a scan error.
+    }
+  }
   if (!files.length) {
     if (!fuzzEnabled) {
       throw await buildNoTestFilesMatchedError(configPath, selectors);
@@ -3307,6 +3346,7 @@ async function runTestMatrixParallel(
     modeSummary: buildModeSummary(modeState, modeSummaryTotal),
   });
   reporter.flush?.();
+  flushModeWarnings(process.argv.includes("--show-warnings"));
   return failed;
 }
 

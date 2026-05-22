@@ -6,6 +6,7 @@ import {
   CoverageIgnoreOptions,
   FuzzConfig,
   ModeConfig,
+  normalizeFeatureName,
   ReporterConfig,
   RunOptions,
   Runtime,
@@ -186,12 +187,26 @@ function parseConfigRaw(raw, configPath) {
     typeof config.fuzz.crashDir == "string" && config.fuzz.crashDir.length
       ? config.fuzz.crashDir
       : "./.as-test/crashes";
+  config.features = parseFeaturesField(raw.features);
   config.modes = parseModes(raw.modes, configDir);
   CONFIG_META.set(config, {
     sourcePath: configPath,
     raw,
   });
   return config;
+}
+function parseFeaturesField(raw) {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const value of raw) {
+    if (typeof value != "string") continue;
+    const name = normalizeFeatureName(value);
+    if (!name.length || seen.has(name)) continue;
+    seen.add(name);
+    out.push(name);
+  }
+  return out;
 }
 const TOP_LEVEL_KEYS = new Set([
   "$schema",
@@ -203,6 +218,7 @@ const TOP_LEVEL_KEYS = new Set([
   "snapshotDir",
   "config",
   "coverage",
+  "features",
   "env",
   "buildOptions",
   "fuzz",
@@ -238,6 +254,7 @@ function validateConfig(raw, configPath) {
   validateStringField(raw, "snapshotDir", "$", issues);
   validateStringField(raw, "config", "$", issues);
   validateCoverageField(raw, "coverage", "$", issues);
+  validateFeaturesField(raw, "features", "$", issues);
   validateEnvField(raw, "env", "$", issues);
   validateBuildOptionsField(raw, "buildOptions", "$", issues);
   validateFuzzField(raw, "fuzz", "$", issues);
@@ -742,10 +759,32 @@ function validateModesField(raw, key, pathPrefix, issues) {
     validateStringField(modeObj, "snapshotDir", modePath, issues);
     validateStringField(modeObj, "config", modePath, issues);
     validateCoverageField(modeObj, "coverage", modePath, issues);
+    validateFeaturesField(modeObj, "features", modePath, issues);
     validateFuzzField(modeObj, "fuzz", modePath, issues);
     validateEnvField(modeObj, "env", modePath, issues);
     validateBuildOptionsField(modeObj, "buildOptions", modePath, issues);
     validateRunOptionsField(modeObj, "runOptions", modePath, issues);
+  }
+}
+function validateFeaturesField(raw, key, pathPrefix, issues) {
+  if (!(key in raw) || raw[key] == undefined) return;
+  const value = raw[key];
+  if (!Array.isArray(value)) {
+    issues.push({
+      path: `${pathPrefix}.${key}`,
+      message: "must be an array of feature name strings",
+      fix: 'example: "features": ["try-as", "simd"]',
+    });
+    return;
+  }
+  for (let i = 0; i < value.length; i++) {
+    if (typeof value[i] != "string" || !value[i].trim().length) {
+      issues.push({
+        path: `${pathPrefix}.${key}[${i}]`,
+        message: "must be a non-empty string",
+        fix: 'feature names look like "try-as" or "simd"',
+      });
+    }
   }
 }
 function isStringArray(value) {
@@ -1051,6 +1090,7 @@ function cloneConfig(config) {
   cloned.runOptions = cloneRunOptions(config.runOptions);
   cloned.fuzz = cloneFuzzConfig(config.fuzz);
   cloned.coverage = cloneCoverageOptions(config.coverage);
+  cloned.features = [...config.features];
   cloned.modes = Object.fromEntries(
     Object.entries(config.modes).map(([name, mode]) => [
       name,
@@ -1210,6 +1250,9 @@ function mergeRootConfig(base, override) {
       override.coverage,
       raw.coverage,
     );
+  }
+  if (Array.isArray(raw.features)) {
+    merged.features = [...override.features];
   }
   if ("env" in raw) {
     merged.env = { ...override.env };

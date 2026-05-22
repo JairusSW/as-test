@@ -180,6 +180,14 @@
       ],
       "default": false
     },
+    "features": {
+      "type": "array",
+      "description": "Enabled feature names. \"try-as\" wires up the try-as transform; any other name is passed through to asc as --enable <name> (e.g. \"simd\", \"threads\", \"reference-types\"). CLI --enable/--disable flags override this list. Coverage has its own top-level \"coverage\" field.",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
     "env": {
       "description": "Environment variables injected when building/running. Accepts a .env file path, an array of KEY=value strings, or an object map.",
       "oneOf": [
@@ -399,6 +407,13 @@
                     }
                   }
                 ]
+              },
+              "features": {
+                "type": "array",
+                "description": "Mode-specific feature list. Replaces the base list entirely when set.",
+                "items": {
+                  "type": "string"
+                }
               },
               "fuzz": {
                 "type": "object",

@@ -8,12 +8,19 @@ export class Config {
     this.snapshotDir = "./.as-test/snapshots";
     this.config = "none";
     this.coverage = false;
+    this.features = [];
     this.env = {};
     this.buildOptions = new BuildOptions();
     this.runOptions = new RunOptions();
     this.fuzz = new FuzzConfig();
     this.modes = {};
   }
+}
+export const INTERNAL_FEATURE_NAMES = new Set(["try-as"]);
+export function normalizeFeatureName(value) {
+  const trimmed = value.trim().toLowerCase();
+  if (trimmed == "try_as" || trimmed == "tryas") return "try-as";
+  return trimmed;
 }
 export class CoverageOptions {
   constructor() {

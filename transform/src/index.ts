@@ -1,21 +1,28 @@
 import { Transform } from "assemblyscript/dist/transform.js";
 import {
   CommonFlags,
+  LiteralKind,
   Node,
   Parser,
   SourceKind,
   Source,
+  StringLiteralExpression,
   Tokenizer,
+  VariableDeclaration,
+  VariableStatement,
 } from "assemblyscript/dist/assemblyscript.js";
 import { CoverageTransform } from "./coverage.js";
 import { MockTransform } from "./mock.js";
 import { LocationTransform } from "./location.js";
 import { LogTransform } from "./log.js";
 import { isStdlib } from "./util.js";
+import { NodeKind } from "./types.js";
 
 export default class Transformer extends Transform {
   // Trigger the transform after parse.
   afterParse(parser: Parser): void {
+    patchModeName(parser, process.env.AS_TEST_MODE_NAME ?? "default");
+
     // Create new transforms
     const mock = new MockTransform();
     const location = new LocationTransform();
@@ -123,6 +130,28 @@ export default class Transformer extends Transform {
     }
     if (coverage) {
       coverage.globalStatements = [];
+    }
+  }
+}
+
+// Replaces the initializer of `export const AS_TEST_MODE_NAME` in as-test's
+// `assembly/src/mode.ts` with a string literal of the current build mode.
+// AS lacks --use support for strings, so the value is baked into the AST here.
+function patchModeName(parser: Parser, modeName: string): void {
+  for (const source of parser.sources) {
+    if (!source.normalizedPath.endsWith("assembly/src/mode.ts")) continue;
+    for (const stmt of source.statements) {
+      if (stmt.kind !== NodeKind.Variable) continue;
+      const decls = (stmt as VariableStatement).declarations;
+      for (const decl of decls as VariableDeclaration[]) {
+        if (decl.name.text !== "AS_TEST_MODE_NAME") continue;
+        if (!decl.initializer) continue;
+        if (decl.initializer.kind !== NodeKind.Literal) continue;
+        const literal = decl.initializer as StringLiteralExpression;
+        if (literal.literalKind !== LiteralKind.String) continue;
+        literal.value = modeName;
+        return;
+      }
     }
   }
 }

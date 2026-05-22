@@ -752,3 +752,5 @@ function formatTime(time: f64): string {
 
   return `${_us}μs`;
 }
+
+export { mode, AS_TEST_MODE_NAME } from "./src/mode";

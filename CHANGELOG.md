@@ -1,5 +1,24 @@
 # Change Log
 
+## 2026-05-22 - v1.3.0
+
+### `features` config array + arbitrary `--enable` passthrough
+
+- feat: new top-level `"features": ["try-as", "simd"]` array in `as-test.config.json` (and per-mode override). `try-as` is the only as-test-internal feature today and wires the `try-as/transform` + `AS_TEST_TRY_AS=1` build flags as before. Any other name in the array is passed through to `asc` as `--enable <name>` — so `"simd"`, `"threads"`, `"reference-types"`, `"gc"`, etc. now work without hand-editing `buildOptions.args`.
+- feat: `ast test|run|build --enable <name>` and `--disable <name>` now accept arbitrary feature names. CLI flags override the config array (CLI `--disable simd` removes a config-listed feature; CLI `--enable simd` adds it). The known special-case `coverage` flag still routes to the dedicated top-level `coverage` config field rather than the features array. Both flags accept comma-separated lists too: `--enable try-as,coverage,simd` and `--disable try-as,coverage`. The same syntax is honored by `ast init`.
+- feat: `ast init` interactive prompt now includes a multi-select "Features" step (↑/↓ to move, space to toggle, enter to confirm) with `coverage` and `try-as` options. `--enable`/`--disable` flags on `ast init` skip the prompt with explicit selections. The generated `as-test.config.json` writes `coverage` at the top level and `features` as a string array; when try-as is selected, `try-as` is also added to `devDependencies`.
+- chore: schema validation rejects malformed shapes (object form, non-string array entries) with a fix hint pointing at the new shape.
+
+### `mode()` registration gate + `AS_TEST_MODE_NAME`
+
+- feat: new `mode(matchers: string[], fn: () => void)` helper in the `as-test` runtime, plus an `AS_TEST_MODE_NAME: string` compile-time constant. Use `mode(["node:bindings"], () => { ... })` to gate suite/test registrations on the active mode name. Matcher semantics: positive entries OR; `!name` entries exclude; `[]` is a no-op; positive + negative entries combine as "any positive matches AND no negative matches."
+- feat: build-side wiring — `build-core.ts` injects `AS_TEST_MODE_NAME=<mode>` into the asc env per-mode build, and the as-test transform rewrites the initializer of `AS_TEST_MODE_NAME` in `assembly/src/mode.ts` (an `afterParse` AST patch) so the value is baked into the wasm at compile time. Default value when no mode is selected is `"default"`.
+- chore: bundled `assembly/__tests__/mode.spec.ts` exercises positive/negative/mixed matchers, empty matchers, and per-mode counter behaviour end-to-end against the project's own `node:bindings` / `node:wasi` modes.
+
+### Tooling
+
+- chore: `build:transform` now runs `prettier -w ./transform/` after the TypeScript build so generated output stays formatted.
+
 ## 2026-05-20 - v1.2.0
 
 ### Directory-preserving artifact layout

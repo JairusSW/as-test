@@ -12,11 +12,22 @@ type Target = (typeof TARGETS)[number];
 const EXAMPLE_MODES = ["minimal", "full", "none"] as const;
 type ExampleMode = (typeof EXAMPLE_MODES)[number];
 
+const FEATURE_KEYS = ["coverage", "tryAs"] as const;
+type FeatureKey = (typeof FEATURE_KEYS)[number];
+type FeatureSelection = Record<FeatureKey, boolean>;
+
+const FEATURE_LABELS: Record<FeatureKey, string> = {
+  coverage: "coverage (runtime coverage points + report)",
+  tryAs:
+    "try-as (try/catch/finally + toThrow assertions + throwable rewriting)",
+};
+
 type InitOptions = {
   target?: Target;
   example?: ExampleMode;
   fuzzExample?: boolean;
   install?: boolean;
+  features: Partial<FeatureSelection>;
   yes: boolean;
   force: boolean;
   dir: string;
@@ -47,6 +58,10 @@ export async function init(rawArgs: string[]) {
           target: options.target ?? "wasi",
           example: options.example ?? "minimal",
           fuzzExample: options.fuzzExample ?? false,
+          features: resolveFeatures(options.features, {
+            coverage: false,
+            tryAs: false,
+          }),
           installDependenciesNow: options.install ?? false,
         }
       : await runInteractiveOnboarding(options, rl);
@@ -61,6 +76,7 @@ export async function init(rawArgs: string[]) {
       answers.target,
       answers.example,
       answers.fuzzExample,
+      answers.features,
       answers.installDependenciesNow,
     );
 
@@ -77,6 +93,7 @@ export async function init(rawArgs: string[]) {
       answers.target,
       answers.example,
       answers.fuzzExample,
+      answers.features,
       options.force,
     );
     printSummary(summary);
@@ -96,6 +113,7 @@ export async function init(rawArgs: string[]) {
 
 function parseInitArgs(rawArgs: string[]): InitOptions {
   const options: InitOptions = {
+    features: {},
     yes: false,
     force: false,
     dir: ".",
@@ -123,6 +141,30 @@ function parseInitArgs(rawArgs: string[]): InitOptions {
     }
     if (arg == "--no-fuzz-example") {
       options.fuzzExample = false;
+      continue;
+    }
+    if (arg == "--enable" || arg == "--disable") {
+      const next = rawArgs[i + 1];
+      if (!next || next.startsWith("-")) {
+        throw new Error(`${arg} requires a value: coverage|try-as`);
+      }
+      for (const name of splitInitFeatureList(next)) {
+        applyInitFeatureToggle(options.features, name, arg == "--enable");
+      }
+      i++;
+      continue;
+    }
+    if (arg.startsWith("--enable=") || arg.startsWith("--disable=")) {
+      const eq = arg.indexOf("=");
+      const flag = arg.slice(0, eq);
+      const value = arg.slice(eq + 1);
+      const names = splitInitFeatureList(value);
+      if (!names.length) {
+        throw new Error(`${flag} requires a value: coverage|try-as`);
+      }
+      for (const name of names) {
+        applyInitFeatureToggle(options.features, name, flag == "--enable");
+      }
       continue;
     }
     if (arg == "--target") {
@@ -191,11 +233,47 @@ function parseInitArgs(rawArgs: string[]): InitOptions {
 
   if (positional.length > 0) {
     throw new Error(
-      `Unknown init argument(s): ${positional.join(", ")}. Usage: init [dir] [--target wasi|bindings|web] [--example minimal|full|none] [--fuzz-example|--no-fuzz-example] [--install] [--yes] [--force] [--dir <path>]`,
+      `Unknown init argument(s): ${positional.join(", ")}. Usage: init [dir] [--target wasi|bindings|web] [--example minimal|full|none] [--fuzz-example|--no-fuzz-example] [--enable coverage|try-as] [--disable coverage|try-as] [--install] [--yes] [--force] [--dir <path>]`,
     );
   }
 
   return options;
+}
+
+function splitInitFeatureList(value: string): string[] {
+  return value
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+}
+
+function applyInitFeatureToggle(
+  out: Partial<FeatureSelection>,
+  rawFeature: string,
+  enabled: boolean,
+): void {
+  const key = rawFeature.trim().toLowerCase();
+  if (key == "coverage") {
+    out.coverage = enabled;
+    return;
+  }
+  if (key == "try-as" || key == "try_as" || key == "tryas") {
+    out.tryAs = enabled;
+    return;
+  }
+  throw new Error(
+    `unknown feature "${rawFeature}". Supported features: coverage, try-as`,
+  );
+}
+
+function resolveFeatures(
+  overrides: Partial<FeatureSelection>,
+  defaults: FeatureSelection,
+): FeatureSelection {
+  return {
+    coverage: overrides.coverage ?? defaults.coverage,
+    tryAs: overrides.tryAs ?? defaults.tryAs,
+  };
 }
 
 type InteractiveAnswers = {
@@ -203,10 +281,16 @@ type InteractiveAnswers = {
   target: Target;
   example: ExampleMode;
   fuzzExample: boolean;
+  features: FeatureSelection;
   installDependenciesNow: boolean;
 };
 
 type MenuOption<T extends string> = {
+  value: T;
+  label: string;
+};
+
+type ToggleOption<T extends string> = {
   value: T;
   label: string;
 };
@@ -286,6 +370,26 @@ async function runInteractiveOnboarding(
     printPromptAndSelectionLine("Build target", target);
   }
 
+  const featureDefaults: FeatureSelection = { coverage: false, tryAs: false };
+  const explicitFeatures =
+    options.features.coverage !== undefined ||
+    options.features.tryAs !== undefined;
+  const features: FeatureSelection =
+    explicitFeatures || onboardingMode == "quick"
+      ? resolveFeatures(options.features, featureDefaults)
+      : await askMultiToggle(
+          "Features (↑/↓ to move, space to toggle, enter to confirm)",
+          FEATURE_KEYS.map((key) => ({
+            value: key,
+            label: FEATURE_LABELS[key],
+          })),
+          face,
+          resolveFeatures(options.features, featureDefaults),
+        );
+  if (explicitFeatures || onboardingMode == "quick") {
+    printPromptAndSelectionLine("Features", formatFeatureSelection(features));
+  }
+
   const example: ExampleMode =
     options.example ??
     (onboardingMode == "quick"
@@ -333,8 +437,16 @@ async function runInteractiveOnboarding(
     target,
     example,
     fuzzExample,
+    features,
     installDependenciesNow,
   };
+}
+
+function formatFeatureSelection(features: FeatureSelection): string {
+  const labels: string[] = [];
+  if (features.coverage) labels.push("coverage");
+  if (features.tryAs) labels.push("try-as");
+  return labels.length ? labels.join(", ") : "none";
 }
 
 function printOnboardingHeader(): void {
@@ -449,6 +561,7 @@ function printPlan(
   target: Target,
   example: ExampleMode,
   fuzzExample: boolean,
+  features: FeatureSelection,
   install: boolean,
 ): void {
   type TreeEntry = {
@@ -577,6 +690,9 @@ function printPlan(
   console.log(
     "│" + chalk.dim(`  - Fuzzer example: ${fuzzExample ? "yes" : "no"}`),
   );
+  console.log(
+    "│" + chalk.dim(`  - Features: ${formatFeatureSelection(features)}`),
+  );
   console.log("│" + chalk.dim(`  - Directory: ${displayRoot()}`));
   console.log(
     "│" + chalk.dim(`  - Install dependencies: ${install ? "yes" : "no"}`),
@@ -594,6 +710,7 @@ function applyInit(
   target: Target,
   example: ExampleMode,
   fuzzExample: boolean,
+  features: FeatureSelection,
   force: boolean,
 ): ApplySummary {
   const summary: ApplySummary = {
@@ -622,13 +739,17 @@ function applyInit(
     "assembly/tsconfig.json",
   );
 
+  const featuresArray: string[] = [];
+  if (features.tryAs) featuresArray.push("try-as");
+
   const configPath = path.join(root, "as-test.config.json");
   const config = {
     $schema: "node_modules/as-test/as-test.config.schema.json",
     input: ["assembly/__tests__/*.spec.ts"],
     output: ".as-test/",
     config: "none",
-    coverage: false,
+    coverage: features.coverage,
+    features: featuresArray,
     env: {},
     ...(fuzzExample
       ? {
@@ -771,6 +892,9 @@ function applyInit(
   }
   if (target == "wasi" && !devDependencies["@assemblyscript/wasi-shim"]) {
     devDependencies["@assemblyscript/wasi-shim"] = "^0.1.0";
+  }
+  if (features.tryAs && !hasDependency(pkg, "try-as")) {
+    devDependencies["try-as"] = "^1.1.0";
   }
   if (target == "bindings" && !pkg.type) {
     pkg.type = "module";
@@ -970,6 +1094,27 @@ async function askMenuChoice<T extends string>(
   return askMenuChoiceWithArrows(label, choices, face, fallbackValue);
 }
 
+async function askMultiToggle<T extends string>(
+  label: string,
+  choices: readonly ToggleOption<T>[],
+  face: Interface | null,
+  initial: Record<T, boolean>,
+): Promise<Record<T, boolean>> {
+  if (!face) return { ...initial };
+  if (canUseArrowMenu(face)) {
+    return askMultiToggleWithArrows(label, choices, face, initial);
+  }
+  const result: Record<string, boolean> = { ...initial };
+  for (const choice of choices) {
+    result[choice.value] = await askYesNo(
+      `${label} — enable ${choice.label}?`,
+      face,
+      initial[choice.value],
+    );
+  }
+  return result as Record<T, boolean>;
+}
+
 async function askYesNo(
   label: string,
   face: Interface | null,
@@ -1059,7 +1204,7 @@ async function askMenuChoiceWithArrows<T extends string>(
     }
     const totalLineCount = Math.max(lines.length, renderedLineCount);
     for (let i = 0; i < totalLineCount; i++) {
-      process.stdout.write("\x1b[2K");
+      process.stdout.write("\r\x1b[2K");
       if (i < lines.length) {
         process.stdout.write(lines[i]!);
       }
@@ -1153,6 +1298,159 @@ async function askMenuChoiceWithArrows<T extends string>(
       }
       if (input == "\r" || input == "\n") {
         finish(choices[selectedIndex]!.value);
+        return;
+      }
+    };
+
+    face.pause();
+    if (stdin.isTTY) {
+      stdin.setRawMode(true);
+    }
+    stdin.resume();
+    stdin.on("data", onData);
+    writeLines(menuLines());
+  });
+}
+
+async function askMultiToggleWithArrows<T extends string>(
+  label: string,
+  choices: readonly ToggleOption<T>[],
+  face: Interface,
+  initial: Record<T, boolean>,
+): Promise<Record<T, boolean>> {
+  const stdin = process.stdin as NodeJS.ReadStream;
+  const stdout = process.stdout as NodeJS.WriteStream;
+  const selected: Record<string, boolean> = { ...initial };
+  let cursorIndex = 0;
+  let renderedLineCount = 0;
+  const previousRawMode = Boolean((stdin as { isRaw?: boolean }).isRaw);
+  const lineWidth = Math.max(20, (stdout.columns ?? 80) - 2);
+
+  const clamp = (value: string, max: number): string => {
+    if (value.length <= max) return value;
+    if (max <= 1) return value.slice(0, max);
+    return `${value.slice(0, max - 1)}…`;
+  };
+
+  const titleLine = (): string =>
+    chalk.bold.blue(`◆  ${clamp(label, Math.max(8, lineWidth - 3))}`);
+
+  const menuLines = (): string[] => {
+    const lines: string[] = [titleLine()];
+    for (let i = 0; i < choices.length; i++) {
+      const choice = choices[i]!;
+      const isOn = Boolean(selected[choice.value]);
+      const cursor = i == cursorIndex ? chalk.blue("›") : " ";
+      const marker = isOn ? chalk.blue("●") : chalk.dim("○");
+      const text = clamp(choice.label, Math.max(8, lineWidth - 6));
+      const painted = i == cursorIndex ? chalk.bold(text) : text;
+      lines.push(`│  ${cursor} ${marker} ${painted}`);
+    }
+    lines.push("│");
+    return lines;
+  };
+
+  const collapsedLines = (): string[] => {
+    const enabled = choices
+      .filter((choice) => selected[choice.value])
+      .map((choice) => choice.value);
+    const summary = enabled.length ? enabled.join(", ") : "none";
+    return [`│  ${chalk.gray(clamp(summary, Math.max(8, lineWidth - 4)))}`];
+  };
+
+  const writeLines = (lines: string[]): void => {
+    if (renderedLineCount > 0) {
+      process.stdout.write(`\x1b[${renderedLineCount}A`);
+    }
+    const totalLineCount = Math.max(lines.length, renderedLineCount);
+    for (let i = 0; i < totalLineCount; i++) {
+      process.stdout.write("\r\x1b[2K");
+      if (i < lines.length) {
+        process.stdout.write(lines[i]!);
+      }
+      process.stdout.write("\n");
+    }
+    renderedLineCount = lines.length;
+  };
+
+  const collapseInPlace = (): void => {
+    const lines = collapsedLines();
+    if (renderedLineCount > 0) {
+      process.stdout.write(`\x1b[${renderedLineCount}A`);
+    }
+    const totalLineCount = Math.max(renderedLineCount, lines.length);
+    for (let i = 0; i < totalLineCount; i++) {
+      process.stdout.write("\r\x1b[2K");
+      if (i < lines.length) {
+        process.stdout.write(lines[i]!);
+      }
+      process.stdout.write("\n");
+    }
+    const extraLines = totalLineCount - lines.length;
+    if (extraLines > 0) {
+      process.stdout.write(`\x1b[${extraLines}A`);
+    }
+    renderedLineCount = 0;
+  };
+
+  return new Promise<Record<T, boolean>>((resolve, reject) => {
+    let settled = false;
+    const cleanup = (): void => {
+      stdin.off("data", onData);
+      if (stdin.isTTY) {
+        stdin.setRawMode(previousRawMode);
+      }
+      const isClosed = Boolean((face as { closed?: boolean }).closed);
+      if (!isClosed) {
+        try {
+          face.resume();
+        } catch {
+          // noop: readline may already be closed during shutdown/cancel paths.
+        }
+      }
+    };
+
+    const finish = (): void => {
+      if (settled) return;
+      settled = true;
+      collapseInPlace();
+      cleanup();
+      resolve(selected as Record<T, boolean>);
+    };
+
+    const fail = (error: Error): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+
+    const onData = (chunk: Buffer | string): void => {
+      const input = typeof chunk == "string" ? chunk : chunk.toString("utf8");
+      if (!input.length) return;
+
+      if (input == "\u0003") {
+        fail(new Error(chalk.bold.red("◆  Cancelled")));
+        return;
+      }
+      if (input == "\x1b[A" || input == "\x1bOA") {
+        cursorIndex = (cursorIndex - 1 + choices.length) % choices.length;
+        writeLines(menuLines());
+        return;
+      }
+      if (input == "\x1b[B" || input == "\x1bOB") {
+        cursorIndex = (cursorIndex + 1) % choices.length;
+        writeLines(menuLines());
+        return;
+      }
+      if (input == " ") {
+        const key = choices[cursorIndex]!.value;
+        selected[key] = !selected[key];
+        writeLines(menuLines());
+        return;
+      }
+      if (input == "\r" || input == "\n") {
+        finish();
         return;
       }
     };

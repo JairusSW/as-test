@@ -1,6 +1,6 @@
 {
   "name": "as-test",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "author": "Jairus Tanaka",
   "repository": {
     "type": "git",
@@ -92,7 +92,7 @@
     "typecheck": "tsc -p cli --noEmit && tsc -p tsconfig.lib.json --noEmit && tsc -p transform --noEmit",
     "lint": "eslint transform/src/**/*.ts tools/**/*.js eslint.config.js",
     "build:lib": "tsc -p ./tsconfig.lib.json",
-    "build:transform": "tsc -p ./transform",
+    "build:transform": "tsc -p ./transform && prettier -w ./transform/",
     "build:cli": "tsc -p cli",
     "build:run": "npm run build:cli",
     "docs:dev": "vitepress dev docs",

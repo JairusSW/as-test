@@ -1,6 +1,6 @@
 export type CliFeatureToggles = {
   coverage?: boolean;
-  tryAs?: boolean;
+  featureOverrides: Record<string, boolean>;
 };
 
 export type CliListFlags = {

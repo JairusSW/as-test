@@ -7,11 +7,20 @@ export class Config {
   snapshotDir: string = "./.as-test/snapshots";
   config: string = "none";
   coverage: boolean | CoverageOptions = false;
+  features: string[] = [];
   env: Record<string, string> = {};
   buildOptions: BuildOptions = new BuildOptions();
   runOptions: RunOptions = new RunOptions();
   fuzz: FuzzConfig = new FuzzConfig();
   modes: Record<string, ModeConfig> = {};
+}
+
+export const INTERNAL_FEATURE_NAMES = new Set(["try-as"]);
+
+export function normalizeFeatureName(value: string): string {
+  const trimmed = value.trim().toLowerCase();
+  if (trimmed == "try_as" || trimmed == "tryas") return "try-as";
+  return trimmed;
 }
 
 export class CoverageOptions {
