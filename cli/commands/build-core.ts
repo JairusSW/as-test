@@ -1,4 +1,6 @@
 import { existsSync, mkdirSync, readFileSync } from "fs";
+import { promises as fsPromises } from "fs";
+import { AsyncLocalStorage } from "async_hooks";
 import {
   Config,
   INTERNAL_FEATURE_NAMES,
@@ -10,6 +12,7 @@ import { spawn } from "child_process";
 import * as path from "path";
 import {
   createMemoryStream,
+  libraryFiles as ascLibraryFiles,
   main as ascMain,
 } from "assemblyscript/dist/asc.js";
 import {
@@ -25,6 +28,22 @@ import { persistCrashRecord } from "../crash-store.js";
 import { BuildWorkerPool } from "../build-worker-pool.js";
 
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
+
+// AsyncLocalStorage-backed file-read recorder. The watch loop wraps each
+// iteration in `buildRecorderStorage.run({ record }, () => runTestModesCore(...))`
+// so that builds happening deep inside the orchestrator (with no opportunity to
+// pass callbacks down) still emit (mode, spec, absPath) triples back up. Only
+// the in-process API build path can see this — worker-pool builds happen in
+// child processes and silently skip recording.
+export type BuildRecorder = (
+  mode: string | undefined,
+  specFile: string,
+  absPath: string,
+) => void;
+
+type BuildRecorderStore = { record: BuildRecorder };
+
+export const buildRecorderStorage = new AsyncLocalStorage<BuildRecorderStore>();
 
 export type BuildFeatureToggles = {
   coverage?: boolean;
@@ -134,7 +153,8 @@ export async function build(
   if (
     !resolvedConfig &&
     !process.env.AS_TEST_BUILD_API &&
-    !hasCustomBuildCommand(config)
+    !hasCustomBuildCommand(config) &&
+    !buildRecorderStorage.getStore()
   ) {
     const pool = getSerialBuildWorkerPool();
     for (const file of inputFiles) {
@@ -688,7 +708,12 @@ async function buildFile(
   invocation: BuildInvocation,
   env: NodeJS.ProcessEnv,
 ): Promise<void> {
-  if (process.env.AS_TEST_BUILD_API == "1" && invocation.apiArgs?.length) {
+  // The readFile hook only works through the API path. If the watch recorder
+  // is active but env wasn't already set, force the API path so we can
+  // deliver the read stream.
+  const recorderActive = !!buildRecorderStorage.getStore();
+  const wantsApi = recorderActive || process.env.AS_TEST_BUILD_API == "1";
+  if (wantsApi && invocation.apiArgs?.length) {
     await buildFileViaApi(invocation.apiArgs, env);
     return;
   }
@@ -713,8 +738,28 @@ async function buildFileViaApi(
   });
   const previousEnv = snapshotEnv();
   applyEnv(env);
+  // asc's `libraryFiles` is a module-global dict that `--lib` flags mutate
+  // by inserting new entries (e.g. wasi-shim files when targeting wasi).
+  // When we call ascMain in-process across multiple modes (which the watch
+  // loop does), those entries leak into later compiles and try to resolve
+  // imports that the next mode's lib path doesn't satisfy. Snapshot the
+  // keys before each call and drop anything new after, so each ascMain sees
+  // the same baseline stdlib.
+  const baselineLibraryKeys = new Set(Object.keys(ascLibraryFiles));
   try {
-    const result = await ascMain(args, { stdout, stderr });
+    const ascOptions: Parameters<typeof ascMain>[1] = { stdout, stderr };
+    const recorder = buildRecorderStorage.getStore();
+    if (recorder) {
+      const specFile = args[0] ? path.resolve(args[0]) : "";
+      const modeName = process.env.AS_TEST_MODE_NAME;
+      const mode = modeName && modeName !== "default" ? modeName : undefined;
+      if (specFile) {
+        ascOptions.readFile = makeRecordingReadFile((abs) => {
+          recorder.record(mode, specFile, abs);
+        });
+      }
+    }
+    const result = await ascMain(args, ascOptions);
     if (result.error) {
       const error = result.error as Error & {
         stderr?: string;
@@ -726,7 +771,29 @@ async function buildFileViaApi(
     }
   } finally {
     restoreEnv(previousEnv);
+    for (const key of Object.keys(ascLibraryFiles)) {
+      if (!baselineLibraryKeys.has(key)) {
+        delete (ascLibraryFiles as Record<string, string>)[key];
+      }
+    }
   }
+}
+
+// Mirrors asc's own default readFile (path.resolve(baseDir, filename),
+// readFile utf-8, return null on ENOENT) and records each successful read.
+function makeRecordingReadFile(
+  onFileRead: (absPath: string) => void,
+): (filename: string, baseDir: string) => Promise<string | null> {
+  return async (filename: string, baseDir: string): Promise<string | null> => {
+    const resolved = path.resolve(baseDir, filename);
+    try {
+      const content = await fsPromises.readFile(resolved, "utf8");
+      onFileRead(resolved);
+      return content;
+    } catch {
+      return null;
+    }
+  };
 }
 
 async function buildFileViaSpawn(

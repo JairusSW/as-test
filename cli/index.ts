@@ -28,6 +28,7 @@ import {
   loadConfig,
   resolveArtifactPath,
   resolveModeNames,
+  resolveSnapshotPath,
   resolveSpecRelativePath,
 } from "./util.js";
 import { Config, normalizeFeatureName } from "./types.js";
@@ -36,6 +37,7 @@ import { spawnSync } from "child_process";
 import { glob } from "glob";
 import { createInterface } from "readline";
 import { existsSync, watch as fsWatch } from "fs";
+import { minimatch } from "minimatch";
 import { availableParallelism, cpus } from "os";
 import {
   CoverageSummary,
@@ -46,6 +48,8 @@ import {
 } from "./reporters/types.js";
 import { BuildWorkerPool } from "./build-worker-pool.js";
 import { PersistentWebSessionHost } from "./commands/web-session.js";
+import { buildRecorderStorage } from "./commands/build-core.js";
+import { DependencyGraph } from "./dependency-graph.js";
 
 const _args = process.argv.slice(2);
 const flags: string[] = [];
@@ -1535,6 +1539,10 @@ async function buildFileForMode(args: {
   buildFeatureToggles: BuildFeatureToggles;
   buildPool?: BuildWorkerPool;
 }): Promise<void> {
+  // If the caller has an active buildRecorderStorage context (e.g. the watch
+  // loop), forward reads from the pool's worker process back into the same
+  // recorder so the dependency graph still gets populated under --parallel.
+  const recorder = buildRecorderStorage.getStore();
   if (args.buildPool) {
     const buildInvocation = await getBuildInvocationPreview(
       args.configPath,
@@ -1548,6 +1556,11 @@ async function buildFileForMode(args: {
       modeName: args.modeName,
       buildCommand: formatBuildInvocation(buildInvocation),
       featureToggles: args.buildFeatureToggles,
+      onReads: recorder
+        ? (reads) => {
+            for (const r of reads) recorder.record(r.mode, r.spec, r.file);
+          }
+        : undefined,
     });
   } else {
     await build(
@@ -2263,6 +2276,12 @@ async function runTestModes(
   process.exit(failed ? 1 : 0);
 }
 
+type WatchTrigger =
+  | { kind: "initial" }
+  | { kind: "change"; file: string }
+  | { kind: "manual-rerun" }
+  | { kind: "manual-runall" };
+
 async function runWatchLoop(
   runFlags: {
     snapshot: boolean;
@@ -2290,98 +2309,355 @@ async function runWatchLoop(
 ): Promise<void> {
   const resolvedConfigPath =
     configPath ?? path.join(process.cwd(), "./as-test.config.json");
-  const config = loadConfig(resolvedConfigPath, false);
-  const watchDirs = resolveWatchDirectories(config);
+  const absConfigPath = path.resolve(resolvedConfigPath);
+  let config = loadConfig(resolvedConfigPath, false);
+
+  // Respect the user's parallelism flags. Worker-pool builds forward their
+  // file-read records back through IPC (see BuildWorkerPool / build-worker
+  // and buildFileForMode), so the dependency graph stays correct under
+  // --parallel as well.
+  const watchRunFlags = { ...runFlags };
+  const graph = new DependencyGraph();
+  let graphPopulated = false;
+  // Specs flagged as changed by the most recent file-event-driven scope
+  // detection. Used when the user hits `space`/`enter` to force a re-run of
+  // exactly those specs, independent of whatever they last manually ran.
+  let lastChangedSpecs: Set<string> | null = null;
 
   let isRunning = false;
-  let pendingFile: string | null = null;
+  let pendingTrigger: WatchTrigger | null = null;
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  // Keyed by absolute directory path so attachWatcherFor is idempotent;
+  // makes it safe to re-scan & top up watchers after every iteration without
+  // double-attaching to the same dir.
+  const attachedDirWatchers = new Map<string, ReturnType<typeof fsWatch>>();
+  let configFileWatcher: ReturnType<typeof fsWatch> | null = null;
 
-  async function doRun(changedFile?: string): Promise<void> {
-    if (changedFile) {
-      console.clear();
-      process.stdout.write(
-        chalk.dim(`[${new Date().toLocaleTimeString()}] `) +
-          chalk.yellow("Change detected: ") +
-          chalk.bold(changedFile) +
-          "\n\n",
-      );
+  function describeAffected(specs: Iterable<string>): string {
+    const list = Array.from(specs).map((s) => path.relative(process.cwd(), s));
+    if (list.length <= 3) return list.join(", ");
+    return `${list.slice(0, 3).join(", ")} (+${list.length - 3} more)`;
+  }
+
+  function watchFooter(): string {
+    return chalk.dim(
+      "Watching for changes. " +
+        chalk.bold("space") +
+        " = re-run changed, " +
+        chalk.bold("a") +
+        " = re-run all, " +
+        chalk.bold("Ctrl+C") +
+        " = stop.\n",
+    );
+  }
+
+  function writeWatchHeader(headline: string, detail?: string): void {
+    console.clear();
+    process.stdout.write(
+      chalk.dim(`[${new Date().toLocaleTimeString()}] `) +
+        chalk.yellow(headline) +
+        (detail ? chalk.bold(detail) : "") +
+        "\n",
+    );
+  }
+
+  async function doRun(trigger: WatchTrigger): Promise<void> {
+    if (trigger.kind === "change") {
+      writeWatchHeader("Change detected: ", trigger.file);
+    } else if (trigger.kind === "manual-rerun") {
+      if (!lastChangedSpecs?.size) {
+        writeWatchHeader("No changed specs to re-run.");
+        process.stdout.write(
+          chalk.dim(
+            "Edit a watched file first, or press " +
+              chalk.bold("a") +
+              " to re-run all.\n",
+          ) +
+            "\n" +
+            watchFooter(),
+        );
+        return;
+      }
+      writeWatchHeader("Re-running changed specs");
+    } else if (trigger.kind === "manual-runall") {
+      writeWatchHeader("Re-running all specs");
     }
-    try {
-      await runTestModesCore(
-        runFlags,
-        configPath,
-        selectors,
-        suiteSelectors,
-        fuzzerSelectors,
-        modes,
-        buildFeatureToggles,
-        fuzzEnabled,
-        fuzzOverrides,
+
+    let runSelectors = selectors;
+    let scopedRun = false;
+    if (trigger.kind === "manual-rerun" && lastChangedSpecs?.size) {
+      const changed = lastChangedSpecs;
+      process.stdout.write(
+        chalk.dim(`Forcing re-run of ${changed.size} changed spec(s): `) +
+          chalk.bold(describeAffected(changed)) +
+          "\n",
       );
+      runSelectors = Array.from(changed).map((spec) =>
+        path.relative(process.cwd(), spec),
+      );
+      scopedRun = true;
+    } else if (trigger.kind === "change") {
+      const absChanged = path.resolve(trigger.file);
+      if (absChanged === absConfigPath) {
+        process.stdout.write(
+          chalk.dim("Config changed; reloading and rebuilding everything.\n"),
+        );
+        try {
+          config = loadConfig(resolvedConfigPath, false);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          process.stderr.write(
+            chalk.red("Failed to reload config: ") + msg + "\n",
+          );
+        }
+        graph.clear();
+        graphPopulated = false;
+        lastChangedSpecs = null;
+        // The previous config's input/snapshotDir may no longer be relevant;
+        // drop every dir watcher and re-derive from the fresh config so we
+        // don't leak watchers for dirs we no longer care about.
+        closeDirWatchers();
+        refreshWatchedDirs();
+      } else if (graphPopulated) {
+        const affected = new Set(graph.specsAffectedBy(absChanged));
+        // A new .spec.ts file the graph hasn't seen yet should still be
+        // built and run. Cheapest heuristic without re-globbing: treat any
+        // .spec.ts under cwd that we don't already know as a candidate.
+        if (
+          affected.size === 0 &&
+          /\.spec\.ts$/i.test(absChanged) &&
+          existsSync(absChanged) &&
+          !graph.knownSpecs().has(absChanged)
+        ) {
+          affected.add(absChanged);
+        }
+        if (affected.size === 0) {
+          process.stdout.write(
+            chalk.dim("No specs affected. Skipping run.\n") +
+              "\n" +
+              watchFooter(),
+          );
+          return;
+        }
+        process.stdout.write(
+          chalk.dim(`Rebuilding ${affected.size} affected spec(s): `) +
+            chalk.bold(describeAffected(affected)) +
+            "\n",
+        );
+        runSelectors = Array.from(affected).map((spec) =>
+          path.relative(process.cwd(), spec),
+        );
+        scopedRun = true;
+        lastChangedSpecs = affected;
+      }
+    }
+    process.stdout.write("\n");
+
+    type Collected = { mode: string | undefined; spec: string; file: string };
+    const collected: Collected[] = [];
+    const recorder = {
+      record: (
+        mode: string | undefined,
+        specFile: string,
+        absPath: string,
+      ): void => {
+        collected.push({ mode, spec: specFile, file: absPath });
+      },
+    };
+
+    try {
+      await buildRecorderStorage.run(recorder, async () => {
+        await runTestModesCore(
+          watchRunFlags,
+          configPath,
+          runSelectors,
+          suiteSelectors,
+          fuzzerSelectors,
+          modes,
+          buildFeatureToggles,
+          fuzzEnabled,
+          fuzzOverrides,
+        );
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       process.stderr.write(chalk.red("Error: ") + message + "\n");
     }
-    process.stdout.write(
-      "\n" + chalk.dim("Watching for changes. Press Ctrl+C to stop.\n"),
-    );
+
+    // Bucket reads by (mode, spec) then merge into the graph. Skipped specs
+    // (those not touched this run) keep their prior entries — important for
+    // scoped reruns and for builds that fail before any reads happen.
+    const bySpec = new Map<
+      string,
+      { mode: string | undefined; spec: string; files: Set<string> }
+    >();
+    for (const entry of collected) {
+      const key = `${entry.mode ?? ""} ${entry.spec}`;
+      let bucket = bySpec.get(key);
+      if (!bucket) {
+        bucket = { mode: entry.mode, spec: entry.spec, files: new Set() };
+        bySpec.set(key, bucket);
+      }
+      bucket.files.add(entry.file);
+    }
+    for (const bucket of bySpec.values()) {
+      if (config.snapshotDir) {
+        bucket.files.add(
+          resolveSnapshotPath(bucket.spec, config.snapshotDir, config.input),
+        );
+      }
+      graph.recordBuild(bucket.spec, bucket.mode, bucket.files);
+    }
+    // Only mark populated after a full (unscoped) run that recorded at least
+    // one spec — that way we never trust a scoped run to validate the full
+    // dependency picture.
+    if (!scopedRun && bySpec.size > 0) {
+      graphPopulated = true;
+    }
+    // Top up watchers after every iteration so newly-created dirs (the
+    // snapshot dir on first run, dirs introduced by config edits, etc.) get
+    // monitored without restarting the loop.
+    refreshWatchedDirs();
+    attachConfigWatcher();
+
+    process.stdout.write("\n" + watchFooter());
+  }
+
+  function attachWatcherFor(absDir: string, recursive: boolean): void {
+    if (attachedDirWatchers.has(absDir)) return;
+    if (!existsSync(absDir)) return;
+    try {
+      const w = fsWatch(absDir, { recursive }, (_evt, filename) => {
+        if (!filename) return;
+        const full = path.join(absDir, filename);
+        if (shouldIgnoreWatchPath(full, config)) return;
+        scheduleRerun(path.relative(process.cwd(), full));
+      });
+      attachedDirWatchers.set(absDir, w);
+    } catch {
+      // some dirs (or filesystems) can't be watched recursively; skip.
+    }
+  }
+
+  // Called after every iteration so dirs created lazily (snapshotDir on
+  // first run, dirs introduced by config reload, etc.) get watchers.
+  function refreshWatchedDirs(): void {
+    const cwd = process.cwd();
+    for (const dir of resolveWatchDirectories(config)) {
+      attachWatcherFor(dir, true);
+    }
+    for (const file of graph.allRecordedFiles()) {
+      const rel = path.relative(cwd, file);
+      if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) continue;
+      if (rel.startsWith("node_modules") || rel.startsWith(".git")) continue;
+      attachWatcherFor(path.dirname(file), false);
+    }
+  }
+
+  function attachConfigWatcher(): void {
+    if (configFileWatcher) return;
+    if (!existsSync(resolvedConfigPath)) return;
+    try {
+      configFileWatcher = fsWatch(resolvedConfigPath, () => {
+        scheduleRerun(path.relative(process.cwd(), resolvedConfigPath));
+      });
+    } catch {
+      // ignore — fs.watch on a single file isn't supported everywhere.
+    }
+  }
+
+  function closeDirWatchers(): void {
+    for (const w of attachedDirWatchers.values()) w.close();
+    attachedDirWatchers.clear();
+  }
+
+  function closeAllWatchers(): void {
+    closeDirWatchers();
+    if (configFileWatcher) {
+      configFileWatcher.close();
+      configFileWatcher = null;
+    }
   }
 
   async function triggerRerun(): Promise<void> {
-    const changedFile = pendingFile ?? undefined;
-    pendingFile = null;
+    const trigger = pendingTrigger ?? ({ kind: "initial" } as WatchTrigger);
+    pendingTrigger = null;
     isRunning = true;
     try {
-      await doRun(changedFile);
+      await doRun(trigger);
     } finally {
       isRunning = false;
-      if (pendingFile) {
+      if (pendingTrigger) {
         void triggerRerun();
       }
     }
   }
 
-  function scheduleRerun(filename: string): void {
-    pendingFile = filename;
+  function scheduleTrigger(next: WatchTrigger, delayMs: number): void {
+    // Manual triggers preempt any pending change-trigger; if a manual one is
+    // already pending, leave it (latest wins regardless).
+    pendingTrigger = next;
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       if (isRunning) return;
       void triggerRerun();
-    }, 150);
+    }, delayMs);
   }
 
-  // Initial run
-  await doRun();
+  function scheduleRerun(filename: string): void {
+    scheduleTrigger({ kind: "change", file: filename }, 150);
+  }
 
-  // Set up file watchers
-  const watchers: ReturnType<typeof fsWatch>[] = [];
-  for (const dir of watchDirs) {
-    if (!existsSync(dir)) continue;
+  function scheduleManualRerun(kind: "manual-rerun" | "manual-runall"): void {
+    scheduleTrigger({ kind }, 0);
+  }
+
+  // Attach watchers before the initial run so file events that happen during
+  // the run are queued for the next iteration.
+  refreshWatchedDirs();
+  attachConfigWatcher();
+
+  // Initial run populates the graph as a side effect of recording every read.
+  await doRun({ kind: "initial" });
+
+  const stdin = process.stdin;
+  let rawModeEnabled = false;
+  if (stdin.isTTY && typeof stdin.setRawMode === "function") {
     try {
-      const w = fsWatch(dir, { recursive: true }, (_evt, filename) => {
-        if (!filename) return;
-        const full = path.join(dir, filename);
-        if (shouldIgnoreWatchPath(full, config)) return;
-        scheduleRerun(path.relative(process.cwd(), full));
+      stdin.setRawMode(true);
+      rawModeEnabled = true;
+      stdin.resume();
+      stdin.on("data", (chunk: Buffer) => {
+        // A held key (or any chord with multiple bytes) arrives as a single
+        // chunk; we only need to honour the first actionable byte. Without
+        // this guard, holding `space` would schedule a fresh rerun for every
+        // byte in the chunk.
+        for (const byte of chunk) {
+          if (byte === 0x03) {
+            if (rawModeEnabled) stdin.setRawMode(false);
+            closeAllWatchers();
+            process.exit(0);
+          }
+          if (isRunning) break;
+          if (byte === 0x20 || byte === 0x0d || byte === 0x0a) {
+            scheduleManualRerun("manual-rerun");
+            break;
+          }
+          if (byte === 0x61 || byte === 0x41) {
+            scheduleManualRerun("manual-runall");
+            break;
+          }
+        }
       });
-      watchers.push(w);
     } catch {
-      // directory may not support recursive watching; skip
+      // some terminals don't support raw mode (e.g. piped stdin); just fall
+      // back to SIGINT-only behavior.
     }
   }
 
-  if (existsSync(resolvedConfigPath)) {
-    try {
-      const w = fsWatch(resolvedConfigPath, () => {
-        scheduleRerun(path.relative(process.cwd(), resolvedConfigPath));
-      });
-      watchers.push(w);
-    } catch {}
-  }
-
   process.on("SIGINT", () => {
-    for (const w of watchers) w.close();
+    if (rawModeEnabled) stdin.setRawMode(false);
+    closeAllWatchers();
     process.exit(0);
   });
 
@@ -2406,19 +2682,69 @@ function resolveWatchDirectories(config: Config): string[] {
   const assemblyDir = path.resolve(cwd, "assembly");
   if (existsSync(assemblyDir)) dirs.add(assemblyDir);
 
+  const snapshotDir = path.resolve(cwd, config.snapshotDir);
+  if (existsSync(snapshotDir)) dirs.add(snapshotDir);
+
   if (dirs.size === 0) dirs.add(cwd);
   return [...dirs];
+}
+
+// Returns true if `rel` (a cwd-relative path with `/` separators) matches any
+// `!`-prefixed pattern from the supplied input arrays. Lets users opt out of
+// watch events for files they've already excluded from their spec/fuzz globs
+// — no separate watch config needed.
+function matchesAnyExclusion(
+  rel: string,
+  inputs: Array<string[] | string | undefined>,
+): boolean {
+  const normalized = rel.split(path.sep).join("/");
+  for (const input of inputs) {
+    if (!input) continue;
+    const patterns = Array.isArray(input) ? input : [input];
+    for (const raw of patterns) {
+      if (typeof raw != "string" || !raw.startsWith("!")) continue;
+      const pattern = raw.slice(1);
+      if (!pattern.length) continue;
+      if (minimatch(normalized, pattern, { dot: true, matchBase: true })) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function shouldIgnoreWatchPath(filePath: string, config: Config): boolean {
   const cwd = process.cwd();
   const rel = path.relative(cwd, filePath);
   if (rel.startsWith("node_modules") || rel.startsWith(".git")) return true;
+  // Dotfiles (.swp, .DS_Store, …) are always noise.
+  const base = path.basename(rel);
+  if (base.startsWith(".")) return true;
+  // Respect `!`-prefixed glob negations in the user's existing input arrays.
+  // Files the user already excluded from their spec/fuzz globs are also out
+  // of scope for watch — no separate "watch.ignore" config needed.
+  if (matchesAnyExclusion(rel, [config.input, config.fuzz?.input])) {
+    return true;
+  }
   const outRel = path.normalize(
     path.relative(cwd, path.resolve(cwd, config.outDir)),
   );
-  if (rel.startsWith(outRel + path.sep) || rel === outRel) return true;
-  if (!rel.endsWith(".ts") && !rel.endsWith("as-test.config.json")) return true;
+  const snapRel = path.normalize(
+    path.relative(cwd, path.resolve(cwd, config.snapshotDir)),
+  );
+  const underSnap = rel === snapRel || rel.startsWith(snapRel + path.sep);
+  const underOut = rel === outRel || rel.startsWith(outRel + path.sep);
+  // Snapshots often live under outDir (default ./.as-test/snapshots); they
+  // are dependencies of their specs, so we keep watching them even when the
+  // rest of the output tree is ignored.
+  if (underOut && !underSnap) return true;
+  if (
+    !rel.endsWith(".ts") &&
+    !rel.endsWith(".snap") &&
+    !rel.endsWith("as-test.config.json")
+  ) {
+    return true;
+  }
   return false;
 }
 

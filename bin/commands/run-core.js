@@ -9,6 +9,7 @@ import {
   getExec,
   loadConfig,
   resolveArtifactPath,
+  resolveSnapshotPath,
   resolveSpecRelativePath,
   tokenizeCommand,
 } from "../util.js";
@@ -33,12 +34,7 @@ class SnapshotStore {
     this.failed = 0;
     this.warnedMissing = new Set();
     this.specBasename = path.basename(specFile);
-    const dir = path.join(process.cwd(), snapshotDir);
-    const relative = resolveSpecRelativePath(specFile, inputPatterns).replace(
-      /\.ts$/i,
-      ".snap",
-    );
-    this.filePath = path.join(dir, relative);
+    this.filePath = resolveSnapshotPath(specFile, snapshotDir, inputPatterns);
     const sourcePath = existsSync(this.filePath) ? this.filePath : null;
     const loaded = sourcePath
       ? readSnapshotFile(sourcePath, specFile)

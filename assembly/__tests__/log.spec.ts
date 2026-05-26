@@ -1,4 +1,4 @@
-import { describe, expect, log, run, test } from "..";
+import { describe, expect, log, test } from "..";
 // Import JSON directly so json-as transform does not add broken pnpm paths.
 import { JSON } from "json-as/assembly";
 

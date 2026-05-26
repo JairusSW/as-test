@@ -1,9 +1,8 @@
 {
   "$schema": "./as-test.config.schema.json",
-  "input": ["assembly/__tests__/**/*.spec.ts"],
-  "output": ".as-test/",
+  "input": ["assembly/__tests__/**/*.spec.ts", "!**/__tmp_*"],
   "config": "none",
-  "coverage": false,
+  "coverage": true,
   "features": ["try-as"],
   "env": {},
   "fuzz": {

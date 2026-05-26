@@ -5,6 +5,14 @@ import type {
   BuildFeatureToggles,
 } from "./commands/build-core.js";
 
+export type BuildReadEntry = {
+  mode: string | undefined;
+  spec: string;
+  file: string;
+};
+
+export type BuildReadSink = (reads: BuildReadEntry[]) => void;
+
 type BuildTask = {
   id: number;
   configPath?: string;
@@ -13,6 +21,7 @@ type BuildTask = {
   buildCommand?: string;
   featureToggles: BuildFeatureToggles;
   overrides: BuildConfigOverrides;
+  onReads?: BuildReadSink;
   resolve: () => void;
   reject: (error: Error) => void;
 };
@@ -32,6 +41,7 @@ type WorkerMessage =
   | {
       type: "done";
       id: number;
+      reads?: BuildReadEntry[];
     }
   | {
       type: "error";
@@ -61,6 +71,7 @@ export class BuildWorkerPool {
     buildCommand?: string;
     featureToggles?: BuildFeatureToggles;
     overrides?: BuildConfigOverrides;
+    onReads?: BuildReadSink;
   }): Promise<void> {
     if (this.closed) {
       return Promise.reject(new Error("build worker pool is closed"));
@@ -78,6 +89,7 @@ export class BuildWorkerPool {
         buildCommand: args.buildCommand,
         featureToggles,
         overrides,
+        onReads: args.onReads,
         resolve,
         reject,
       });
@@ -175,6 +187,13 @@ export class BuildWorkerPool {
     worker.busy = false;
     worker.task = null;
     if (message.type == "done") {
+      if (task.onReads && message.reads?.length) {
+        try {
+          task.onReads(message.reads);
+        } catch {
+          // a misbehaving sink shouldn't poison the build pipeline.
+        }
+      }
       task.resolve();
     } else {
       task.reject(deserializeError(message.error));
@@ -197,6 +216,7 @@ export class BuildWorkerPool {
         modeName: task.modeName,
         featureToggles: task.featureToggles,
         overrides: task.overrides,
+        recordReads: !!task.onReads,
       });
     }
   }

@@ -1,4 +1,6 @@
 import { existsSync, mkdirSync, readFileSync } from "fs";
+import { promises as fsPromises } from "fs";
+import { AsyncLocalStorage } from "async_hooks";
 import { INTERNAL_FEATURE_NAMES, normalizeFeatureName } from "../types.js";
 import { glob } from "glob";
 import chalk from "chalk";
@@ -6,6 +8,7 @@ import { spawn } from "child_process";
 import * as path from "path";
 import {
   createMemoryStream,
+  libraryFiles as ascLibraryFiles,
   main as ascMain,
 } from "assemblyscript/dist/asc.js";
 import {
@@ -20,6 +23,7 @@ import {
 import { persistCrashRecord } from "../crash-store.js";
 import { BuildWorkerPool } from "../build-worker-pool.js";
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
+export const buildRecorderStorage = new AsyncLocalStorage();
 export class BuildFailureError extends Error {
   constructor(args) {
     super(args.message);
@@ -82,7 +86,8 @@ export async function build(
   if (
     !resolvedConfig &&
     !process.env.AS_TEST_BUILD_API &&
-    !hasCustomBuildCommand(config)
+    !hasCustomBuildCommand(config) &&
+    !buildRecorderStorage.getStore()
   ) {
     const pool = getSerialBuildWorkerPool();
     for (const file of inputFiles) {
@@ -578,7 +583,12 @@ function ensureDeps(config) {
   }
 }
 async function buildFile(invocation, env) {
-  if (process.env.AS_TEST_BUILD_API == "1" && invocation.apiArgs?.length) {
+  // The readFile hook only works through the API path. If the watch recorder
+  // is active but env wasn't already set, force the API path so we can
+  // deliver the read stream.
+  const recorderActive = !!buildRecorderStorage.getStore();
+  const wantsApi = recorderActive || process.env.AS_TEST_BUILD_API == "1";
+  if (wantsApi && invocation.apiArgs?.length) {
     await buildFileViaApi(invocation.apiArgs, env);
     return;
   }
@@ -599,8 +609,28 @@ async function buildFileViaApi(args, env) {
   });
   const previousEnv = snapshotEnv();
   applyEnv(env);
+  // asc's `libraryFiles` is a module-global dict that `--lib` flags mutate
+  // by inserting new entries (e.g. wasi-shim files when targeting wasi).
+  // When we call ascMain in-process across multiple modes (which the watch
+  // loop does), those entries leak into later compiles and try to resolve
+  // imports that the next mode's lib path doesn't satisfy. Snapshot the
+  // keys before each call and drop anything new after, so each ascMain sees
+  // the same baseline stdlib.
+  const baselineLibraryKeys = new Set(Object.keys(ascLibraryFiles));
   try {
-    const result = await ascMain(args, { stdout, stderr });
+    const ascOptions = { stdout, stderr };
+    const recorder = buildRecorderStorage.getStore();
+    if (recorder) {
+      const specFile = args[0] ? path.resolve(args[0]) : "";
+      const modeName = process.env.AS_TEST_MODE_NAME;
+      const mode = modeName && modeName !== "default" ? modeName : undefined;
+      if (specFile) {
+        ascOptions.readFile = makeRecordingReadFile((abs) => {
+          recorder.record(mode, specFile, abs);
+        });
+      }
+    }
+    const result = await ascMain(args, ascOptions);
     if (result.error) {
       const error = result.error;
       error.stderr = stderrChunks.join("").trim();
@@ -609,7 +639,26 @@ async function buildFileViaApi(args, env) {
     }
   } finally {
     restoreEnv(previousEnv);
+    for (const key of Object.keys(ascLibraryFiles)) {
+      if (!baselineLibraryKeys.has(key)) {
+        delete ascLibraryFiles[key];
+      }
+    }
   }
+}
+// Mirrors asc's own default readFile (path.resolve(baseDir, filename),
+// readFile utf-8, return null on ENOENT) and records each successful read.
+function makeRecordingReadFile(onFileRead) {
+  return async (filename, baseDir) => {
+    const resolved = path.resolve(baseDir, filename);
+    try {
+      const content = await fsPromises.readFile(resolved, "utf8");
+      onFileRead(resolved);
+      return content;
+    } catch {
+      return null;
+    }
+  };
 }
 async function buildFileViaSpawn(invocation, env) {
   await new Promise((resolve, reject) => {

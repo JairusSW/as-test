@@ -24,6 +24,7 @@ export class BuildWorkerPool {
         buildCommand: args.buildCommand,
         featureToggles,
         overrides,
+        onReads: args.onReads,
         resolve,
         reject,
       });
@@ -113,6 +114,13 @@ export class BuildWorkerPool {
     worker.busy = false;
     worker.task = null;
     if (message.type == "done") {
+      if (task.onReads && message.reads?.length) {
+        try {
+          task.onReads(message.reads);
+        } catch {
+          // a misbehaving sink shouldn't poison the build pipeline.
+        }
+      }
       task.resolve();
     } else {
       task.reject(deserializeError(message.error));
@@ -134,6 +142,7 @@ export class BuildWorkerPool {
         modeName: task.modeName,
         featureToggles: task.featureToggles,
         overrides: task.overrides,
+        recordReads: !!task.onReads,
       });
     }
   }

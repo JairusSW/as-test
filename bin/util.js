@@ -1554,6 +1554,15 @@ export function resolveArtifactPath(file, inputPatterns) {
   const rel = resolveSpecRelativePath(file, inputPatterns);
   return rel.replace(/\.ts$/i, ".wasm");
 }
+// Absolute path to the `.snap` file owned by a given spec.
+//   assembly/__tests__/array.spec.ts -> <cwd>/<snapshotDir>/array.spec.snap
+export function resolveSnapshotPath(specFile, snapshotDir, inputPatterns) {
+  const rel = resolveSpecRelativePath(specFile, inputPatterns).replace(
+    /\.ts$/i,
+    ".snap",
+  );
+  return resolve(process.cwd(), snapshotDir, rel);
+}
 function toComponents(absPath) {
   return absPath
     .split(/[\\/]+/)
