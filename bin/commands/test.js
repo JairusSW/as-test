@@ -27,7 +27,7 @@ export async function executeTestCommand(
     coverage: featureToggles.coverage,
     browser: deps.resolveBrowserOverride(rawArgs, "test"),
     reporterPath: deps.resolveReporterOverride(rawArgs, "test"),
-    watch: flags.includes("--watch"),
+    watch: flags.includes("--watch") || flags.includes("-w"),
   };
   const fuzzEnabled = flags.includes("--fuzz");
   const fuzzOverrides = deps.resolveFuzzOverrides(rawArgs, "test");

@@ -93,6 +93,17 @@ type ReporterConfigObject = {
   outFile?: unknown;
 };
 
+// Reports the build+run verdict for a single (file, mode) pair. The watch
+// loop uses this to maintain a sticky "currently failing" list that survives
+// `console.clear()` between iterations.
+export type SpecOutcome = {
+  file: string;
+  mode: string | undefined;
+  failed: boolean;
+};
+
+export type SpecOutcomeSink = (outcome: SpecOutcome) => void;
+
 export type RunResult = {
   failed: boolean;
   stats: RunStats;

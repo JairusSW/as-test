@@ -1,5 +1,5 @@
 import { sleep } from "as-sleep/assembly";
-import { describe, expect, it, log, xit } from "as-test";
+import { describe, expect, it } from "as-test";
 describe("Should sleep", () => {
   it("1ms", () => {
     const start = Date.now();

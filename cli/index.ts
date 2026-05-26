@@ -10,7 +10,12 @@ import {
   getBuildInvocationPreview,
   warnOnUnknownModeReferences,
 } from "./commands/build.js";
-import { createRunReporter, run, RunResult } from "./commands/run.js";
+import {
+  createRunReporter,
+  run,
+  RunResult,
+  type SpecOutcomeSink,
+} from "./commands/run.js";
 import { executeBuildCommand } from "./commands/build.js";
 import { executeRunCommand } from "./commands/run.js";
 import { executeTestCommand } from "./commands/test.js";
@@ -522,7 +527,7 @@ function printCommandHelp(command: string): void {
       "  --list-modes             Preview configured and selected mode names\n",
     );
     process.stdout.write(
-      "  --watch                  Re-run on source or spec changes\n",
+      "  --watch, -w              Re-run on source or spec changes\n",
     );
     process.stdout.write("  --help, -h               Show this help\n");
     return;
@@ -748,7 +753,7 @@ function resolveCommandArgs(rawArgs: string[], command: string): string[] {
     if (arg == "--parallel") {
       continue;
     }
-    if (arg == "--watch") {
+    if (arg == "--watch" || arg == "-w") {
       continue;
     }
     if (
@@ -1595,6 +1600,7 @@ async function runTestSequential(
   reporterOverride?: TestReporter,
   webSession: PersistentWebSessionHost | null = null,
   emitRunComplete: boolean = true,
+  onSpecOutcome?: SpecOutcomeSink,
 ): Promise<{
   failed: boolean;
   summary: {
@@ -1667,6 +1673,7 @@ async function runTestSequential(
     }
     results.push(result);
     if (result?.failed) failed = true;
+    onSpecOutcome?.({ file, mode: modeName, failed: !!result?.failed });
   }
 
   const summary = aggregateRunResults(results);
@@ -2077,6 +2084,7 @@ async function runTestModesCore(
   buildFeatureToggles: BuildFeatureToggles,
   fuzzEnabled: boolean,
   fuzzOverrides: FuzzOverrides,
+  onSpecOutcome?: SpecOutcomeSink,
 ): Promise<boolean> {
   await ensureWebBrowsersReady(configPath, modes, runFlags.browser);
   const modeSummaryTotal = Math.max(modes.length, 1);
@@ -2113,6 +2121,7 @@ async function runTestModesCore(
         fileSummaryTotal,
         fuzzEnabled,
         fuzzOverrides,
+        onSpecOutcome,
       );
       return failed;
     }
@@ -2130,6 +2139,7 @@ async function runTestModesCore(
         fuzzEnabled,
         fuzzOverrides,
         modeName,
+        onSpecOutcome,
       );
       if (modeFailed) failed = true;
     }
@@ -2148,6 +2158,7 @@ async function runTestModesCore(
       fileSummaryTotal,
       fuzzEnabled,
       fuzzOverrides,
+      onSpecOutcome,
     );
     return failed;
   }
@@ -2177,6 +2188,7 @@ async function runTestModesCore(
         reporterSession.reporter,
         sharedWebSession,
         !fuzzEnabled,
+        onSpecOutcome,
       );
       if (modeResult.failed) failed = true;
       if (fuzzEnabled) {
@@ -2319,10 +2331,28 @@ async function runWatchLoop(
   const watchRunFlags = { ...runFlags };
   const graph = new DependencyGraph();
   let graphPopulated = false;
-  // Specs flagged as changed by the most recent file-event-driven scope
-  // detection. Used when the user hits `space`/`enter` to force a re-run of
-  // exactly those specs, independent of whatever they last manually ran.
-  let lastChangedSpecs: Set<string> | null = null;
+  // Sticky failure tracker: each entry is "this (spec, mode) was last seen
+  // failing." Only updated for (spec, mode) pairs that actually re-ran this
+  // iteration, so a spec the watch loop skipped stays visible at the bottom
+  // until it passes again. `space` retries this exact set.
+  const failingSpecs = new Map<string, Set<string | undefined>>();
+
+  function recordSpecOutcome(
+    file: string,
+    mode: string | undefined,
+    failed: boolean,
+  ): void {
+    const abs = path.resolve(file);
+    const modes = failingSpecs.get(abs) ?? new Set<string | undefined>();
+    if (failed) {
+      modes.add(mode);
+      failingSpecs.set(abs, modes);
+      return;
+    }
+    if (!modes.size) return;
+    modes.delete(mode);
+    if (modes.size === 0) failingSpecs.delete(abs);
+  }
 
   let isRunning = false;
   let pendingTrigger: WatchTrigger | null = null;
@@ -2343,62 +2373,85 @@ async function runWatchLoop(
     return chalk.dim(
       "Watching for changes. " +
         chalk.bold("space") +
-        " = re-run changed, " +
+        " = retry failing, " +
         chalk.bold("a") +
         " = re-run all, " +
-        chalk.bold("Ctrl+C") +
+        chalk.bold("ctrl+c") +
         " = stop.\n",
     );
   }
 
   function writeWatchHeader(headline: string, detail?: string): void {
-    console.clear();
+    // Preserve scrollback — never `console.clear()`. A blank line plus a
+    // dim rule visually delimits each iteration so prior output stays
+    // readable above.
     process.stdout.write(
-      chalk.dim(`[${new Date().toLocaleTimeString()}] `) +
+      "\n" +
+        chalk.dim("─".repeat(Math.max(24, process.stdout.columns ?? 60))) +
+        "\n" +
+        chalk.dim(`[${new Date().toLocaleTimeString()}] `) +
         chalk.yellow(headline) +
         (detail ? chalk.bold(detail) : "") +
         "\n",
     );
   }
 
-  async function doRun(trigger: WatchTrigger): Promise<void> {
-    if (trigger.kind === "change") {
-      writeWatchHeader("Change detected: ", trigger.file);
-    } else if (trigger.kind === "manual-rerun") {
-      if (!lastChangedSpecs?.size) {
-        writeWatchHeader("No changed specs to re-run.");
-        process.stdout.write(
-          chalk.dim(
-            "Edit a watched file first, or press " +
-              chalk.bold("a") +
-              " to re-run all.\n",
-          ) +
-            "\n" +
-            watchFooter(),
-        );
-        return;
-      }
-      writeWatchHeader("Re-running changed specs");
-    } else if (trigger.kind === "manual-runall") {
-      writeWatchHeader("Re-running all specs");
-    }
+  // Render the sticky "currently failing" pin. Renders nothing when empty so
+  // happy paths stay visually clean. Mode tags shown only when the user has
+  // configured >1 mode; in the single-mode case the bare path is enough.
+  function renderFailingSpecs(): string {
+    if (failingSpecs.size === 0) return "";
+    const multiMode = modes.length > 1;
+    const entries = Array.from(failingSpecs.entries()).map(([abs, modeSet]) => {
+      const rel = path.relative(process.cwd(), abs);
+      const tags = multiMode
+        ? Array.from(modeSet, (m) => m ?? "default").sort()
+        : [];
+      return { rel, tags };
+    });
+    entries.sort((a, b) => a.rel.localeCompare(b.rel));
+    const MAX_LINES = 8;
+    const shown = entries.slice(0, MAX_LINES);
+    const overflow = entries.length - shown.length;
 
+    const lines: string[] = [];
+    lines.push(chalk.red.bold(`Currently failing (${failingSpecs.size}):`));
+    for (const { rel, tags } of shown) {
+      const tagSuffix = tags.length ? chalk.dim(`  [${tags.join(", ")}]`) : "";
+      lines.push(`  ${chalk.gray(rel)}${tagSuffix}`);
+    }
+    if (overflow > 0) {
+      lines.push(chalk.dim(`  (+${overflow} more)`));
+    }
+    return lines.join("\n") + "\n\n";
+  }
+
+  async function doRun(trigger: WatchTrigger): Promise<void> {
     let runSelectors = selectors;
     let scopedRun = false;
-    if (trigger.kind === "manual-rerun" && lastChangedSpecs?.size) {
-      const changed = lastChangedSpecs;
+
+    if (trigger.kind === "manual-rerun") {
+      if (failingSpecs.size === 0) {
+        // Nothing to retry; stay silent so we don't pollute scrollback.
+        return;
+      }
+      const failingPaths = new Set(failingSpecs.keys());
+      writeWatchHeader("Retrying failing specs");
       process.stdout.write(
-        chalk.dim(`Forcing re-run of ${changed.size} changed spec(s): `) +
-          chalk.bold(describeAffected(changed)) +
+        chalk.dim(`Retrying ${failingPaths.size} failing spec(s): `) +
+          chalk.bold(describeAffected(failingPaths)) +
           "\n",
       );
-      runSelectors = Array.from(changed).map((spec) =>
+      runSelectors = Array.from(failingPaths).map((spec) =>
         path.relative(process.cwd(), spec),
       );
       scopedRun = true;
+    } else if (trigger.kind === "manual-runall") {
+      writeWatchHeader("Re-running all specs");
     } else if (trigger.kind === "change") {
       const absChanged = path.resolve(trigger.file);
       if (absChanged === absConfigPath) {
+        writeWatchHeader("Change detected: ", trigger.file);
         process.stdout.write(
           chalk.dim("Config changed; reloading and rebuilding everything.\n"),
         );
@@ -2412,7 +2465,7 @@ async function runWatchLoop(
         }
         graph.clear();
         graphPopulated = false;
-        lastChangedSpecs = null;
+        failingSpecs.clear();
         // The previous config's input/snapshotDir may no longer be relevant;
         // drop every dir watcher and re-derive from the fresh config so we
         // don't leak watchers for dirs we no longer care about.
@@ -2432,13 +2485,11 @@ async function runWatchLoop(
           affected.add(absChanged);
         }
         if (affected.size === 0) {
-          process.stdout.write(
-            chalk.dim("No specs affected. Skipping run.\n") +
-              "\n" +
-              watchFooter(),
-          );
+          // Nothing depends on this file; skip silently so scrollback isn't
+          // littered with no-op events for unrelated edits.
           return;
         }
+        writeWatchHeader("Change detected: ", trigger.file);
         process.stdout.write(
           chalk.dim(`Rebuilding ${affected.size} affected spec(s): `) +
             chalk.bold(describeAffected(affected)) +
@@ -2448,7 +2499,11 @@ async function runWatchLoop(
           path.relative(process.cwd(), spec),
         );
         scopedRun = true;
-        lastChangedSpecs = affected;
+      } else {
+        // Change arrived before the graph was populated (e.g. queued during
+        // the initial run). Run everything; surface the header so the user
+        // knows the iteration was caused by the edit.
+        writeWatchHeader("Change detected: ", trigger.file);
       }
     }
     process.stdout.write("\n");
@@ -2477,6 +2532,8 @@ async function runWatchLoop(
           buildFeatureToggles,
           fuzzEnabled,
           fuzzOverrides,
+          (outcome) =>
+            recordSpecOutcome(outcome.file, outcome.mode, outcome.failed),
         );
       });
     } catch (error) {
@@ -2520,7 +2577,7 @@ async function runWatchLoop(
     refreshWatchedDirs();
     attachConfigWatcher();
 
-    process.stdout.write("\n" + watchFooter());
+    process.stdout.write("\n" + renderFailingSpecs() + watchFooter());
   }
 
   function attachWatcherFor(absDir: string, recursive: boolean): void {
@@ -2543,7 +2600,7 @@ async function runWatchLoop(
   // first run, dirs introduced by config reload, etc.) get watchers.
   function refreshWatchedDirs(): void {
     const cwd = process.cwd();
-    for (const dir of resolveWatchDirectories(config)) {
+    for (const dir of resolveWatchDirectories(config, modes)) {
       attachWatcherFor(dir, true);
     }
     for (const file of graph.allRecordedFiles()) {
@@ -2665,11 +2722,44 @@ async function runWatchLoop(
   await new Promise<void>(() => {});
 }
 
-function resolveWatchDirectories(config: Config): string[] {
+// Union of every glob the user has declared as a spec/fuzz source —
+// top-level plus each mode override. We watch only directories derived from
+// these so unrelated files (e.g. CLI source while developing as-test itself)
+// don't trigger spurious iterations.
+function collectInputPatterns(
+  config: Config,
+  modes: (string | undefined)[],
+): string[] {
+  const out = new Set<string>();
+  for (const p of config.input) out.add(p);
+  for (const p of config.fuzz.input) out.add(p);
+  for (const modeName of modes) {
+    if (!modeName) continue;
+    let merged;
+    try {
+      merged = applyMode(config, modeName);
+    } catch {
+      continue;
+    }
+    for (const p of merged.config.input) out.add(p);
+    for (const p of merged.config.fuzz.input) out.add(p);
+  }
+  return [...out];
+}
+
+function resolveWatchDirectories(
+  config: Config,
+  modes: (string | undefined)[],
+): string[] {
   const cwd = process.cwd();
   const dirs = new Set<string>();
 
-  for (const pattern of config.input) {
+  const patterns = collectInputPatterns(config, modes);
+  for (const pattern of patterns) {
+    // `!`-prefixed entries are exclusions, not include sources — their
+    // "base" would be `!` (which never exists), causing the walk-up loop
+    // to land on cwd and watch the whole repo.
+    if (pattern.startsWith("!")) continue;
     const starIdx = pattern.indexOf("*");
     const base = starIdx >= 0 ? pattern.slice(0, starIdx) : pattern;
     let dir = path.resolve(cwd, base);
@@ -2679,13 +2769,9 @@ function resolveWatchDirectories(config: Config): string[] {
     if (existsSync(dir)) dirs.add(dir);
   }
 
-  const assemblyDir = path.resolve(cwd, "assembly");
-  if (existsSync(assemblyDir)) dirs.add(assemblyDir);
-
   const snapshotDir = path.resolve(cwd, config.snapshotDir);
   if (existsSync(snapshotDir)) dirs.add(snapshotDir);
 
-  if (dirs.size === 0) dirs.add(cwd);
   return [...dirs];
 }
 
@@ -2773,6 +2859,7 @@ async function runTestMatrix(
   fileSummaryTotal: number,
   fuzzEnabled: boolean,
   fuzzOverrides: FuzzOverrides,
+  onSpecOutcome?: SpecOutcomeSink,
 ): Promise<boolean> {
   const files = await resolveSelectedFiles(configPath, selectors);
   if (files.length && configPath) {
@@ -2881,6 +2968,7 @@ async function runTestMatrix(
       }
       fileResults.push(result);
       allResults.push(result);
+      onSpecOutcome?.({ file, mode: modeName, failed: result.failed });
     }
     if (reporterSession.reporterKind == "default") {
       renderMatrixFileResult(
@@ -3312,6 +3400,7 @@ async function runTestSingleParallel(
   fuzzEnabled: boolean,
   fuzzOverrides: FuzzOverrides,
   modeName?: string,
+  onSpecOutcome?: SpecOutcomeSink,
 ): Promise<boolean> {
   const files = await resolveSelectedFiles(configPath, selectors);
   if (!files.length && !fuzzEnabled) {
@@ -3398,6 +3487,7 @@ async function runTestSingleParallel(
         }
         buffered?.reporter.flush?.();
         results[index] = result;
+        onSpecOutcome?.({ file, mode: modeName, failed: result.failed });
         if (buffered && token != null) {
           queueDisplay.complete(token, buffered.output());
         }
@@ -3488,6 +3578,7 @@ async function runTestMatrixParallel(
   fileSummaryTotal: number,
   fuzzEnabled: boolean,
   fuzzOverrides: FuzzOverrides,
+  onSpecOutcome?: SpecOutcomeSink,
 ): Promise<boolean> {
   const files = await resolveSelectedFiles(configPath, selectors);
   if (files.length && configPath) {
@@ -3590,6 +3681,7 @@ async function runTestMatrixParallel(
         }
         modeTimes[i] = formatMatrixModeTime(result.stats.time);
         fileResults.push(result);
+        onSpecOutcome?.({ file, mode: modeName, failed: result.failed });
       }
       ordered[fileIndex] = { fileName, fileResults, modeTimes };
       if (token != null) {

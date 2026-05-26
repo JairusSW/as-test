@@ -1,7 +1,7 @@
 import { CliFeatureToggles, CliListFlags, RunFlags } from "./types.js";
 
 export { createRunReporter, run } from "./run-core.js";
-export type { RunResult } from "./run-core.js";
+export type { RunResult, SpecOutcome, SpecOutcomeSink } from "./run-core.js";
 
 type RunCommandDeps = {
   resolveCommandArgs(rawArgs: string[], command: string): string[];
