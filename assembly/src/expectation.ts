@@ -1,15 +1,39 @@
 import { visualize } from "../util/helpers";
 import { Tests } from "./tests";
-import { JSON } from "json-as/assembly";
 import { namedSnapshotKey, nextUnnamedSnapshotKey } from "..";
 import {
   sendAssertionFailure,
   sendWarning,
   snapshotAssert,
 } from "../util/wipc";
-import { OBJECT, TOTAL_OVERHEAD } from "~lib/rt/common";
+import { reflectEquals } from "./reflect";
+import { stringify, escape } from "./stringify";
 
 let warnedToThrowDisabled = false;
+let warnedSafeStringifyMissing = false;
+
+function safeStringify<T>(value: T): string {
+  if (
+    isManaged<T>() &&
+    !warnedSafeStringifyMissing &&
+    changetype<usize>(value) != 0 &&
+    !isString<T>() &&
+    !isArray<T>()
+  ) {
+    // @ts-expect-error: optional user-supplied serializer
+    if (!isDefined(value.toJSON)) {
+      sendWarning(
+        "Class " +
+          nameof<T>() +
+          " has no toJSON(): string method. Report values render as a `<" +
+          nameof<T>() +
+          ">` placeholder. Add toJSON() returning a JSON string to serialize.",
+      );
+      warnedSafeStringifyMissing = true;
+    }
+  }
+  return stringify<T>(value);
+}
 
 export class Expectation<T> extends Tests {
   public verdict: string = "none";
@@ -18,13 +42,11 @@ export class Expectation<T> extends Tests {
 
   private _left: T;
 
-  // @ts-ignore
+  // @ts-expect-error: used internally
   private _right: u64 = 0;
 
-  // @ts-ignore
   private _not: boolean = false;
 
-  // @ts-ignore
   private _skip: boolean = false;
 
   private _message: string = "";
@@ -492,8 +514,8 @@ export class Expectation<T> extends Tests {
       this._resolve(
         passed,
         "toContain",
-        JSON.stringify<T>(this._left),
-        JSON.stringify<valueof<T>>(value),
+        safeStringify<T>(this._left),
+        safeStringify<valueof<T>>(value),
         message,
       );
       return this;
@@ -519,7 +541,7 @@ export class Expectation<T> extends Tests {
       ? namedSnapshotKey(this._snapshotKey, name)
       : nextUnnamedSnapshotKey(this._snapshotKey);
 
-    const actual = JSON.stringify<T>(this._left);
+    const actual = safeStringify<T>(this._left);
     const res = snapshotAssert(key, actual);
     this._resolve(res.ok, "toMatchSnapshot", actual, res.expected, message);
     return this;
@@ -591,106 +613,42 @@ export class Expectation<T> extends Tests {
    * Tests for equality
    */
   toBe(equals: T, message: string = ""): Expectation<T> {
-    const passed = this._left === equals;
-
+    // Deep structural equality for managed values; `===` semantics for
+    // primitives and strings (reflectEquals does the dispatch).
+    // `toEqual` is kept below as a Jest-familiarity alias.
+    const passed = reflectEquals<T>(this._left, equals, [], false);
     this._resolve(
       passed,
       "toBe",
-      JSON.stringify<T>(this._left),
-      JSON.stringify<T>(equals),
+      safeStringify<T>(this._left),
+      safeStringify<T>(equals),
       message,
     );
     return this;
   }
 
   /**
-   * Tests for deep equality
+   * Alias of `toBe` retained for Jest familiarity.
    */
   toEqual(equals: T, message: string = ""): Expectation<T> {
-    const passed = valueEquals<T>(this._left, equals, false);
-    this._resolve(
-      passed,
-      "toEqual",
-      JSON.stringify<T>(this._left),
-      JSON.stringify<T>(equals),
-      message,
-    );
-    return this;
+    return this.toBe(equals, message);
   }
 
   /**
-   * Tests for strict deep equality
+   * Like `toBe` but also requires the runtime type (rtId) of the
+   * operands to match for managed values.
    */
   toStrictEqual(equals: T, message: string = ""): Expectation<T> {
-    const passed = valueEquals<T>(this._left, equals, true);
+    const passed = reflectEquals<T>(this._left, equals, [], true);
     this._resolve(
       passed,
       "toStrictEqual",
-      JSON.stringify<T>(this._left),
-      JSON.stringify<T>(equals),
+      safeStringify<T>(this._left),
+      safeStringify<T>(equals),
       message,
     );
     return this;
   }
-}
-
-function arrayEquals<T>(a: T[], b: T[], strict: bool): boolean {
-  if (a.length != b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    if (!valueEquals<T>(unchecked(a[i]), unchecked(b[i]), strict)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function valueEquals<T>(left: T, right: T, strict: bool): bool {
-  if (isBoolean<T>() || isString<T>() || isInteger<T>() || isFloat<T>()) {
-    return left === right;
-  }
-
-  if (isNullable<T>()) {
-    const leftPtr = changetype<usize>(left);
-    const rightPtr = changetype<usize>(right);
-    if (leftPtr == 0 || rightPtr == 0) return leftPtr == rightPtr;
-  }
-
-  if (isArray<T>()) {
-    return arrayEquals<valueof<T>>(
-      changetype<valueof<T>[]>(left),
-      changetype<valueof<T>[]>(right),
-      strict,
-    );
-  }
-
-  if (isManaged<T>()) {
-    return managedEquals<T>(left, right, strict);
-  }
-
-  abort(
-    `Unsupported equality matcher for ${nameof<T>()}. Use toBe() for identity or compare fields explicitly.`,
-  );
-  return false;
-}
-
-export function __as_test_deep_equal<T>(left: T, right: T, strict: bool): bool {
-  return valueEquals<T>(left, right, strict);
-}
-
-function managedEquals<T>(left: T, right: T, strict: bool): bool {
-  const leftPtr = changetype<usize>(left);
-  const rightPtr = changetype<usize>(right);
-  if (leftPtr == rightPtr) return true;
-  if (leftPtr == 0 || rightPtr == 0) return false;
-
-  if (strict) {
-    const leftObject = changetype<OBJECT>(leftPtr - TOTAL_OVERHEAD);
-    const rightObject = changetype<OBJECT>(rightPtr - TOTAL_OVERHEAD);
-    if (leftObject.rtId != rightObject.rtId) return false;
-  }
-
-  // @ts-ignore
-  return left.__as_test_equals(right, strict);
 }
 
 function isTruthy<T>(value: T): bool {
@@ -714,5 +672,5 @@ function isTruthy<T>(value: T): bool {
 }
 
 function q(value: string): string {
-  return JSON.stringify<string>(value);
+  return escape(value);
 }

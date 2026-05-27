@@ -1,20 +1,14 @@
 import { describe, expect, log, test } from "..";
-// Import JSON directly so json-as transform does not add broken pnpm paths.
-import { JSON } from "json-as/assembly";
 
-
-@json
 class Address {
   line1: string = "42 Binary Lane";
   zip: i32 = 90210;
 
-  __as_test_json(): string {
-    return JSON.stringify(this);
+  toJSON(): string {
+    return '{"line1":"' + this.line1 + '","zip":' + this.zip.toString() + "}";
   }
 }
 
-
-@json
 class UserProfile {
   id: i32 = 7;
   active: bool = true;
@@ -22,8 +16,18 @@ class UserProfile {
   tags: string[] = ["assemblyscript", "testing"];
   address: Address = new Address();
 
-  __as_test_json(): string {
-    return JSON.stringify(this);
+  toJSON(): string {
+    return (
+      '{"id":' +
+      this.id.toString() +
+      ',"active":' +
+      (this.active ? "true" : "false") +
+      ',"rating":' +
+      this.rating.toString() +
+      ',"address":' +
+      this.address.toJSON() +
+      "}"
+    );
   }
 }
 

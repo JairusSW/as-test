@@ -1,4 +1,4 @@
-import { JSON } from "json-as/assembly";
+import { escape, stringify } from "./stringify";
 
 export class Tests {
   public order: i32 = 0;
@@ -10,24 +10,24 @@ export class Tests {
   public message: string = "";
   public location: string = "";
 
-  serialize(): string {
+  toJSON(): string {
     return (
       '{"order":' +
       this.order.toString() +
       ',"type":' +
-      JSON.stringify<string>(this.type) +
+      escape(this.type) +
       ',"verdict":' +
-      JSON.stringify<string>(this.verdict) +
+      escape(this.verdict) +
       ',"left":' +
       (this.left.length ? this.left : "null") +
       ',"right":' +
       (this.right.length ? this.right : "null") +
       ',"instr":' +
-      JSON.stringify<string>(this.instr) +
+      escape(this.instr) +
       ',"message":' +
-      JSON.stringify<string>(this.message) +
+      escape(this.message) +
       ',"location":' +
-      JSON.stringify<string>(this.location) +
+      escape(this.location) +
       "}"
     );
   }

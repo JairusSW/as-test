@@ -1,7 +1,7 @@
-import { JSON } from "json-as/assembly";
+import { escape } from "../src/stringify";
 
 function q(s: string): string {
-  return JSON.stringify<string>(s);
+  return escape(s);
 }
 
 // @ts-ignore

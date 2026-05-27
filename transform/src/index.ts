@@ -15,6 +15,7 @@ import { CoverageTransform } from "./coverage.js";
 import { MockTransform } from "./mock.js";
 import { LocationTransform } from "./location.js";
 import { LogTransform } from "./log.js";
+import { EqualsTransform } from "./equals.js";
 import { isStdlib } from "./util.js";
 import { NodeKind } from "./types.js";
 
@@ -131,6 +132,12 @@ export default class Transformer extends Transform {
     if (coverage) {
       coverage.globalStatements = [];
     }
+
+    // Inject `__as_test_equals(other, strict)` on every class that shows up
+    // as an expect()/matcher operand (or is reachable from one via field
+    // types). Runs after the per-source visitors so any earlier rewrites
+    // are visible to the candidate scan.
+    new EqualsTransform(parser).apply(parser.sources);
   }
 }
 

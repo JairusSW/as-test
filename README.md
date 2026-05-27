@@ -39,11 +39,8 @@ That gives you a basic config file, a sample test, and optionally a sample fuzze
 If you already have a project and just want the package:
 
 ```bash
-npm install --save-dev as-test json-as
+npm install --save-dev as-test
 ```
-
-`json-as` is a required peer dependency (used for value serialization in
-assertions, snapshots, and `log()`)
 
 ## Docs
 

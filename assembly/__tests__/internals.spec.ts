@@ -18,7 +18,7 @@ describe("internal helpers", () => {
     record.message = "serialized";
     record.location = "assembly/example.ts:1:1";
 
-    const serialized = record.serialize();
+    const serialized = record.toJSON();
     expect(serialized).toContain('"order":3');
     expect(serialized).toContain('"type":"expectation"');
     expect(serialized).toContain('"message":"serialized"');
@@ -38,7 +38,7 @@ describe("internal helpers", () => {
     const log = new Log("manual log");
     suite.addLog(log);
 
-    const serialized = suite.serialize();
+    const serialized = suite.toJSON();
     expect(serialized).toContain('"file":"manual.spec.ts"');
     expect(serialized).toContain('"description":"root"');
     expect(serialized).toContain('"description":"child"');
@@ -51,8 +51,8 @@ describe("internal helpers", () => {
 
     expect(failed.display()).toContain("failed");
     expect(passed.display()).toContain("0 failed");
-    expect(failed.serialize()).toContain('"arg1":2');
-    expect(failed.serialize()).toContain('"arg2":3');
+    expect(failed.toJSON()).toContain('"arg1":2');
+    expect(failed.toJSON()).toContain('"arg2":3');
   });
 
   test("time formatting handles positive and negative durations", () => {
@@ -66,7 +66,7 @@ describe("internal helpers", () => {
 
     expect(positive.format().length > 0).toBe(true);
     expect(negative.format()).toBe("0.00μs");
-    expect(positive.serialize()).toContain('"start":0');
-    expect(positive.serialize()).toContain('"end":1500');
+    expect(positive.toJSON()).toContain('"start":0');
+    expect(positive.toJSON()).toContain('"end":1500');
   });
 });

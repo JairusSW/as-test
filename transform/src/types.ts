@@ -4,8 +4,10 @@ import {
   FieldDeclaration,
 } from "assemblyscript/dist/assemblyscript.js";
 import * as asc from "assemblyscript/dist/assemblyscript.js";
-export const NodeKind = (asc as unknown as { NodeKind: Record<string, number> })
-  .NodeKind;
+
+const ascRuntime = asc as unknown as { NodeKind: Record<string, number> };
+export const NodeKind: Record<string, number> = {};
+for (const key in ascRuntime.NodeKind) NodeKind[key] = ascRuntime.NodeKind[key];
 
 export enum PropertyFlags {
   OmitNull,
