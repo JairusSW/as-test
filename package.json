@@ -1,6 +1,6 @@
 {
   "name": "as-test",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "author": "Jairus Tanaka",
   "repository": {
     "type": "git",
@@ -9,6 +9,7 @@
   "dependencies": {
     "chalk": "^5.6.2",
     "glob": "^13.0.6",
+    "minimatch": "^10.2.5",
     "typer-diff": "^1.1.1",
     "wipc-js": "^0.1.1"
   },

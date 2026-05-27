@@ -1,5 +1,12 @@
 # Change Log
 
+## 2026-05-27 - v1.4.1
+
+### Dependency hygiene
+
+- fix: declare `minimatch` (`^10.2.5`) as a direct dependency. The watch-mode exclusion matcher (`matchesAnyExclusion` in `cli/index.ts`) imported `minimatch` but relied on it resolving transitively through `glob` — it would have broken if `glob` ever dropped or changed that dependency. The pinned range matches what `glob` already uses, so the same resolved copy is reused.
+- chore: `cli/dependency-graph.ts` no longer embeds raw NUL bytes. The `(mode, spec)` dependency-graph key delimiter is now written as a `\u0000` escape rather than a literal NUL. Behavior is identical (NUL is still the delimiter — it can't appear in a mode name or filesystem path, so keys stay collision-proof), but the source and its compiled `bin/` output are now plain text instead of being flagged binary by `git`/`grep`.
+
 ## 2026-05-26 - v1.4.0
 
 ### Dependency-free value serialization (json-as removed)
