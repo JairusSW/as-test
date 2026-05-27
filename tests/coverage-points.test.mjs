@@ -12,7 +12,7 @@ test("coverage point descriptors prefer parameter default values over declaratio
 
   const info = describeCoveragePoint(
     "assembly/src/expectation.ts",
-    423,
+    418,
     45,
     "DefaultValue",
   );
