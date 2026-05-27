@@ -388,9 +388,7 @@ class DefaultReporter implements TestReporter {
 
     const shownInline = this.verboseMode || !this.canRewriteLine();
     const where = summary.file ? ` → ${chalk.cyan(summary.file)}` : "";
-    out.write(
-      `\n${chalk.dim("ℹ")} ${summary.count} log${plural} captured${where}\n`,
-    );
+    out.write(`\n${summary.count} log${plural} captured${where}\n`);
     if (!shownInline && summary.file) {
       out.write(`${chalk.dim("  run with --show-logs to print them")}\n`);
     }

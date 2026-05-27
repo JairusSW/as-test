@@ -15,9 +15,18 @@
 
 ### Surfacing `log()` output
 
-- feat: after a run, as-test now reports how many `log()` lines were captured and writes them to a single aggregated `.as-test/logs/latest.log`, e.g. `ℹ 19 logs captured → .as-test/logs/latest.log`. The file groups logs by spec and de-duplicates identical output across modes, tagging each block with the modes that produced it: `[LOG] log.spec.ts (node:bindings, node:wasi):`.
+- feat: after a run, as-test now reports how many `log()` lines were captured and writes them to a single aggregated `.as-test/logs/latest.log`, e.g. `19 logs captured → .as-test/logs/latest.log`. The file groups logs by spec and de-duplicates identical output across modes, tagging each block with the modes that produced it: `[LOG] log.spec.ts (node:bindings, node:wasi):`.
 - feat: `ast test --show-logs` (also on `ast run`) prints the captured logs as a clean grouped block at the end of the run instead of pointing at the file. In a normal run logs stay quiet (just the hint line); `--verbose` and non-TTY output still stream them inline as before.
 - fix: the per-spec readable log's `Log:` section was always empty — it read a `value`/`message` field that never existed on log entries (the field is `text`). It now contains the captured logs.
+
+### Suite / test counting
+
+- change: every grouping block — `describe`, `test`, `it`, `only` (and their skip variants) — now counts as a **suite**, and each `expect()` assertion counts as a **test**. Previously `test`/`it`/`only` weren't counted as suites and an empty one was tallied as a single test, so an `it()` that contained assertions reported `Suites: 0`. As a result a top-level `it()`/`test()` failure now also appears in the end-of-run failure summary (with its location), instead of only the inline assertion line.
+- fix: nested grouping blocks now actually nest. A `describe`/`it`/`test` declared inside another block is parented to the block whose callback is running (`current_suite`) rather than to a stale depth-indexed stack, so `describe`-in-`describe` no longer flattens (the inner block's children were previously attached to the outer block, leaving the inner one empty). The unused `suites`/`depth` registration globals were removed.
+
+### Scoped beforeEach / afterEach
+
+- feat: `beforeEach` and `afterEach` take an optional second argument listing the suite kinds they fire around — `beforeEach(() => {}, ["describe", "test"])`. With no argument the behavior is unchanged: hooks run around test cases (`test` / `it` / `only` and skip variants) and not around grouping blocks like `describe`.
 
 ### Watch mode + dependency graph
 

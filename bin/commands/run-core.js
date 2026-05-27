@@ -2728,10 +2728,27 @@ function readFileReport(stats, fileReport) {
   const buildCommand = String(fileReportAny.buildCommand ?? "");
   let fileVerdict = "none";
   for (const suite of suites) {
-    fileVerdict = mergeVerdict(
-      fileVerdict,
-      readSuite(stats, suite, file, modeName, runCommand, buildCommand),
+    const suiteVerdict = readSuite(
+      stats,
+      suite,
+      file,
+      modeName,
+      runCommand,
+      buildCommand,
     );
+    fileVerdict = mergeVerdict(fileVerdict, suiteVerdict);
+    // Record each failed top-level suite once. The failure summary recurses into
+    // it to find every failed assertion (so nested failures aren't pushed again,
+    // and a top-level it()/test() failure is captured too).
+    if (suiteVerdict == "fail") {
+      stats.failedEntries.push({
+        ...suite,
+        file,
+        modeName,
+        runCommand,
+        buildCommand,
+      });
+    }
   }
   if (fileVerdict == "fail") {
     stats.failedFiles++;
@@ -2743,7 +2760,6 @@ function readFileReport(stats, fileReport) {
 }
 function readSuite(stats, suite, file, modeName, runCommand, buildCommand) {
   const suiteAny = suite;
-  const kind = String(suiteAny.kind ?? "");
   let verdict = normalizeVerdict(suiteAny.verdict);
   const time = suiteAny.time;
   const start = Number(time?.start ?? 0);
@@ -2768,44 +2784,17 @@ function readSuite(stats, suite, file, modeName, runCommand, buildCommand) {
       stats.skippedTests++;
     }
   }
-  if (isTestCaseSuiteKind(kind)) {
-    if (!subSuites.length && !tests.length) {
-      if (verdict == "fail") {
-        stats.failedTests++;
-      } else if (verdict == "ok") {
-        stats.passedTests++;
-      } else if (verdict == "skip") {
-        stats.skippedTests++;
-      }
-    }
-    return verdict;
-  }
+  // Every grouping block — describe, test, it, only and their skip variants —
+  // is a suite; the expect() assertions counted above are the tests. (Failed
+  // entries for the summary are collected per top-level suite in readFileReport.)
   if (verdict == "fail") {
     stats.failedSuites++;
-    stats.failedEntries.push({
-      ...suiteAny,
-      file,
-      modeName,
-      runCommand,
-      buildCommand,
-    });
   } else if (verdict == "ok") {
     stats.passedSuites++;
   } else {
     stats.skippedSuites++;
   }
   return verdict;
-}
-function isTestCaseSuiteKind(kind) {
-  return (
-    kind == "test" ||
-    kind == "it" ||
-    kind == "only" ||
-    kind == "xtest" ||
-    kind == "xit" ||
-    kind == "xonly" ||
-    kind == "todo"
-  );
 }
 function normalizeVerdict(value) {
   const verdict = String(value ?? "none");

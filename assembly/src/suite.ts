@@ -2,7 +2,12 @@ import { Time } from "..";
 import { Expectation } from "./expectation";
 import { Tests } from "./tests";
 import { Log } from "./log";
-import { after_each_callback, before_each_callback } from "..";
+import {
+  after_each_callback,
+  after_each_kinds,
+  before_each_callback,
+  before_each_kinds,
+} from "..";
 import { sendSuiteEnd, sendSuiteStart } from "../util/wipc";
 import { escape, stringify } from "./stringify";
 
@@ -49,10 +54,8 @@ export class Suite {
   }
 
   run(): void {
-    // @ts-ignore
+    // @ts-ignore: current_suite is a @global, the parent for nested registration
     current_suite = this;
-    // @ts-ignore
-    depth++;
     this.time.start = performance.now();
     sendSuiteStart(this.file, this.depth, this.kind, this.description);
     const isSkippedCase =
@@ -73,8 +76,6 @@ export class Suite {
     if (isSkippedCase) {
       this.time.end = performance.now();
       this.verdict = "skip";
-      // @ts-ignore
-      depth--;
       sendSuiteEnd(
         this.file,
         this.depth,
@@ -85,14 +86,22 @@ export class Suite {
       return;
     }
 
-    // @ts-ignore
-    if (isTestCase && before_each_callback) before_each_callback();
+    // @ts-ignore: nullable function import resolved at runtime
+    if (
+      before_each_callback &&
+      hookFiresFor(this.kind, before_each_kinds, isTestCase)
+    ) {
+      before_each_callback();
+    }
     this.callback();
-    // @ts-ignore
-    if (isTestCase && after_each_callback) after_each_callback();
+    // @ts-ignore: nullable function import resolved at runtime
+    if (
+      after_each_callback &&
+      hookFiresFor(this.kind, after_each_kinds, isTestCase)
+    ) {
+      after_each_callback();
+    }
     this.time.end = performance.now();
-    // @ts-ignore
-    depth--;
 
     const hasOnlyChildren = this.hasOnlyChildren();
 
@@ -146,16 +155,12 @@ export class Suite {
   }
 
   skip(): void {
-    // @ts-ignore
+    // @ts-ignore: current_suite is a @global
     current_suite = this;
-    // @ts-ignore
-    depth++;
     this.time.start = performance.now();
     this.time.end = this.time.start;
     this.verdict = "skip";
     sendSuiteStart(this.file, this.depth, this.kind, this.description);
-    // @ts-ignore
-    depth--;
     sendSuiteEnd(
       this.file,
       this.depth,
@@ -189,6 +194,22 @@ export class Suite {
     out += "}";
     return out;
   }
+}
+
+// Whether a beforeEach/afterEach hook should fire for a suite of `kind`. A
+// `null` kinds list (the default) restricts the hook to test cases — the caller
+// passes whether `kind` is one. An explicit list fires for exactly those kinds,
+// which is how `beforeEach(fn, ["describe", "test"])` opts grouping blocks in.
+function hookFiresFor(
+  kind: string,
+  kinds: string[] | null,
+  isTestCaseKind: bool,
+): bool {
+  if (kinds === null) return isTestCaseKind;
+  for (let i = 0; i < kinds.length; i++) {
+    if (unchecked(kinds[i]) == kind) return true;
+  }
+  return false;
 }
 
 function serializeSuites(values: Suite[]): string {

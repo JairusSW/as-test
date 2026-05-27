@@ -57,10 +57,6 @@ const FILE = isDefined(ENTRY_FILE) ? ENTRY_FILE : "unknown";
   string
 >();
 // @ts-ignore
-@global let suites: Suite[] = [];
-// @ts-ignore
-@global let depth: i32 = -1;
-// @ts-ignore
 @global let current_suite: Suite | null = null;
 // @ts-ignore
 let before_all_callback: (() => void) | null = null;
@@ -69,6 +65,11 @@ let after_all_callback: (() => void) | null = null;
 
 export let before_each_callback: (() => void) | null = null;
 export let after_each_callback: (() => void) | null = null;
+// Suite kinds each hook fires before/after. `null` = the default set (test
+// cases: test / it / only and their skip variants), excluding grouping blocks
+// like `describe`. A caller-supplied list overrides this.
+export let before_each_kinds: string[] | null = null;
+export let after_each_kinds: string[] | null = null;
 let __test_options!: RunOptions;
 
 /**
@@ -277,21 +278,43 @@ export function afterAll(callback: () => void): void {
 }
 
 /**
- * Registers a callback function to be executed before each test case is run.
+ * Registers a callback to run before each matching block.
  *
- * @param {() => void} callback - The function to be executed before each test case.
+ * By default it runs before each test case (`test` / `it` / `only`, plus their
+ * skip variants) and NOT before grouping blocks like `describe`. Pass `kinds`
+ * to run before exactly the listed suite kinds instead, e.g.
+ * `beforeEach(() => {}, ["describe", "test"])`.
+ *
+ * @param {() => void} callback - The function to run.
+ * @param {string[] | null} kinds - Suite kinds to run before, or `null` for the
+ *   default test-case kinds.
  */
-export function beforeEach(callback: () => void): void {
+export function beforeEach(
+  callback: () => void,
+  kinds: string[] | null = null,
+): void {
   before_each_callback = callback;
+  before_each_kinds = kinds;
 }
 
 /**
- * Registers a callback function to be executed after each test case is run.
+ * Registers a callback to run after each matching block.
  *
- * @param {() => void} callback - The function to be executed after each test case.
+ * By default it runs after each test case (`test` / `it` / `only`, plus their
+ * skip variants) and NOT after grouping blocks like `describe`. Pass `kinds`
+ * to run after exactly the listed suite kinds instead, e.g.
+ * `afterEach(() => {}, ["describe", "test"])`.
+ *
+ * @param {() => void} callback - The function to run.
+ * @param {string[] | null} kinds - Suite kinds to run after, or `null` for the
+ *   default test-case kinds.
  */
-export function afterEach(callback: () => void): void {
+export function afterEach(
+  callback: () => void,
+  kinds: string[] | null = null,
+): void {
   after_each_callback = callback;
+  after_each_kinds = kinds;
 }
 
 /**
@@ -375,10 +398,7 @@ export function run(options: RunOptions = new RunOptions()): void {
   for (let i = 0; i < entrySuites.length; i++) {
     // @ts-ignore
     const suite = unchecked(entrySuites[i]);
-    suites = [suite];
-
-    current_suite = suite;
-    depth = -1;
+    // @ts-ignore: current_suite is a @global; null between top-level suites
     current_suite = null;
 
     if (hasTopLevelOnly && suite.kind != "only") {
@@ -394,8 +414,7 @@ export function run(options: RunOptions = new RunOptions()): void {
       fileVerdict = "skip";
     }
 
-    suites = [];
-    depth = -1;
+    // @ts-ignore: current_suite is a @global
     current_suite = null;
   }
   time.end = performance.now();
@@ -483,20 +502,19 @@ function registerSuite(
   kind: string,
 ): void {
   const suite = new Suite(description, callback, kind);
-  if (depth >= 0) {
-    const _suite = suites[depth];
-    if (_suite.depth == depth) {
-      _suite.addSuite(suite);
-      return;
-    }
-    suite.depth = ++depth;
-    suites.push(suite);
+  // Callbacks run lazily during the run phase, and `current_suite` is always
+  // the suite whose callback is currently executing (the same reference
+  // `expect()`/`log()` resolve against). So a describe/test/it registered from
+  // inside another block nests under it — including describe-in-describe.
+  // `current_suite` is null only at collection time, i.e. a top-level suite.
+  const parent = current_suite;
+  if (parent !== null) {
+    parent.addSuite(suite);
     return;
   }
 
   suite.file = FILE;
   entrySuites.push(suite);
-  suites.push(suite);
 }
 
 function resolveExpectationSuite(): Suite {
