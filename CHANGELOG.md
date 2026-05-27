@@ -1,5 +1,37 @@
 # Change Log
 
+## 2026-05-26 - v1.4.0
+
+### Dependency-free value serialization (json-as removed)
+
+- feat: as-test no longer depends on or auto-includes `json-as`. Value serialization for assertion reports, snapshots, and `log()` is now handled by a small in-tree stringifier (`assembly/src/stringify.ts`), so `npm install --save-dev as-test` is all you need — `json-as` is no longer a peer dependency.
+- feat: `stringify<T>` renders a broad set of built-in types as JSON: booleans, integers, floats, strings (RFC 8259 escaping, including UTF-16 surrogate handling), `null`, `Date` (quoted ISO-8601), `ArrayBuffer` (array of unsigned byte values), typed arrays / `ArrayBufferView` (element array), `Array`, `StaticArray`, `Set` (value array), and `Map` (JSON object; non-string keys are coerced to quoted strings). Classes render via a transform-generated `toJSON()` or a `"<TypeName>"` placeholder.
+- chore: removed the json-as peer-advisor (`transform/lib/peer-advisor.js`) and the json-as transform-passthrough integration test. Classes decorated `@json`/`@serializable` are skipped by the toJSON injector, so users who want json-as serialization can still add their own `toJSON()` and wire up `--transform json-as`.
+
+### Structural deep equality for matchers
+
+- feat: `.toBe()`, `.toEqual()`, and `.toStrictEqual()` now compare by structure rather than by reference. The EqualsTransform (`transform/lib/equals.js`) synthesises an `__as_test_equals(...)` method for every class that appears as an `expect()`/matcher operand, including nested classes reachable through their fields; the runtime entry point (`assembly/src/reflect.ts`'s `reflectEquals`) handles primitives, nullables, arrays, managed dispatch, and cycle detection, with a strict mode that also checks runtime type ids.
+- feat: hand-written `__as_test_equals` methods are left untouched by the transform, and inheritance chains are supported via a super-call ignore-list pattern.
+
+### Surfacing `log()` output
+
+- feat: after a run, as-test now reports how many `log()` lines were captured and writes them to a single aggregated `.as-test/logs/latest.log`, e.g. `ℹ 19 logs captured → .as-test/logs/latest.log`. The file groups logs by spec and de-duplicates identical output across modes, tagging each block with the modes that produced it: `[LOG] log.spec.ts (node:bindings, node:wasi):`.
+- feat: `ast test --show-logs` (also on `ast run`) prints the captured logs as a clean grouped block at the end of the run instead of pointing at the file. In a normal run logs stay quiet (just the hint line); `--verbose` and non-TTY output still stream them inline as before.
+- fix: the per-spec readable log's `Log:` section was always empty — it read a `value`/`message` field that never existed on log entries (the field is `text`). It now contains the captured logs.
+
+### Watch mode + dependency graph
+
+- feat: `ast test --watch` (`-w`) tracks a per-spec dependency graph (`cli/dependency-graph.ts`) built from the files `asc` actually loads during each build, so editing a shared helper re-runs only the specs that depend on it instead of the whole suite. `asc`'s bundled stdlib and the on-disk package are excluded from the graph to keep it small.
+- feat: press `w` in watch mode to toggle auto-run off (manual invocation) and back on. While paused, edits are remembered but not run — invoke runs yourself with `a` (all) or `space` (retry failing); the footer shows how many changes are pending. Resuming re-runs everything if anything changed while paused.
+
+### Breaking
+
+- chore: `json-as` is no longer installed or auto-included by as-test. Projects that relied on as-test pulling in `json-as`, or on json-as-shaped serialization output in reports/snapshots, should install `json-as` themselves and add a `toJSON()` to the relevant classes. Existing snapshots whose serialized form changed will need `--overwrite-snapshots` once.
+
+### Tooling
+
+- ci: integration tests updated for the new serialization/equality paths (`tests/coverage-points.test.mjs`, new `tests/try-as-dedupe.test.mjs` and `tests/dependency-graph.test.mjs`).
+
 ## 2026-05-22 - v1.3.0
 
 ### `features` config array + arbitrary `--enable` passthrough

@@ -36,6 +36,7 @@ class DefaultReporter implements TestReporter {
   private fileHasWarning = false;
   private verboseMode = false;
   private cleanMode = false;
+  private showLogsMode = false;
   private hasRenderedTestFiles = false;
   private hasRenderedFuzzFiles = false;
 
@@ -171,11 +172,13 @@ class DefaultReporter implements TestReporter {
     runtimeName: string;
     clean: boolean;
     verbose: boolean;
+    showLogs?: boolean;
     snapshotEnabled: boolean;
     createSnapshots: boolean;
   }): void {
     this.verboseMode = Boolean(event.verbose);
     this.cleanMode = Boolean(event.clean);
+    this.showLogsMode = Boolean(event.showLogs);
     this.hasRenderedTestFiles = false;
     this.hasRenderedFuzzFiles = false;
   }
@@ -328,6 +331,9 @@ class DefaultReporter implements TestReporter {
 
   onLog(event: { depth: number; text: string }): void {
     if (this.cleanMode) return;
+    // With --show-logs we print one clean grouped block at the end instead of
+    // streaming inline, so suppress the inline emit here.
+    if (this.showLogsMode) return;
     if (this.verboseMode || !this.canRewriteLine()) {
       const depth = Math.max(event.depth, 0);
       this.context.stdout.write(
@@ -354,6 +360,40 @@ class DefaultReporter implements TestReporter {
       }
     }
     renderTotals(event.stats, event);
+    this.renderLogs(event);
+  }
+
+  // After the totals: either point the user at the aggregated log file (default)
+  // or, with --show-logs, print the captured logs (the same cross-mode-deduped
+  // body that was written to latest.log). Skipped in clean mode. When logs were
+  // already streamed inline (verbose or a non-TTY stream), we only re-point at
+  // the file rather than printing them twice.
+  private renderLogs(event: RunCompleteEvent): void {
+    if (this.cleanMode) return;
+    const summary = event.logSummary;
+    if (!summary || summary.count <= 0) return;
+    const out = this.context.stdout;
+    const plural = summary.count === 1 ? "" : "s";
+
+    // --show-logs: print the clean, cross-mode-deduped block (inline streaming
+    // was suppressed in onLog). Otherwise just point at the aggregated file —
+    // unless logs were already streamed inline (verbose / non-TTY).
+    if (event.showLogs && summary.text) {
+      out.write(`\n${chalk.bold(`Logs (${summary.count})`)}\n\n`);
+      out.write(
+        summary.text.endsWith("\n") ? summary.text : `${summary.text}\n`,
+      );
+      return;
+    }
+
+    const shownInline = this.verboseMode || !this.canRewriteLine();
+    const where = summary.file ? ` → ${chalk.cyan(summary.file)}` : "";
+    out.write(
+      `\n${chalk.dim("ℹ")} ${summary.count} log${plural} captured${where}\n`,
+    );
+    if (!shownInline && summary.file) {
+      out.write(`${chalk.dim("  run with --show-logs to print them")}\n`);
+    }
   }
 
   onFuzzComplete(event: FuzzCompleteEvent): void {

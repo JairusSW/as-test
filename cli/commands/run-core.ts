@@ -22,6 +22,8 @@ import { PersistentWebSessionHost } from "./web-session.js";
 import { build, type BuildInvocation } from "./build-core.js";
 import {
   CoverageSummary,
+  LogGroup,
+  LogSummary,
   ReporterContext,
   ReporterFactory,
   RunStats,
@@ -43,6 +45,7 @@ type RunFlags = {
   showCoverage?: boolean;
   showCoverageAll?: boolean;
   verbose?: boolean;
+  showLogs?: boolean;
   coverage?: boolean;
 };
 
@@ -129,6 +132,7 @@ export type RunResult = {
       failed: number;
     };
   }[];
+  logSummary: LogSummary;
 };
 
 type FileCoverage = {
@@ -806,7 +810,7 @@ function collectReadableLogs(suites: any[]): string[] {
       ? (suiteAny.logs as Record<string, unknown>[])
       : [];
     for (const log of logs) {
-      const value = String(log.value ?? log.message ?? "");
+      const value = String(log.text ?? log.value ?? log.message ?? "");
       if (value.length) out.push(value);
     }
     const childSuites = Array.isArray(suiteAny.suites)
@@ -815,6 +819,153 @@ function collectReadableLogs(suites: any[]): string[] {
     out.push(...collectReadableLogs(childSuites));
   }
   return out;
+}
+
+// Walk a suite tree, accumulating each suite's `log()` output keyed by the
+// describe/test description path it was emitted under.
+function walkSuiteLogs(
+  suites: any[],
+  pathParts: string[],
+  out: { path: string[]; lines: string[] }[],
+): void {
+  for (const suite of suites) {
+    const suiteAny = suite as Record<string, unknown>;
+    const description = String(suiteAny.description ?? "");
+    const nextPath = description.length
+      ? [...pathParts, description]
+      : pathParts;
+    const logs = Array.isArray(suiteAny.logs)
+      ? (suiteAny.logs as Record<string, unknown>[])
+      : [];
+    const lines = logs.map((log) =>
+      String(log.text ?? log.value ?? log.message ?? ""),
+    );
+    if (lines.length) out.push({ path: nextPath, lines });
+    const childSuites = Array.isArray(suiteAny.suites)
+      ? (suiteAny.suites as any[])
+      : [];
+    walkSuiteLogs(childSuites, nextPath, out);
+  }
+}
+
+// Group every captured log across all file reports into a per-spec tree (one
+// entry per `log()` call). Feeds the process-wide collector that backs the
+// aggregated `latest.log` and the `--show-logs` dump.
+function collectGroupedLogs(reports: any[]): {
+  count: number;
+  groups: LogGroup[];
+} {
+  let count = 0;
+  const groups: LogGroup[] = [];
+  for (const report of reports) {
+    const reportAny = report as Record<string, unknown>;
+    const suites = Array.isArray(reportAny.suites)
+      ? (reportAny.suites as any[])
+      : [];
+    const entries: { path: string[]; lines: string[] }[] = [];
+    walkSuiteLogs(suites, [], entries);
+    if (!entries.length) continue;
+    for (const entry of entries) count += entry.lines.length;
+    groups.push({ file: String(reportAny.file ?? "unknown"), entries });
+  }
+  return { count, groups };
+}
+
+// Process-lived collector backing the aggregated `latest.log`. Keyed by spec
+// file, then by mode label, holding that mode's flat list of `log()` lines.
+// Persisting across run() calls lets a multi-mode run accumulate every mode
+// before the file is rendered, so identical output can be de-duplicated.
+const collectedLogsBySpec = new Map<string, Map<string, string[]>>();
+
+// Clear the collector. Useful for watch mode, where each cycle should start
+// fresh rather than accumulate stale specs.
+export function resetCollectedLogs(): void {
+  collectedLogsBySpec.clear();
+}
+
+function recordModeLogs(modeLabel: string, groups: LogGroup[]): void {
+  for (const group of groups) {
+    const lines: string[] = [];
+    for (const entry of group.entries) lines.push(...entry.lines);
+    if (!lines.length) continue;
+    let byMode = collectedLogsBySpec.get(group.file);
+    if (!byMode) {
+      byMode = new Map();
+      collectedLogsBySpec.set(group.file, byMode);
+    }
+    byMode.set(modeLabel, lines);
+  }
+}
+
+// Render the collected logs as the `latest.log` body. Within a spec, modes that
+// produced byte-identical output are merged into one block tagged with every
+// mode that emitted it:
+//
+//   [LOG] log.spec.ts (node:bindings, node:wasi):
+//
+//   {"a":1}
+//   ...
+//
+// `count` is the number of de-duplicated `log()` calls (one entry per call —
+// stringify escapes newlines, so a call is a single line), not counting the
+// same call again per mode.
+function renderCollectedLogs(): { text: string; count: number } {
+  const blocks: string[] = [];
+  let count = 0;
+  const specs = [...collectedLogsBySpec.keys()].sort((a, b) =>
+    a.localeCompare(b),
+  );
+  for (const spec of specs) {
+    const byMode = collectedLogsBySpec.get(spec)!;
+    // Group modes by identical content so duplicate output collapses into one
+    // block; `calls` is that block's log() count, tallied once regardless of
+    // how many modes produced it.
+    const byContent = new Map<string, { modes: string[]; calls: number }>();
+    for (const [mode, lines] of byMode) {
+      const content = lines.join("\n");
+      const existing = byContent.get(content);
+      if (existing) existing.modes.push(mode);
+      else byContent.set(content, { modes: [mode], calls: lines.length });
+    }
+    for (const [content, { modes, calls }] of byContent) {
+      const named = modes.filter((mode) => mode !== "default").sort();
+      const suffix = named.length ? ` (${named.join(", ")})` : "";
+      count += calls;
+      blocks.push(
+        `[LOG] ${formatSpecDisplayPath(spec)}${suffix}:\n\n${content}`,
+      );
+    }
+  }
+  return { text: blocks.length ? blocks.join("\n\n") + "\n" : "", count };
+}
+
+// Render the collector and (re)write the single aggregated `latest.log` at the
+// base (un-mode-qualified) logs dir, so every mode shares one file. Returns the
+// resulting LogSummary. Called by run() after recording its own logs, so the
+// last run() of a multi-mode pass leaves a file covering — and de-duplicating —
+// every mode.
+function flushLatestLog(baseLogsDir: string | undefined): LogSummary {
+  const rendered = renderCollectedLogs();
+  if (rendered.count <= 0)
+    return { count: 0, file: null, groups: [], text: "" };
+  if (!baseLogsDir || baseLogsDir === "none") {
+    return {
+      count: rendered.count,
+      file: null,
+      groups: [],
+      text: rendered.text,
+    };
+  }
+  const logRoot = path.join(process.cwd(), baseLogsDir);
+  if (!existsSync(logRoot)) mkdirSync(logRoot, { recursive: true });
+  const latestLogPath = path.join(logRoot, "latest.log");
+  writeFileSync(latestLogPath, rendered.text);
+  return {
+    count: rendered.count,
+    file: path.relative(process.cwd(), latestLogPath) || latestLogPath,
+    groups: [],
+    text: rendered.text,
+  };
 }
 
 export async function run(
@@ -1040,6 +1191,7 @@ export async function run(
     await ownedWebSession?.close();
   }
 
+  const groupedLogs = collectGroupedLogs(reports);
   if (config.logs && config.logs != "none") {
     const logRoot = path.join(process.cwd(), config.logs);
     if (!existsSync(logRoot)) {
@@ -1060,6 +1212,14 @@ export async function run(
       );
     }
   }
+  // Record this run's logs (tagged with its mode) into the process-wide
+  // collector, then rewrite the single aggregated `latest.log` covering every
+  // mode seen so far. The collector persists across run() calls, so the last
+  // run() of a multi-mode pass produces the complete, de-duplicated file. The
+  // file lives at the base (un-mode-qualified) logs dir — `loadedConfig.logs`
+  // before `applyMode` appended the per-mode subdirectory.
+  recordModeLogs(options.modeName ?? "default", groupedLogs.groups);
+  const logSummary = flushLatestLog(loadedConfig.logs);
   const stats = collectRunStats(reports);
   if (options.fileSummaryTotal != undefined) {
     applyConfiguredFileTotalToStats(stats, options.fileSummaryTotal);
@@ -1098,6 +1258,8 @@ export async function run(
       showCoverage,
       showCoverageAll: Boolean(flags.showCoverageAll),
       verbose: Boolean(flags.verbose),
+      showLogs: Boolean(flags.showLogs),
+      logSummary,
       buildTime,
       snapshotSummary,
       coverageSummary,
@@ -1124,6 +1286,7 @@ export async function run(
     snapshotSummary,
     coverageSummary,
     reports,
+    logSummary,
   };
 }
 

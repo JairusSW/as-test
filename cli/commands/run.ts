@@ -1,6 +1,6 @@
 import { CliFeatureToggles, CliListFlags, RunFlags } from "./types.js";
 
-export { createRunReporter, run } from "./run-core.js";
+export { createRunReporter, resetCollectedLogs, run } from "./run-core.js";
 export type { RunResult, SpecOutcome, SpecOutcomeSink } from "./run-core.js";
 
 type RunCommandDeps = {
@@ -65,6 +65,7 @@ export async function executeRunCommand(
     showCoverage: showCoverageMode != undefined,
     showCoverageAll: showCoverageMode == "all",
     verbose: flags.includes("--verbose"),
+    showLogs: flags.includes("--show-logs"),
     ...deps.resolveParallelJobs(rawArgs, "run"),
     coverage: featureToggles.coverage,
     browser: deps.resolveBrowserOverride(rawArgs, "run"),

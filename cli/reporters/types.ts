@@ -36,6 +36,23 @@ export type LogEvent = {
   text: string;
 };
 
+// A spec file's captured logs, grouped by the describe/test path they were
+// emitted under. `entries[].path` is the chain of suite descriptions; `lines`
+// are the individual log lines emitted at that point.
+export type LogGroup = {
+  file: string;
+  entries: { path: string[]; lines: string[] }[];
+};
+
+export type LogSummary = {
+  count: number;
+  file: string | null;
+  groups: LogGroup[];
+  // The rendered, cross-mode-deduplicated `latest.log` body. Present once the
+  // aggregated log has been written; used by `--show-logs` to print it.
+  text?: string;
+};
+
 export type RunStats = {
   passedFiles: number;
   failedFiles: number;
@@ -82,6 +99,7 @@ export type RunStartEvent = {
   runtimeName: string;
   clean: boolean;
   verbose: boolean;
+  showLogs?: boolean;
   snapshotEnabled: boolean;
   createSnapshots: boolean;
 };
@@ -92,6 +110,8 @@ export type RunCompleteEvent = {
   showCoverage: boolean;
   showCoverageAll: boolean;
   verbose: boolean;
+  showLogs?: boolean;
+  logSummary?: LogSummary;
   buildTime: number;
   snapshotSummary: SnapshotSummary;
   coverageSummary: CoverageSummary;

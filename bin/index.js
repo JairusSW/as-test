@@ -8,7 +8,7 @@ import {
   getBuildInvocationPreview,
   warnOnUnknownModeReferences,
 } from "./commands/build.js";
-import { createRunReporter, run } from "./commands/run.js";
+import { createRunReporter, resetCollectedLogs, run } from "./commands/run.js";
 import { executeBuildCommand } from "./commands/build.js";
 import { executeRunCommand } from "./commands/run.js";
 import { executeTestCommand } from "./commands/test.js";
@@ -290,9 +290,6 @@ function printCommandHelp(command) {
     process.stdout.write("Compile selected specs into wasm artifacts.\n\n");
     process.stdout.write(chalk.bold("Flags:\n"));
     process.stdout.write(
-      "  --config <path>          Use a specific config file\n",
-    );
-    process.stdout.write(
       "  --mode <name[,name...]>  Run one or multiple named config modes\n",
     );
     process.stdout.write(
@@ -302,7 +299,7 @@ function printCommandHelp(command) {
       "  --disable <list>         Disable features, comma-separated\n",
     );
     process.stdout.write(
-      "  --parallel              Run files through an ordered worker pool using an automatic worker count\n",
+      "  --config <path>          Use a specific config file\n",
     );
     process.stdout.write(
       "  --jobs <n>               Run files through an ordered worker pool\n",
@@ -398,16 +395,19 @@ function printCommandHelp(command) {
     );
     process.stdout.write(chalk.bold("Flags:\n"));
     process.stdout.write(
-      "  --config <path>          Use a specific config file\n",
-    );
-    process.stdout.write(
       "  --mode <name[,name...]>  Run one or multiple named config modes\n",
     );
     process.stdout.write(
-      "  --browser <name|path>    Use chrome, chromium, firefox, webkit, or an executable path for web modes\n",
+      "  --enable <list>          Enable features, comma-separated (e.g. coverage,try-as,simd)\n",
     );
     process.stdout.write(
-      "  --parallel              Run files through an ordered worker pool using an automatic worker count\n",
+      "  --disable <list>         Disable features, comma-separated\n",
+    );
+    process.stdout.write(
+      "  --config <path>          Use a specific config file\n",
+    );
+    process.stdout.write(
+      "  --browser <name|path>    Use chrome, chromium, firefox, webkit, or an executable path for web modes\n",
     );
     process.stdout.write(
       "  --jobs <n>               Run files through an ordered worker pool\n",
@@ -434,12 +434,6 @@ function printCommandHelp(command) {
       "  --suite <name[,name...]> Filter results to matching suite names or suite slug paths\n",
     );
     process.stdout.write("  --suites <name[,name...]> Alias for --suite\n");
-    process.stdout.write(
-      "  --enable <list>          Enable features, comma-separated (e.g. coverage,try-as,simd)\n",
-    );
-    process.stdout.write(
-      "  --disable <list>         Disable features, comma-separated\n",
-    );
     process.stdout.write(
       "  --fuzz                   Run fuzz targets after the normal test pass\n",
     );
@@ -1393,6 +1387,7 @@ async function runTestSequential(
     runtimeName: reporterSession.runtimeName,
     clean: runFlags.clean,
     verbose: runFlags.verbose,
+    showLogs: runFlags.showLogs,
     snapshotEnabled,
     createSnapshots: runFlags.createSnapshots,
   });
@@ -1450,6 +1445,8 @@ async function runTestSequential(
       coverageSummary: summary.coverageSummary,
       stats: summary.stats,
       reports: summary.reports,
+      showLogs: runFlags.showLogs,
+      logSummary: summary.logSummary,
       modeSummary: buildSingleModeSummary(
         summary.stats,
         summary.snapshotSummary,
@@ -1467,6 +1464,7 @@ async function runTestSequential(
       coverageSummary: summary.coverageSummary,
       stats: summary.stats,
       reports: summary.reports,
+      logSummary: summary.logSummary,
     },
   };
 }
@@ -1659,6 +1657,7 @@ async function runRuntimeMatrix(
     runtimeName: reporterSession.runtimeName,
     clean: runFlags.clean,
     verbose: runFlags.verbose,
+    showLogs: runFlags.showLogs,
     snapshotEnabled,
     createSnapshots: runFlags.createSnapshots,
   });
@@ -1762,6 +1761,8 @@ async function runRuntimeMatrix(
     coverageSummary: summary.coverageSummary,
     stats: summary.stats,
     reports: summary.reports,
+    showLogs: runFlags.showLogs,
+    logSummary: summary.logSummary,
     modeSummary: buildModeSummary(modeState, modeSummaryTotal),
   });
   return allResults.some((result) => result.failed);
@@ -1904,6 +1905,8 @@ async function runTestModesCore(
           coverageSummary: modeResult.summary.coverageSummary,
           stats: modeResult.summary.stats,
           reports: modeResult.summary.reports,
+          showLogs: effectiveRunFlags.showLogs,
+          logSummary: modeResult.summary.logSummary,
           fuzzSummary: summarizeFuzzExecutions(fuzzResults),
           modeSummary: buildSingleModeSummary(
             modeResult.summary.stats,
@@ -2000,6 +2003,11 @@ async function runWatchLoop(
   let isRunning = false;
   let pendingTrigger = null;
   let debounceTimer = null;
+  // Toggled with `w`. When false, file changes are remembered in
+  // `changedWhilePaused` but not auto-run — the user invokes runs manually
+  // (`a` / space). Resuming re-runs everything if anything changed meanwhile.
+  let autoRun = true;
+  const changedWhilePaused = new Set();
   // Keyed by absolute directory path so attachWatcherFor is idempotent;
   // makes it safe to re-scan & top up watchers after every iteration without
   // double-attaching to the same dir.
@@ -2011,12 +2019,30 @@ async function runWatchLoop(
     return `${list.slice(0, 3).join(", ")} (+${list.length - 3} more)`;
   }
   function watchFooter() {
+    if (!autoRun) {
+      const pending = changedWhilePaused.size
+        ? ` (${changedWhilePaused.size} change(s) pending)`
+        : "";
+      return chalk.dim(
+        `Auto-run paused${pending}. ` +
+          chalk.bold("w") +
+          " = resume, " +
+          chalk.bold("a") +
+          " = re-run all, " +
+          chalk.bold("space") +
+          " = retry failing, " +
+          chalk.bold("ctrl+c") +
+          " = stop.\n",
+      );
+    }
     return chalk.dim(
       "Watching for changes. " +
         chalk.bold("space") +
         " = retry failing, " +
         chalk.bold("a") +
         " = re-run all, " +
+        chalk.bold("w") +
+        " = pause, " +
         chalk.bold("ctrl+c") +
         " = stop.\n",
     );
@@ -2143,6 +2169,14 @@ async function runWatchLoop(
       }
     }
     process.stdout.write("\n");
+    // A full re-run starts the aggregated-log collector fresh and clears any
+    // changes tracked while paused (they're now covered). Scoped reruns keep
+    // prior specs' logs (each re-run spec's entry is replaced in place), so
+    // latest.log stays complete instead of collapsing to just the rerun.
+    if (!scopedRun) {
+      resetCollectedLogs();
+      changedWhilePaused.clear();
+    }
     const collected = [];
     const recorder = {
       record: (mode, specFile, absPath) => {
@@ -2278,6 +2312,11 @@ async function runWatchLoop(
     }, delayMs);
   }
   function scheduleRerun(filename) {
+    if (!autoRun) {
+      // Manual mode: remember the edit (for the footer + resume) but don't run.
+      changedWhilePaused.add(path.resolve(filename));
+      return;
+    }
     scheduleTrigger({ kind: "change", file: filename }, 150);
   }
   function scheduleManualRerun(kind) {
@@ -2308,6 +2347,35 @@ async function runWatchLoop(
             process.exit(0);
           }
           if (isRunning) break;
+          if (byte === 0x77 || byte === 0x57) {
+            // `w` — toggle auto-run / manual mode.
+            autoRun = !autoRun;
+            if (autoRun) {
+              const hadPending = changedWhilePaused.size > 0;
+              if (hadPending) {
+                process.stdout.write(
+                  "\n" +
+                    chalk.dim(
+                      "Auto-run resumed — re-running all (files changed while paused).\n",
+                    ),
+                );
+                scheduleManualRerun("manual-runall");
+              } else {
+                process.stdout.write(
+                  "\n" + chalk.dim("Auto-run resumed.\n") + watchFooter(),
+                );
+              }
+            } else {
+              process.stdout.write(
+                "\n" +
+                  chalk.dim(
+                    "Auto-run paused — edits won't re-run. Press w to resume, or a / space to run now.\n",
+                  ) +
+                  watchFooter(),
+              );
+            }
+            break;
+          }
           if (byte === 0x20 || byte === 0x0d || byte === 0x0a) {
             scheduleManualRerun("manual-rerun");
             break;
@@ -2470,6 +2538,7 @@ async function runTestMatrix(
     runtimeName: reporterSession.runtimeName,
     clean: runFlags.clean,
     verbose: runFlags.verbose,
+    showLogs: runFlags.showLogs,
     snapshotEnabled,
     createSnapshots: runFlags.createSnapshots,
   });
@@ -2599,6 +2668,8 @@ async function runTestMatrix(
     coverageSummary: summary.coverageSummary,
     stats: summary.stats,
     reports: summary.reports,
+    showLogs: runFlags.showLogs,
+    logSummary: summary.logSummary,
     fuzzSummary,
     modeSummary: buildModeSummary(modeState, modeSummaryTotal),
   });
@@ -2684,6 +2755,7 @@ async function runRuntimeSingleParallel(
     runtimeName: reporterSession.runtimeName,
     clean: runFlags.clean,
     verbose: runFlags.verbose,
+    showLogs: runFlags.showLogs,
     snapshotEnabled,
     createSnapshots: runFlags.createSnapshots,
   });
@@ -2754,6 +2826,8 @@ async function runRuntimeSingleParallel(
     coverageSummary: summary.coverageSummary,
     stats: summary.stats,
     reports: summary.reports,
+    showLogs: runFlags.showLogs,
+    logSummary: summary.logSummary,
     modeSummary: buildSingleModeSummary(
       summary.stats,
       summary.snapshotSummary,
@@ -2787,6 +2861,7 @@ async function runRuntimeMatrixParallel(
     runtimeName: reporterSession.runtimeName,
     clean: runFlags.clean,
     verbose: runFlags.verbose,
+    showLogs: runFlags.showLogs,
     snapshotEnabled,
     createSnapshots: runFlags.createSnapshots,
   });
@@ -2903,6 +2978,8 @@ async function runRuntimeMatrixParallel(
     coverageSummary: summary.coverageSummary,
     stats: summary.stats,
     reports: summary.reports,
+    showLogs: runFlags.showLogs,
+    logSummary: summary.logSummary,
     modeSummary: buildModeSummary(modeState, modeSummaryTotal),
   });
   reporter.flush?.();
@@ -2938,6 +3015,7 @@ async function runTestSingleParallel(
     runtimeName: reporterSession.runtimeName,
     clean: runFlags.clean,
     verbose: runFlags.verbose,
+    showLogs: runFlags.showLogs,
     snapshotEnabled,
     createSnapshots: runFlags.createSnapshots,
   });
@@ -3056,6 +3134,8 @@ async function runTestSingleParallel(
     coverageSummary: summary.coverageSummary,
     stats: summary.stats,
     reports: summary.reports,
+    showLogs: runFlags.showLogs,
+    logSummary: summary.logSummary,
     fuzzSummary,
     modeSummary: buildSingleModeSummary(
       summary.stats,
@@ -3113,6 +3193,7 @@ async function runTestMatrixParallel(
     runtimeName: reporterSession.runtimeName,
     clean: runFlags.clean,
     verbose: runFlags.verbose,
+    showLogs: runFlags.showLogs,
     snapshotEnabled,
     createSnapshots: runFlags.createSnapshots,
   });
@@ -3251,6 +3332,8 @@ async function runTestMatrixParallel(
     coverageSummary: summary.coverageSummary,
     stats: summary.stats,
     reports: summary.reports,
+    showLogs: runFlags.showLogs,
+    logSummary: summary.logSummary,
     fuzzSummary,
     modeSummary: buildModeSummary(modeState, modeSummaryTotal),
   });
@@ -3654,6 +3737,7 @@ function createBuildFailureRunResult(error) {
       files: [],
     },
     reports: [report],
+    logSummary: { count: 0, file: null, groups: [], text: "" },
   };
 }
 function formatBuildFailureMessage(error) {
@@ -4641,6 +4725,9 @@ function aggregateRunResults(results) {
   let fallbackCoverageUncovered = 0;
   const fallbackCoverageFiles = [];
   const reports = [];
+  // run() rewrites the cumulative latest.log on every call and returns the
+  // running total, so the result with the highest count is the most complete.
+  let logSummary = { count: 0, file: null, groups: [], text: "" };
   for (const result of results) {
     stats.passedFiles += result.stats.passedFiles;
     stats.failedFiles += result.stats.failedFiles;
@@ -4680,6 +4767,9 @@ function aggregateRunResults(results) {
       }
     }
     reports.push(...result.reports);
+    if (result.logSummary && result.logSummary.count >= logSummary.count) {
+      logSummary = result.logSummary;
+    }
   }
   if (uniqueCoveragePoints.size > 0) {
     const byFile = new Map();
@@ -4725,7 +4815,7 @@ function aggregateRunResults(results) {
   coverageSummary.percent = coverageSummary.total
     ? (coverageSummary.covered * 100) / coverageSummary.total
     : 100;
-  return { stats, snapshotSummary, coverageSummary, reports };
+  return { stats, snapshotSummary, coverageSummary, reports, logSummary };
 }
 function printCliError(error) {
   const message = error instanceof Error ? error.message : String(error);

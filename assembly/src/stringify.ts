@@ -8,10 +8,21 @@
 // Dispatch order in `stringify<T>`:
 //   * primitives / booleans / numbers   → `.toString()`
 //   * strings                           → JSON-escape + quote
-//   * arrays                            → element-wise recursion
 //   * nullable null                     → "null"
+//   * Date                              → quoted ISO-8601 string
+//   * ArrayBuffer                       → array of unsigned byte values
+//   * TypedArray (ArrayBufferView)      → array of element values
+//   * Array / StaticArray               → element-wise recursion
+//   * Set                               → array of values
+//   * Map                               → object with stringified keys
 //   * managed with `toJSON(): string`   → call it
 //   * managed without `toJSON()`        → "<TypeName>" placeholder
+//
+// The Date/ArrayBuffer/typed-array/StaticArray/Set/Map branches use
+// `value instanceof X` guards. In a generic function AssemblyScript resolves
+// these statically: the branch is only compiled when `T` can actually be that
+// type and pruned otherwise, so the recursive calls inside type-check against
+// the real K/V/element types.
 //
 // Classes decorated with `@json` / `@serializable` are skipped by the
 // EqualsTransform's toJSON injector. Users who want those classes to
@@ -31,6 +42,39 @@ export function stringify<T>(value: T): string {
 
   if (isNullable<T>() && changetype<usize>(value) == 0) return "null";
 
+  // Date → quoted ISO-8601 string (matches `JSON.stringify(new Date(...))`).
+  if (value instanceof Date) {
+    return escape((value as Date).toISOString());
+  }
+
+  // ArrayBuffer → array of its unsigned byte values. A raw buffer has no
+  // natural JSON form, so surface the bytes for debugging.
+  if (value instanceof ArrayBuffer) {
+    const view = Uint8Array.wrap(value as ArrayBuffer);
+    const len = view.length;
+    if (len == 0) return "[]";
+    let out = "[";
+    for (let i = 0; i < len; i++) {
+      if (i > 0) out += ",";
+      out += unchecked(view[i]).toString();
+    }
+    return out + "]";
+  }
+
+  // Typed arrays (Int32Array, Float64Array, …) all extend ArrayBufferView.
+  if (value instanceof ArrayBufferView) {
+    // @ts-ignore: every typed array carries a typesafe length + indexer
+    const len = value.length;
+    if (len == 0) return "[]";
+    let out = "[";
+    for (let i = 0; i < len; i++) {
+      if (i > 0) out += ",";
+      // @ts-ignore: element is the view's numeric valueof type
+      out += stringify(unchecked(value[i]));
+    }
+    return out + "]";
+  }
+
   if (isArray<T>()) {
     // @ts-ignore: typesafe length
     const len = (value as valueof<T>[]).length;
@@ -44,6 +88,49 @@ export function stringify<T>(value: T): string {
       );
     }
     return out + "]";
+  }
+
+  // StaticArray<V> → element-wise recursion, same shape as a regular array.
+  if (value instanceof StaticArray) {
+    // @ts-ignore: typesafe length + indexer
+    const len = value.length;
+    if (len == 0) return "[]";
+    let out = "[";
+    for (let i = 0; i < len; i++) {
+      if (i > 0) out += ",";
+      // @ts-ignore: element is the array's valueof type
+      out += stringify(unchecked(value[i]));
+    }
+    return out + "]";
+  }
+
+  // Set<V> → array of its values, in insertion order.
+  if (value instanceof Set) {
+    const vals = value.values();
+    const len = vals.length;
+    if (len == 0) return "[]";
+    let out = "[";
+    for (let i = 0; i < len; i++) {
+      if (i > 0) out += ",";
+      out += stringify(unchecked(vals[i]));
+    }
+    return out + "]";
+  }
+
+  // Map<K,V> → JSON object. JSON object keys must be strings, so non-string
+  // keys are coerced to their `.toString()` form and quoted (e.g. a numeric
+  // key `10` becomes `"10"`, matching `JSON.stringify({ 10: ... })`).
+  if (value instanceof Map) {
+    const keys = value.keys();
+    const vals = value.values();
+    const len = keys.length;
+    if (len == 0) return "{}";
+    let out = "{";
+    for (let i = 0; i < len; i++) {
+      if (i > 0) out += ",";
+      out += jsonKey(unchecked(keys[i])) + ":" + stringify(unchecked(vals[i]));
+    }
+    return out + "}";
   }
 
   if (isManaged<T>()) {
@@ -121,6 +208,19 @@ export function escape(s: string): string {
     out += String.fromCharCode(c);
   }
   return out + '"';
+}
+
+// Render a Map key as a quoted JSON string. Primitive keys are coerced to
+// their textual form first; anything else falls back to the value serializer,
+// wrapped as a string so the surrounding object stays parsable.
+function jsonKey<K>(key: K): string {
+  if (isString<K>()) return escape(key as string);
+  if (isBoolean<K>()) return escape(key ? "true" : "false");
+  if (isInteger<K>() || isFloat<K>()) {
+    // @ts-ignore: numeric AS primitives carry toString()
+    return escape(key.toString());
+  }
+  return escape(stringify<K>(key));
 }
 
 

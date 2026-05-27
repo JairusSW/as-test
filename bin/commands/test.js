@@ -23,6 +23,7 @@ export async function executeTestCommand(
     showCoverage: showCoverageMode != undefined,
     showCoverageAll: showCoverageMode == "all",
     verbose: flags.includes("--verbose"),
+    showLogs: flags.includes("--show-logs"),
     ...deps.resolveParallelJobs(rawArgs, "test"),
     coverage: featureToggles.coverage,
     browser: deps.resolveBrowserOverride(rawArgs, "test"),

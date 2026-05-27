@@ -1,4 +1,4 @@
-export { createRunReporter, run } from "./run-core.js";
+export { createRunReporter, resetCollectedLogs, run } from "./run-core.js";
 export async function executeRunCommand(
   rawArgs,
   flags,
@@ -19,6 +19,7 @@ export async function executeRunCommand(
     showCoverage: showCoverageMode != undefined,
     showCoverageAll: showCoverageMode == "all",
     verbose: flags.includes("--verbose"),
+    showLogs: flags.includes("--show-logs"),
     ...deps.resolveParallelJobs(rawArgs, "run"),
     coverage: featureToggles.coverage,
     browser: deps.resolveBrowserOverride(rawArgs, "run"),
