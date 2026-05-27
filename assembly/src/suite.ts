@@ -4,7 +4,7 @@ import { Tests } from "./tests";
 import { Log } from "./log";
 import { after_each_callback, before_each_callback } from "..";
 import { sendSuiteEnd, sendSuiteStart } from "../util/wipc";
-import { JSON } from "json-as/assembly";
+import { escape, stringify } from "./stringify";
 
 export class Suite {
   public file: string = "unknown";
@@ -172,20 +172,20 @@ export class Suite {
     return false;
   }
 
-  serialize(): string {
+  toJSON(): string {
     let out = "{";
     if (this.depth <= 0) {
-      out += '"file":' + JSON.stringify<string>(this.file) + ",";
+      out += '"file":' + escape(this.file) + ",";
     }
     out += '"order":' + this.order.toString();
-    out += ',"time":' + this.time.serialize();
-    out += ',"description":' + JSON.stringify<string>(this.description);
+    out += ',"time":' + this.time.toJSON();
+    out += ',"description":' + escape(this.description);
     out += ',"depth":' + this.depth.toString();
     out += ',"suites":' + serializeSuites(this.suites);
     out += ',"tests":' + serializeTests(this.tests);
     out += ',"logs":' + serializeLogs(this.logs);
-    out += ',"kind":' + JSON.stringify<string>(this.kind);
-    out += ',"verdict":' + JSON.stringify<string>(this.verdict);
+    out += ',"kind":' + escape(this.kind);
+    out += ',"verdict":' + escape(this.verdict);
     out += "}";
     return out;
   }
@@ -196,7 +196,7 @@ function serializeSuites(values: Suite[]): string {
   let out = "[";
   for (let i = 0; i < values.length; i++) {
     if (i) out += ",";
-    out += unchecked(values[i]).serialize();
+    out += unchecked(values[i]).toJSON();
   }
   out += "]";
   return out;
@@ -207,7 +207,7 @@ function serializeTests(values: Tests[]): string {
   let out = "[";
   for (let i = 0; i < values.length; i++) {
     if (i) out += ",";
-    out += unchecked(values[i]).serialize();
+    out += unchecked(values[i]).toJSON();
   }
   out += "]";
   return out;
@@ -218,7 +218,7 @@ function serializeLogs(values: Log[]): string {
   let out = "[";
   for (let i = 0; i < values.length; i++) {
     if (i) out += ",";
-    out += unchecked(values[i]).serialize();
+    out += unchecked(values[i]).toJSON();
   }
   out += "]";
   return out;

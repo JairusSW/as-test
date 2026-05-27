@@ -1,12 +1,8 @@
 import { afterEach, beforeEach, describe, expect, run, test } from "..";
-// Import JSON directly so json-as transform does not add broken pnpm paths.
-import { JSON } from "json-as/assembly";
 
 let beforeCount = 0;
 let afterCount = 0;
 
-
-@json
 class Point {
   x: i32 = 0;
   y: i32 = 0;
@@ -16,17 +12,11 @@ class Point {
     this.y = y;
   }
 
-  __as_test_equals(other: Point, strict: bool): bool {
-    return this.x == other.x && this.y == other.y;
-  }
-
-  __as_test_json(): string {
-    return JSON.stringify(this);
+  toJSON(): string {
+    return '{"x":' + this.x.toString() + ',"y":' + this.y.toString() + "}";
   }
 }
 
-
-@json
 class Shape {
   size: i32 = 0;
 
@@ -34,25 +24,15 @@ class Shape {
     this.size = size;
   }
 
-  __as_test_equals(other: Shape, strict: bool): bool {
-    return this.size == other.size;
-  }
-
-  __as_test_json(): string {
-    return JSON.stringify(this);
+  toJSON(): string {
+    return '{"size":' + this.size.toString() + "}";
   }
 }
 
-
-@json
 class Circle extends Shape {}
 
-
-@json
 class Square extends Shape {}
 
-
-@json
 class LabelledPoint {
   point: Point = new Point(0, 0);
   label: string = "";
@@ -62,8 +42,8 @@ class LabelledPoint {
     this.label = label;
   }
 
-  __as_test_json(): string {
-    return JSON.stringify(this);
+  toJSON(): string {
+    return '{"point":' + this.point.toJSON() + ',"label":"' + this.label + '"}';
   }
 }
 
@@ -174,18 +154,22 @@ describe("Expectation helpers", () => {
     );
   });
 
-  test("toBe uses identity for arrays and managed references", () => {
+  test("toBe is deep-structural for arrays and managed references", () => {
+    // toBe is now deep-structural for arrays and managed values — Jest's
+    // `toEqual` semantics. Identity is implied (same reference is always
+    // equal); separate "different references that compare equal" cases
+    // assert the structural behaviour.
     const left = [1, 2, 3];
     const same = left;
     const copy = [1, 2, 3];
     expect(left).toBe(same);
-    expect(left).not.toBe(copy);
+    expect(left).toBe(copy);
 
     const point = new Point(1, 2);
     const samePoint = point;
     const copyPoint = new Point(1, 2);
     expect(point).toBe(samePoint);
-    expect(point).not.toBe(copyPoint);
+    expect(point).toBe(copyPoint);
   });
 
   test("toEqual supports arrays and pointer-free classes", () => {
@@ -208,10 +192,12 @@ describe("Expectation helpers", () => {
     expect(circle).toStrictEqual(sameCircle);
   });
 
-  test("toBe still uses identity for classes with nested references", () => {
+  test("toBe recurses through classes with nested references", () => {
     const point = new LabelledPoint(new Point(1, 2), "demo");
     expect(point).toBe(point);
-    expect(point).not.toBe(new LabelledPoint(new Point(1, 2), "demo"));
+    expect(point).toBe(new LabelledPoint(new Point(1, 2), "demo"));
+    expect(point).not.toBe(new LabelledPoint(new Point(1, 2), "other"));
+    expect(point).not.toBe(new LabelledPoint(new Point(3, 4), "demo"));
   });
 
   test("toThrow matcher compiles and is callable", () => {

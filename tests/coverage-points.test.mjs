@@ -12,7 +12,7 @@ test("coverage point descriptors prefer parameter default values over declaratio
 
   const info = describeCoveragePoint(
     "assembly/src/expectation.ts",
-    396,
+    423,
     45,
     "DefaultValue",
   );
@@ -27,7 +27,7 @@ test("coverage point descriptors keep transform-emitted ternary labels", async (
     pathToFileURL(path.join(repoRoot, "bin/coverage-points.js")).href
   );
 
-  const info = describeCoveragePoint("assembly/index.ts", 46, 51, "Ternary");
+  const info = describeCoveragePoint("assembly/index.ts", 47, 51, "Ternary");
 
   assert.equal(info.displayType, "Ternary");
   assert.equal(info.subjectName, null);

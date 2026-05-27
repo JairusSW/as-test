@@ -4,7 +4,7 @@ import { toString } from "./util.js";
 const LOG_CALL_FN = "__as_test_log_call";
 const LOG_ENABLED_IMPORT = "__as_test_log_is_enabled_internal";
 const LOG_SERIALIZED_IMPORT = "__as_test_log_serialized_internal";
-const LOG_JSON_IMPORT = "__as_test_log_json_internal";
+const LOG_STRINGIFY_IMPORT = "__as_test_log_stringify_internal";
 export class LogTransform extends Visitor {
     parser;
     activeSource = null;
@@ -27,15 +27,11 @@ export class LogTransform extends Visitor {
             return;
         }
         const asTestPath = detectAsTestImportPath(node.text) ?? "as-test";
-        const asTestTokenizer = new Tokenizer(new Source(0, node.normalizedPath, `import { __as_test_log_is_enabled as ${LOG_ENABLED_IMPORT}, __as_test_log_serialized as ${LOG_SERIALIZED_IMPORT} } from "${asTestPath}";`));
+        const asTestTokenizer = new Tokenizer(new Source(0, node.normalizedPath, `import { __as_test_log_is_enabled as ${LOG_ENABLED_IMPORT}, __as_test_log_serialized as ${LOG_SERIALIZED_IMPORT}, __as_test_stringify as ${LOG_STRINGIFY_IMPORT} } from "${asTestPath}";`));
         this.parser.currentSource = asTestTokenizer.source;
         node.statements.unshift(this.parser.parseTopLevelStatement(asTestTokenizer));
         this.parser.currentSource = node;
-        const jsonTokenizer = new Tokenizer(new Source(0, node.normalizedPath, `import { JSON as ${LOG_JSON_IMPORT} } from "json-as/assembly";`));
-        this.parser.currentSource = jsonTokenizer.source;
-        node.statements.unshift(this.parser.parseTopLevelStatement(jsonTokenizer));
-        this.parser.currentSource = node;
-        const callTokenizer = new Tokenizer(new Source(0, node.normalizedPath, `function ${LOG_CALL_FN}<T>(value: T): void { if (!${LOG_ENABLED_IMPORT}()) return; ${LOG_SERIALIZED_IMPORT}(${LOG_JSON_IMPORT}.stringify<T>(value)); }`));
+        const callTokenizer = new Tokenizer(new Source(0, node.normalizedPath, `function ${LOG_CALL_FN}<T>(value: T): void { if (!${LOG_ENABLED_IMPORT}()) return; ${LOG_SERIALIZED_IMPORT}(${LOG_STRINGIFY_IMPORT}<T>(value)); }`));
         this.parser.currentSource = callTokenizer.source;
         node.statements.push(this.parser.parseTopLevelStatement(callTokenizer));
         this.parser.currentSource = node;

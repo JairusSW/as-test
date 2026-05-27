@@ -522,9 +522,25 @@ function getBuildCommand(
     };
   }
 
-  const defaultArgs = getDefaultBuildArgs(config, featureToggles);
+  const tryAsAlreadyConfigured =
+    argsDeclareTryAs(userArgs) || asconfigDeclaresTryAs(config.config);
+  const defaultArgs = getDefaultBuildArgs(
+    config,
+    featureToggles,
+    tryAsAlreadyConfigured,
+  );
   const ascInvocation = resolveAscInvocation(pkgRunner);
-  const args = [...ascInvocation.args, file, ...userArgs, ...defaultArgs];
+  // as-test's own transform goes first so CoverageTransform sees the
+  // unmodified user AST. User-supplied `--transform` flags follow it,
+  // then the rest of as-test's default args (config, features, etc.).
+  const args = [
+    ...ascInvocation.args,
+    file,
+    "--transform",
+    "as-test/transform",
+    ...userArgs,
+    ...defaultArgs,
+  ];
   if (config.outDir.length) {
     args.push("-o", outFile);
   }
@@ -871,6 +887,7 @@ function formatInvocation(invocation: BuildInvocation): string {
 }
 
 export { getBuildCommand, formatInvocation };
+export { argsDeclareTryAs, asconfigDeclaresTryAs };
 
 function getBuildStderr(error: unknown): string {
   const err = error as { stderr?: unknown; message?: unknown };
@@ -897,19 +914,23 @@ function getBuildStdout(error: unknown): string {
 function getDefaultBuildArgs(
   config: Config,
   featureToggles: BuildFeatureToggles,
+  tryAsAlreadyConfigured: boolean = false,
 ): string[] {
   const buildArgs: string[] = [];
   const effectiveFeatures = resolveEffectiveFeatures(config, featureToggles);
   const tryAsEnabled = resolveTryAsEnabled(effectiveFeatures.has("try-as"));
 
-  buildArgs.push("--transform", "as-test/transform");
-  if (
-    resolveProjectModule("json-as/transform") &&
-    !userSuppliesJsonAsTransform(config)
-  ) {
-    buildArgs.push("--transform", "json-as/transform");
-  }
-  if (tryAsEnabled) {
+  // `--transform as-test/transform` is appended by `getBuildCommand` at
+  // the front of the user-supplied transforms so coverage instruments
+  // the unmodified user AST.
+
+  // Auto-inject `--transform try-as/transform` when the `try-as`
+  // feature is on. Unlike json-as, try-as is tightly coupled to as-test
+  // (it powers `toThrow()`), only meaningful when the user explicitly
+  // opts into the feature, and doesn't rewrite arbitrary user code in
+  // ways that surprise consumers — auto-injection keeps the feature
+  // ergonomics intact without the conflict surface json-as exposed.
+  if (tryAsEnabled && !tryAsAlreadyConfigured) {
     buildArgs.push("--transform", "try-as/transform");
   }
 
@@ -956,83 +977,6 @@ function getDefaultBuildArgs(
   return buildArgs;
 }
 
-// Treats anything whose path contains a "json-as" path component as a
-// user-supplied json-as transform. Matches bare specifiers, subpath specifiers,
-// absolute paths, and ./node_modules paths.
-const JSON_AS_TRANSFORM_PATTERN = /(?:^|[\\/])json-as(?:[\\/@]|$)/;
-
-function userSuppliesJsonAsTransform(config: Config): boolean {
-  for (const raw of config.buildOptions.args) {
-    if (!raw.length) continue;
-    const tokens = tokenizeCommand(raw);
-    for (let i = 0; i < tokens.length; i++) {
-      const token = tokens[i]!;
-      if (token == "--transform") {
-        const value = tokens[i + 1];
-        if (value && JSON_AS_TRANSFORM_PATTERN.test(value)) return true;
-      } else if (token.startsWith("--transform=")) {
-        const value = token.slice("--transform=".length);
-        if (value && JSON_AS_TRANSFORM_PATTERN.test(value)) return true;
-      }
-    }
-  }
-  if (config.config && config.config !== "none" && existsSync(config.config)) {
-    if (asconfigDeclaresJsonAs(config.config, new Set<string>())) return true;
-  }
-  return false;
-}
-
-function asconfigDeclaresJsonAs(
-  configFile: string,
-  seen: Set<string>,
-): boolean {
-  const resolved = path.resolve(configFile);
-  if (seen.has(resolved)) return false;
-  seen.add(resolved);
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(readFileSync(resolved, "utf8"));
-  } catch {
-    return false;
-  }
-  if (!parsed || typeof parsed != "object") return false;
-  const obj = parsed as Record<string, unknown>;
-
-  if (transformsContainJsonAs(obj.options)) return true;
-  if (transformsContainJsonAs(obj)) return true;
-  const targets = obj.targets;
-  if (targets && typeof targets == "object" && !Array.isArray(targets)) {
-    for (const value of Object.values(targets as Record<string, unknown>)) {
-      if (transformsContainJsonAs(value)) return true;
-    }
-  }
-
-  const extendsValue = obj.extends;
-  if (typeof extendsValue == "string" && extendsValue.length) {
-    const parentPath = path.resolve(path.dirname(resolved), extendsValue);
-    if (existsSync(parentPath) && asconfigDeclaresJsonAs(parentPath, seen)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function transformsContainJsonAs(value: unknown): boolean {
-  if (!value || typeof value != "object") return false;
-  const transform = (value as { transform?: unknown }).transform;
-  if (typeof transform == "string") {
-    return JSON_AS_TRANSFORM_PATTERN.test(transform);
-  }
-  if (Array.isArray(transform)) {
-    for (const item of transform) {
-      if (typeof item == "string" && JSON_AS_TRANSFORM_PATTERN.test(item)) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
 function resolveEffectiveFeatures(
   config: Config,
   featureToggles: BuildFeatureToggles,
@@ -1077,6 +1021,71 @@ function resolveCoverageEnabled(
 
 function hasTryAsRuntime(): boolean {
   return resolveProjectModule("try-as/package.json") != null;
+}
+
+const TRY_AS_TRANSFORM_RE = /(?:^|[\\/])try-as(?:[\\/]|$)/;
+
+function isTryAsTransformSpec(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  if (value === "try-as") return true;
+  return TRY_AS_TRANSFORM_RE.test(value);
+}
+
+function argsDeclareTryAs(args: string[]): boolean {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    if (arg === "--transform" || arg === "-t") {
+      const next = args[i + 1];
+      if (isTryAsTransformSpec(next)) return true;
+    } else if (arg.startsWith("--transform=")) {
+      if (isTryAsTransformSpec(arg.slice("--transform=".length))) return true;
+    }
+  }
+  return false;
+}
+
+function asconfigDeclaresTryAs(
+  configPath: string | undefined,
+  seen: Set<string> = new Set(),
+): boolean {
+  if (!configPath || configPath === "none") return false;
+  const resolved = path.isAbsolute(configPath)
+    ? configPath
+    : path.resolve(process.cwd(), configPath);
+  if (seen.has(resolved)) return false;
+  seen.add(resolved);
+  if (!existsSync(resolved)) return false;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(resolved, "utf8"));
+  } catch {
+    return false;
+  }
+  if (!parsed || typeof parsed !== "object") return false;
+  const obj = parsed as Record<string, unknown>;
+  const options = obj.options;
+  if (options && typeof options === "object") {
+    const transform = (options as Record<string, unknown>).transform;
+    if (Array.isArray(transform)) {
+      for (const t of transform) {
+        if (isTryAsTransformSpec(t)) return true;
+      }
+    }
+  }
+  const extendsField = obj.extends;
+  const extendsList = Array.isArray(extendsField)
+    ? extendsField
+    : typeof extendsField === "string"
+      ? [extendsField]
+      : [];
+  for (const ext of extendsList) {
+    if (typeof ext !== "string") continue;
+    const extPath = path.isAbsolute(ext)
+      ? ext
+      : path.resolve(path.dirname(resolved), ext);
+    if (asconfigDeclaresTryAs(extPath, seen)) return true;
+  }
+  return false;
 }
 
 function resolveWasiShim(): { configPath: string } | null {

@@ -1,7 +1,7 @@
-import { JSON } from "json-as/assembly";
+import { escape, stringify } from "./stringify";
 
 function quote(s: string): string {
-  return JSON.stringify<string>(s);
+  return escape(s);
 }
 
 export class StringOptions {
@@ -615,7 +615,7 @@ export class FuzzerResult {
   public failureMessage: string = "";
   public failures: FuzzFailure[] = [];
 
-  serialize(): string {
+  toJSON(): string {
     return (
       '{"name":"' +
       this.name +
@@ -653,7 +653,7 @@ export class FuzzFailure {
   public seed: u64 = 0;
   public input: string = "";
 
-  serialize(): string {
+  toJSON(): string {
     return (
       '{"run":' +
       this.run.toString() +
@@ -881,7 +881,7 @@ export class Fuzzer1<A, R> extends FuzzerBase {
         );
       } else {
         this.generator(seed, (a: A): R => {
-          __as_test_fuzz_input = "[" + JSON.stringify<A>(a) + "]";
+          __as_test_fuzz_input = "[" + stringify<A>(a) + "]";
           return changetype<(a: A) => R>(__fuzz_run1)(a);
         });
       }
@@ -952,7 +952,7 @@ export class Fuzzer2<A, B, R> extends FuzzerBase {
       } else {
         this.generator(seed, (a: A, b: B): R => {
           __as_test_fuzz_input =
-            "[" + JSON.stringify<A>(a) + "," + JSON.stringify<B>(b) + "]";
+            "[" + stringify<A>(a) + "," + stringify<B>(b) + "]";
           return changetype<(a: A, b: B) => R>(__fuzz_run2)(a, b);
         });
       }
@@ -1026,11 +1026,11 @@ export class Fuzzer3<A, B, C, R> extends FuzzerBase {
         )(seed, (a: A, b: B, c: C): R => {
           __as_test_fuzz_input =
             "[" +
-            JSON.stringify<A>(a) +
+            stringify<A>(a) +
             "," +
-            JSON.stringify<B>(b) +
+            stringify<B>(b) +
             "," +
-            JSON.stringify<C>(c) +
+            stringify<C>(c) +
             "]";
           return changetype<(a: A, b: B, c: C) => R>(__fuzz_run3)(a, b, c);
         });
@@ -1208,7 +1208,7 @@ function serializeFuzzFailures(values: FuzzFailure[]): string {
   let out = "[";
   for (let i = 0; i < values.length; i++) {
     if (i) out += ",";
-    out += unchecked(values[i]).serialize();
+    out += unchecked(values[i]).toJSON();
   }
   out += "]";
   return out;

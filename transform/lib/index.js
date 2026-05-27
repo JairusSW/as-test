@@ -4,6 +4,7 @@ import { CoverageTransform } from "./coverage.js";
 import { MockTransform } from "./mock.js";
 import { LocationTransform } from "./location.js";
 import { LogTransform } from "./log.js";
+import { EqualsTransform } from "./equals.js";
 import { isStdlib } from "./util.js";
 import { NodeKind } from "./types.js";
 export default class Transformer extends Transform {
@@ -81,6 +82,7 @@ export default class Transformer extends Transform {
         if (coverage) {
             coverage.globalStatements = [];
         }
+        new EqualsTransform(parser).apply(parser.sources);
     }
 }
 function patchModeName(parser, modeName) {

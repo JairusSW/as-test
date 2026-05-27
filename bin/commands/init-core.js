@@ -745,9 +745,6 @@ function applyInit(root, target, example, fuzzExample, features, force) {
   if (!devDependencies["as-test"]) {
     devDependencies["as-test"] = "^" + getCliVersion();
   }
-  if (!hasDependency(pkg, "json-as")) {
-    devDependencies["json-as"] = "^1.3.5";
-  }
   if (!hasDependency(pkg, "assemblyscript")) {
     devDependencies["assemblyscript"] = "^0.28.9";
   }

@@ -1,4 +1,4 @@
-import { JSON } from "json-as/assembly";
+import { escape, stringify } from "./stringify";
 
 import { sendLog } from "../util/wipc";
 
@@ -14,14 +14,14 @@ export class Log {
     sendLog(this.file, this.depth, this.text);
   }
 
-  serialize(): string {
+  toJSON(): string {
     return (
       '{"order":' +
       this.order.toString() +
       ',"depth":' +
       this.depth.toString() +
       ',"text":' +
-      JSON.stringify<string>(this.text) +
+      escape(this.text) +
       "}"
     );
   }

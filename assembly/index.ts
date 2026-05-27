@@ -14,7 +14,7 @@ import {
   sendFileStart,
   sendReport,
 } from "./util/wipc";
-import { JSON } from "json-as/assembly";
+import { escape, stringify } from "./src/stringify";
 import { bold, green, red } from "./util/format";
 import {
   createFuzzer,
@@ -36,7 +36,8 @@ export {
   IntegerOptions,
   StringOptions,
 } from "./src/fuzz";
-export { __as_test_deep_equal } from "./src/expectation";
+export { reflectEquals } from "./src/reflect";
+export { stringify as __as_test_stringify } from "./src/stringify";
 
 let entrySuites: Suite[] = [];
 let entryFuzzers: FuzzerBase[] = [];
@@ -240,7 +241,7 @@ export function xexpect<T>(
  */
 export function log<T>(data: T): void {
   if (!__as_test_log_is_enabled()) return;
-  __as_test_log_serialized(JSON.stringify<T>(data));
+  __as_test_log_serialized(stringify<T>(data));
 }
 
 export function __as_test_log_is_enabled(): bool {
@@ -402,7 +403,7 @@ export function run(options: RunOptions = new RunOptions()): void {
   const report = new FileReport();
   report.suites = entrySuites;
   report.coverage = collectCoverage();
-  sendReport(report.serialize());
+  sendReport(report.toJSON());
 }
 
 function containsOnlySuites(values: Suite[]): bool {
@@ -422,11 +423,11 @@ class FuzzConfig {
 class FuzzReport {
   fuzzers: FuzzerResult[] = [];
 
-  serialize(): string {
+  toJSON(): string {
     let out = '{"fuzzers":[';
     for (let i = 0; i < this.fuzzers.length; i++) {
       if (i) out += ",";
-      out += unchecked(this.fuzzers[i]).serialize();
+      out += unchecked(this.fuzzers[i]).toJSON();
     }
     out += "]}";
     return out;
@@ -443,7 +444,7 @@ function runFuzzers(): void {
     const result = fuzzer.run(config.seed, resolveFuzzerRuns(fuzzer, config));
     report.fuzzers.push(result);
   }
-  sendReport(report.serialize());
+  sendReport(report.toJSON());
 }
 
 function requestFuzzConfig(): FuzzConfig {
@@ -519,7 +520,7 @@ class CoverageReport {
   percent: f64 = 100.0;
   points: CoveragePointReport[] = [];
 
-  serialize(): string {
+  toJSON(): string {
     return (
       '{"total":' +
       this.total.toString() +
@@ -548,26 +549,26 @@ class CoveragePointReport {
   scopeName: string = "";
   depth: i32 = 0;
 
-  serialize(): string {
+  toJSON(): string {
     return (
       '{"hash":' +
-      JSON.stringify<string>(this.hash) +
+      escape(this.hash) +
       ',"file":' +
-      JSON.stringify<string>(this.file) +
+      escape(this.file) +
       ',"line":' +
       this.line.toString() +
       ',"column":' +
       this.column.toString() +
       ',"type":' +
-      JSON.stringify<string>(this.type) +
+      escape(this.type) +
       ',"executed":' +
       (this.executed ? "true" : "false") +
       ',"parentHash":' +
-      JSON.stringify<string>(this.parentHash) +
+      escape(this.parentHash) +
       ',"scopeKind":' +
-      JSON.stringify<string>(this.scopeKind) +
+      escape(this.scopeKind) +
       ',"scopeName":' +
-      JSON.stringify<string>(this.scopeName) +
+      escape(this.scopeName) +
       ',"depth":' +
       this.depth.toString() +
       "}"
@@ -579,12 +580,12 @@ class FileReport {
   suites: Suite[] = [];
   coverage: CoverageReport = new CoverageReport();
 
-  serialize(): string {
+  toJSON(): string {
     return (
       '{"suites":' +
       serializeSuites(this.suites) +
       ',"coverage":' +
-      this.coverage.serialize() +
+      this.coverage.toJSON() +
       "}"
     );
   }
@@ -595,7 +596,7 @@ function serializeSuites(values: Suite[]): string {
   let out = "[";
   for (let i = 0; i < values.length; i++) {
     if (i) out += ",";
-    out += unchecked(values[i]).serialize();
+    out += unchecked(values[i]).toJSON();
   }
   out += "]";
   return out;
@@ -606,7 +607,7 @@ function serializeCoveragePoints(values: CoveragePointReport[]): string {
   let out = "[";
   for (let i = 0; i < values.length; i++) {
     if (i) out += ",";
-    out += unchecked(values[i]).serialize();
+    out += unchecked(values[i]).toJSON();
   }
   out += "]";
   return out;
@@ -690,10 +691,10 @@ export class Result {
     out += ` ${this.arg1 + this.arg2} total\n`;
     return out;
   }
-  serialize(): string {
+  toJSON(): string {
     return (
       '{"name":' +
-      JSON.stringify<string>(this.name) +
+      escape(this.name) +
       ',"arg1":' +
       this.arg1.toString() +
       ',"arg2":' +
@@ -710,7 +711,7 @@ export class Time {
     return formatTime(this.end - this.start);
   }
 
-  serialize(): string {
+  toJSON(): string {
     return (
       '{"start":' +
       this.start.toString() +
