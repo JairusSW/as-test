@@ -4,7 +4,7 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { SimpleParser, isStdlib } from "./util.js";
 const EQUALS_METHOD = "__AS_TEST_EQUALS";
-const TOJSON_METHOD = "toJSON";
+const GENERATED_TOJSON_METHOD = "__AS_TEST_TO_JSON";
 const REFLECT_LOCAL = "__AS_TEST_REFLECT_EQUALS_INTERNAL";
 const STRINGIFY_LOCAL = "__AS_TEST_STRINGIFY_INTERNAL";
 const ALREADY_INJECTED_EQUALS = new WeakSet();
@@ -165,7 +165,7 @@ export class EqualsTransform {
     injectToJSONMethod(klass) {
         if (ALREADY_INJECTED_TOJSON.has(klass))
             return false;
-        if (declaresMethod(klass, TOJSON_METHOD))
+        if (declaresMethod(klass, GENERATED_TOJSON_METHOD))
             return false;
         if (hasAnyDecorator(klass, JSON_DECORATORS))
             return false;
@@ -189,7 +189,7 @@ export class EqualsTransform {
         const body = parts.length
             ? `return "{" + ${parts.join(" + ")} + "}";`
             : `return "{}";`;
-        const code = `toJSON(): string { ${body} }`;
+        const code = `${GENERATED_TOJSON_METHOD}(): string { ${body} }`;
         try {
             const method = SimpleParser.parseClassMember(code, klass);
             klass.members.push(method);

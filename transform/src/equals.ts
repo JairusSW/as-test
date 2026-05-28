@@ -74,7 +74,12 @@ import { join } from "path";
 import { SimpleParser, isStdlib } from "./util.js";
 
 const EQUALS_METHOD = "__AS_TEST_EQUALS";
-const TOJSON_METHOD = "toJSON";
+// The structural serializer is injected under an internal name (not
+// `toJSON`) so it never shadows a user's own `toJSON` and users can't
+// accidentally call the generated one. The runtime stringifier calls a
+// user `toJSON` directly when present (AssemblyScript requires it to
+// return a string) and falls back to this generated method otherwise.
+const GENERATED_TOJSON_METHOD = "__AS_TEST_TO_JSON";
 const REFLECT_LOCAL = "__AS_TEST_REFLECT_EQUALS_INTERNAL";
 const STRINGIFY_LOCAL = "__AS_TEST_STRINGIFY_INTERNAL";
 const ALREADY_INJECTED_EQUALS = new WeakSet<ClassDeclaration>();
@@ -260,26 +265,32 @@ export class EqualsTransform {
     this.parser.currentSource = source;
   }
 
-  // Synthesises a `toJSON(): string` method that emits a JSON object
-  // whose keys are each non-static instance field, values produced by
-  // the in-tree `stringify<T>` helper. Lives alongside the
+  // Synthesises a `__AS_TEST_TO_JSON(): string` method that emits a JSON
+  // object whose keys are each non-static instance field, values produced
+  // by the in-tree `stringify<T>` helper. Lives alongside the
   // `__AS_TEST_EQUALS` injection so a single transform pass covers both
   // report rendering and structural equality.
   //
+  // It's emitted under an internal name rather than `toJSON` so it never
+  // collides with — and users can't accidentally call — the generated one.
+  //
+  // We generate it even for classes that already declare a `toJSON`: at
+  // runtime the stringifier checks whether the user's `toJSON` returns a
+  // string and, if not, falls back to this generated method. So it always
+  // exists as the structural fallback.
+  //
   // Skip conditions:
-  //   * Class already declares `toJSON` directly (user wins).
+  //   * Class already declares `__AS_TEST_TO_JSON` (idempotent / hand-rolled).
   //   * Class carries `@json` / `@serializable` — user has opted into
   //     json-as's serializer; we stay out of the way.
   //   * Generic class — same reason as for __AS_TEST_EQUALS.
   //
   // Inheritance: a child class's generated method walks ALL chain
   // fields (root-first, deduped by name) so the output captures
-  // inherited state too. We don't try to compose with a parent's
-  // hand-written `toJSON` — if the parent has one, the child still
-  // gets a structural fallback.
+  // inherited state too.
   private injectToJSONMethod(klass: ClassDeclaration): boolean {
     if (ALREADY_INJECTED_TOJSON.has(klass)) return false;
-    if (declaresMethod(klass, TOJSON_METHOD)) return false;
+    if (declaresMethod(klass, GENERATED_TOJSON_METHOD)) return false;
     if (hasAnyDecorator(klass, JSON_DECORATORS)) return false;
     if (klass.typeParameters && klass.typeParameters.length) return false;
 
@@ -304,7 +315,7 @@ export class EqualsTransform {
     const body = parts.length
       ? `return "{" + ${parts.join(" + ")} + "}";`
       : `return "{}";`;
-    const code = `toJSON(): string { ${body} }`;
+    const code = `${GENERATED_TOJSON_METHOD}(): string { ${body} }`;
     try {
       const method = SimpleParser.parseClassMember(code, klass);
       klass.members.push(method as MethodDeclaration);

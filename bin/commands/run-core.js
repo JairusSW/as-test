@@ -1,6 +1,7 @@
 import chalk from "chalk";
 import { spawn } from "child_process";
 import { glob } from "glob";
+import { minimatch } from "minimatch";
 import { Channel, MessageType } from "../wipc.js";
 import {
   applyMode,
@@ -686,10 +687,60 @@ export async function run(
   const loadedConfig = loadConfig(resolvedConfigPath);
   const mode = applyMode(loadedConfig, options.modeName);
   const config = mode.config;
+  // Mode-level exclusion: when a mode override adds `!`-prefixed negations
+  // beyond the top-level config, honor them even when the orchestrator passes
+  // a single-file selector (`resolveInputPatterns` drops the configured input
+  // in that case). Top-level negations are intentionally not enforced here so
+  // explicit selectors can still override them (e.g. picking a __tmp_* spec).
+  if (options.modeName && selectors.length > 0) {
+    const topInput = Array.isArray(loadedConfig.input)
+      ? loadedConfig.input
+      : [loadedConfig.input];
+    const modeInput = Array.isArray(config.input)
+      ? config.input
+      : [config.input];
+    const topNegations = new Set(topInput.filter((p) => p.startsWith("!")));
+    const modeOnlyNegations = modeInput
+      .filter((p) => p.startsWith("!") && !topNegations.has(p))
+      .map((p) => p.slice(1));
+    if (modeOnlyNegations.length > 0) {
+      const cwd = process.cwd();
+      const allExcluded = selectors.every((sel) => {
+        const abs = path.isAbsolute(sel) ? sel : path.resolve(cwd, sel);
+        const rel = path.relative(cwd, abs).split(path.sep).join("/");
+        return modeOnlyNegations.some((pat) =>
+          minimatch(rel, pat, { dot: true, matchBase: true }),
+        );
+      });
+      if (allExcluded) {
+        return {
+          failed: false,
+          stats: collectRunStats([]),
+          buildTime: 0,
+          snapshotSummary: { matched: 0, created: 0, updated: 0, failed: 0 },
+          coverageSummary: {
+            enabled: false,
+            showPoints: false,
+            total: 0,
+            covered: 0,
+            uncovered: 0,
+            percent: 100,
+            files: [],
+          },
+          reports: [],
+          logSummary: { count: 0, file: null, groups: [], text: "" },
+        };
+      }
+    }
+  }
   const inputPatterns = resolveInputPatterns(config.input, selectors);
-  const inputFiles = (await glob(inputPatterns)).sort((a, b) =>
-    a.localeCompare(b),
-  );
+  const includePatterns = inputPatterns.filter((p) => !p.startsWith("!"));
+  const ignorePatterns = inputPatterns
+    .filter((p) => p.startsWith("!"))
+    .map((p) => p.slice(1));
+  const inputFiles = (
+    await glob(includePatterns, { ignore: ignorePatterns })
+  ).sort((a, b) => a.localeCompare(b));
   const snapshotEnabled = flags.snapshot !== false;
   const createSnapshots = Boolean(flags.createSnapshots);
   const overwriteSnapshots = Boolean(flags.overwriteSnapshots);
@@ -798,7 +849,20 @@ export async function run(
             token.replace(/<name>/g, fileBase).replace(/<file>/g, fileToken),
           ),
       };
-      const runCommandForLog = formatInvocation(invocation);
+      // A managed web-session run never spawns the standalone runner, so its
+      // repro must re-run the managed CLI command (which renders the same panel
+      // UI) rather than `default.web.js <wasm>`, a different web stack.
+      const runCommandForLog = webSession
+        ? formatInvocation({
+            command: execPath,
+            args: [
+              process.argv[1] ?? "",
+              "run",
+              resolveSpecRelativePath(file, config.input),
+              ...(options.modeName ? ["--mode", options.modeName] : []),
+            ],
+          })
+        : formatInvocation(invocation);
       const snapshotStore = new SnapshotStore(
         file,
         config.snapshotDir,
@@ -1991,7 +2055,7 @@ async function runProcess(
       if (reportStream.sawChunkStart && !reportStream.sawChunkEnd) {
         reportStream.chunkFramesReceived++;
         reportStream.chunkBytesReceived += data.length;
-        reportStream.chunks.push(data.toString("utf8"));
+        reportStream.chunks.push(Buffer.from(data));
         return;
       }
       try {
@@ -2041,7 +2105,9 @@ async function runProcess(
       parseError =
         parseError ?? "missing report:end marker for chunked report payload";
     } else {
-      const chunkedPayload = reportStream.chunks.join("");
+      const chunkedPayload = Buffer.concat(reportStream.chunks).toString(
+        "utf8",
+      );
       try {
         report = JSON.parse(chunkedPayload);
         parseError = null;
@@ -2375,7 +2441,7 @@ async function runWebSessionProcess(
       if (reportStream.sawChunkStart && !reportStream.sawChunkEnd) {
         reportStream.chunkFramesReceived++;
         reportStream.chunkBytesReceived += data.length;
-        reportStream.chunks.push(data.toString("utf8"));
+        reportStream.chunks.push(Buffer.from(data));
         return;
       }
       try {
@@ -2422,7 +2488,9 @@ async function runWebSessionProcess(
       parseError =
         parseError ?? "missing report:end marker for chunked report payload";
     } else {
-      const chunkedPayload = reportStream.chunks.join("");
+      const chunkedPayload = Buffer.concat(reportStream.chunks).toString(
+        "utf8",
+      );
       try {
         report = JSON.parse(chunkedPayload);
         parseError = null;

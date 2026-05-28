@@ -68,9 +68,13 @@ export async function build(
   const sourceInputPatterns =
     overrides.kind === "fuzz" ? config.fuzz.input : config.input;
   const inputPatterns = resolveInputPatterns(sourceInputPatterns, selectors);
-  const inputFiles = (await glob(inputPatterns)).sort((a, b) =>
-    a.localeCompare(b),
-  );
+  const includePatterns = inputPatterns.filter((p) => !p.startsWith("!"));
+  const ignorePatterns = inputPatterns
+    .filter((p) => p.startsWith("!"))
+    .map((p) => p.slice(1));
+  const inputFiles = (
+    await glob(includePatterns, { ignore: ignorePatterns })
+  ).sort((a, b) => a.localeCompare(b));
   await assertNoArtifactCollisions(sourceInputPatterns);
   warnOnUnknownModeReferences(inputFiles, loadedConfig.modes ?? {});
   const coverageEnabled = resolveCoverageEnabled(

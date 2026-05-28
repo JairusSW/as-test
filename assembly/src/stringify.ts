@@ -15,8 +15,11 @@
 //   * Array / StaticArray               → element-wise recursion
 //   * Set                               → array of values
 //   * Map                               → object with stringified keys
-//   * managed with `toJSON(): string`   → call it
-//   * managed without `toJSON()`        → "<TypeName>" placeholder
+//   * managed, user `toJSON()` returns string → call it
+//   * managed otherwise                       → `__AS_TEST_TO_JSON()`
+//       (transform-generated structural serializer; the fallback when a
+//        user `toJSON` returns a non-string, or when there's no `toJSON`)
+//   * managed with neither                    → "<TypeName>" placeholder
 //
 // The Date/ArrayBuffer/typed-array/StaticArray/Set/Map branches use
 // `value instanceof X` guards. In a generic function AssemblyScript resolves
@@ -134,13 +137,35 @@ export function stringify<T>(value: T): string {
   }
 
   if (isManaged<T>()) {
-    // @ts-ignore: hand-written or transform-generated serializer
-    if (isDefined(value.toJSON)) return value.toJSON();
+    // A user-supplied `toJSON` wins, but only when it returns a string.
+    // `preferToJSONString` decides that on the return type and otherwise
+    // falls back to the transform-generated structural serializer.
+    // @ts-ignore: optional user-supplied serializer
+    if (isDefined(value.toJSON)) {
+      // @ts-ignore: optional user-supplied serializer
+      return preferToJSONString(value, value.toJSON());
+    }
+    // @ts-ignore: transform-generated structural serializer
+    if (isDefined(value.__AS_TEST_TO_JSON)) return value.__AS_TEST_TO_JSON();
     return escape("<" + nameof<T>() + ">");
   }
 
   // Unreachable for well-typed AS code — but emit a valid JSON string so
   // the surrounding payload stays parsable.
+  return escape("<" + nameof<T>() + ">");
+}
+
+// Given a managed value and the result of calling its `toJSON()`, return
+// that result when it's a string, otherwise the transform-generated
+// `__AS_TEST_TO_JSON` structural serializer (or a `<TypeName>` placeholder
+// if neither applies). `R` is the `toJSON` return type, so the
+// `result`-returning branch is pruned — and never type-checked — for any
+// non-string return type. That's what lets a `toJSON` returning, say,
+// `i32` fall back here instead of being a hard compile error.
+function preferToJSONString<T, R>(value: T, result: R): string {
+  if (isString<R>()) return result as string;
+  // @ts-ignore: transform-generated structural serializer
+  if (isDefined(value.__AS_TEST_TO_JSON)) return value.__AS_TEST_TO_JSON();
   return escape("<" + nameof<T>() + ">");
 }
 

@@ -1,5 +1,41 @@
 # Change Log
 
+## 2026-05-28 - v1.5.0
+
+### `mockFn` and `mockImport` now work anywhere
+
+- feat: `mockFn(target, callback)` and `unmockFn(target)` can be called from **anywhere** in the source — including inside a `test()` / `it()` callback — not just module top-level. The MockTransform now reads the visitor's enclosing-statement `ref` so it locates and removes the directive wherever it lives, defers list mutations to the end of `visitSource` so traversal isn't disturbed, and `unshift`s the generated mock fn to module scope so every rewritten call site can reach it. Previously, a nested `mockFn` silently no-op'd because the transform's top-level-statement scan never found the directive — calls remained un-rewritten and the test passed only because trivial assertions passed too.
+- feat: `mockImport(path, callback)` + `unmockImport(path)` now retains the real import as a fallback (call this "route 2"). When a `mockImport`'d path is **never unmocked**, the `@external` import is removed and the wrapper always dispatches through `__mock_import` — same as before. When a path **is** unmocked somewhere, the transform keeps the real import (renamed `__as_test_real_<name>`, de-exported), and the wrapper becomes `if (__mock_import.has(path)) call_indirect(...) else __as_test_real_<name>(...)`. So a call after `unmockImport` falls back to the host binding instead of trapping on a missing `__mock_import` entry.
+- fix: the runtime import-stub now covers any module the wasm declares (not just `env`), so a retained `mockImport` target with no host implementation (e.g. an artificial test import) gets a `() => 0` no-op stub before `WebAssembly.instantiate`. Without this, the wasm `LinkError`s on instantiation. `env` is no longer skipped — asc raw bindings put their `abort`/`trace`/`seed` defaults on the inner object and user env imports on the prototype, so the stub fills missing `env.*` user imports without clobbering asc's defaults.
+- fix: in raw bindings the helper reads `imports.<module>` while building its import object, so the stub had to be applied **before** `helper.instantiate(module, imports)` is called — adding it inside the `WebAssembly.instantiate` wrapper alone was too late and surfaced as `instantiate@.../<spec>.js:...` failures (this was the chromium-headful + watch + full-suite crash where one bad job poisoned the persistent session).
+
+### Class serializer rename — `__AS_TEST_TO_JSON()`
+
+- change: the transform-injected class serializer is now emitted under an internal name `__AS_TEST_TO_JSON(): string` instead of `toJSON(): string`. Users can't accidentally call the generated method, and a hand-written `toJSON()` no longer collides with the generated one.
+- feat: at runtime, `stringify<T>` for a managed class calls a user `toJSON()` only when its return type is a string (probed via a generic-parameter helper so the dead branch is pruned at compile time); a non-string `toJSON` cleanly falls back to the generated `__AS_TEST_TO_JSON()` structural serializer instead of being a compile error. The transform now generates `__AS_TEST_TO_JSON` for every eligible class so the fallback always exists.
+
+### Chromium fix — fragmented WebSocket frames
+
+- fix: chromium fragments outbound WebSocket binary messages at ~128KB. The two web server frame parsers (standalone runner in `lib/src/index.ts` and managed `PersistentWebSessionHost` in `cli/commands/web-session.ts`) read the opcode but **never checked the FIN bit or handled continuation frames (`0x0`)** — so chromium's continuation frame was silently dropped, the wipc byte stream desynced, and frame-header bytes bled into report payloads as `Bad control character in JSON`. Both parsers now reassemble fragments (buffer `0x1`/`0x2` with FIN=0, append `0x0` until FIN=1). firefox and webkit don't fragment at that size, which is why they always worked.
+- fix: the CLI reassembled chunked report payloads by `data.toString("utf8")` per-chunk then joining. The producer (`assembly/util/wipc.ts`) chunks raw UTF-8 bytes, so a multibyte character straddling a chunk boundary was getting mis-decoded into replacement chars (or worse) on any transport, not just chromium. Chunks are now buffered as `Buffer`s and decoded UTF-8 once after `Buffer.concat`.
+
+### Web mode — repro command + browser test infrastructure
+
+- fix: when a managed web run (`ast test --mode firefox/chromium/webkit`) fails, the printed repro now points at the **managed CLI command** (`node ./bin/index.js run <spec> --mode <browser>`) instead of `node .as-test/runners/default.web.js <wasm>`. The managed path uses `PersistentWebSessionHost`'s panel UI; the standalone runner uses `lib/src/web-runner/*`'s terminal UI — completely different stacks. So the old repro never actually reproduced the failing run, and showed a different UI to boot. Top-level negations in `runCommandForLog` are now mode-aware via `webSession`.
+- change: removed `tests/fixtures/fake-browser.mjs`. The integration suite's web tests now use real headless chromium (auto-detected from PATH or the Playwright cache), and `AS_TEST_SKIP_WEB=1` cleanly skips them in CI. CI workflows (`.github/workflows/as-test.yml`, `release.yml`) already set `AS_TEST_SKIP_WEB=1`. Without this, the shim's flow hung indefinitely in some local environments, eating ~hours of integration time.
+- feat: a small "browser-closes-early" test now ships a `process.exit(0)` shebanged executable as `--browser` to verify the framework reports a clean disconnect error rather than hanging.
+
+### Per-mode spec exclusion
+
+- feat: mode-level `input` overrides can use `!`-prefixed patterns to exclude specific specs from that mode. The orchestrator's per-mode `run()` call now checks the **mode-only additions** (negations in the mode's `input` array that aren't in the top-level `input`) against the selector and returns an empty result for excluded files. Top-level negations remain ignored when a file is explicitly selected, so `test __tmp_foo` still works for paths the top-level config would otherwise filter.
+- chore: `mock.spec` is excluded from `wasmtime`, `wasmer`, and `wazero` modes in `as-test.config.json`. Those CLI-only WASI runtimes can't accept arbitrary imports at instantiation, so the retained `env.*` `mockImport` target has no JS host to satisfy it.
+
+### Scripts and CI standardization
+
+- feat: new `build` script aliases `build:cli && build:lib && build:transform`. `test:all`, `release:check`, and `prepublishOnly` now compose with it instead of repeating the three sub-builds. `test:all` runs `build && test:modes && test:integration && test:examples`.
+- chore: `test:modes` drops the duplicate `--parallel` (the base `test` script already has it), and `test:ci` composes with `npm run test --` instead of hard-coding the bin path.
+- chore: `.github/workflows/as-test.yml` and `release.yml` now share identical test-job setup (checkout@v4, `actions/setup-node@v4`, `oven-sh/setup-bun@v1`, install Wasmtime, lint, typecheck, build, `test:ci`, `test:integration`). `as-test.yml` keeps the Test Summary action for PR feedback; the manual `curl`/`tar` Node bootstrap and the inline Bun installer are gone. `examples.yml` uses the `build` alias.
+
 ## 2026-05-27 - v1.4.1
 
 ### Dependency hygiene

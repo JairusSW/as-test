@@ -1,12 +1,8 @@
-import { describe, expect, log, test } from "..";
+import { describe, expect, log, mockFn, test, unmockFn } from "..";
 
 class Address {
   line1: string = "42 Binary Lane";
   zip: i32 = 90210;
-
-  toJSON(): string {
-    return '{"line1":"' + this.line1 + '","zip":' + this.zip.toString() + "}";
-  }
 }
 
 class UserProfile {
@@ -15,20 +11,6 @@ class UserProfile {
   rating: f64 = 4.25;
   tags: string[] = ["assemblyscript", "testing"];
   address: Address = new Address();
-
-  toJSON(): string {
-    return (
-      '{"id":' +
-      this.id.toString() +
-      ',"active":' +
-      (this.active ? "true" : "false") +
-      ',"rating":' +
-      this.rating.toString() +
-      ',"address":' +
-      this.address.toJSON() +
-      "}"
-    );
-  }
 }
 
 describe("log serialization", () => {
@@ -37,6 +19,11 @@ describe("log serialization", () => {
     const list = [1, 2, 3];
 
     log(profile);
+    mockFn(console.log, (message: string): void => {
+      log(message);
+    });
+    console.log("this is mocked");
+    unmockFn(console.log);
     log(list);
     log(true);
     log(123);

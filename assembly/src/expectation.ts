@@ -20,8 +20,8 @@ function safeStringify<T>(value: T): string {
     !isString<T>() &&
     !isArray<T>()
   ) {
-    // @ts-expect-error: optional user-supplied serializer
-    if (!isDefined(value.toJSON)) {
+    // @ts-expect-error: warn only when nothing serializes it — no user `toJSON` and no transform-generated `__AS_TEST_TO_JSON` → renders as a `<TypeName>` placeholder.
+    if (!isDefined(value.toJSON) && !isDefined(value.__AS_TEST_TO_JSON)) {
       sendWarning(
         "Class " +
           nameof<T>() +

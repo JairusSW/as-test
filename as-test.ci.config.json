@@ -38,6 +38,7 @@
       }
     },
     "wasmtime-wasi": {
+      "input": ["assembly/__tests__/*.spec.ts", "!**/mock.spec.ts"],
       "buildOptions": {
         "target": "wasi"
       },

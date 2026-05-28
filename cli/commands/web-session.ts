@@ -32,6 +32,8 @@ export class PersistentWebSessionHost {
   private readonly serverSockets = new Set<net.Socket>();
   private wsSocket: Duplex | null = null;
   private wsBuffer = Buffer.alloc(0);
+  private wsFragmentOpcode = 0;
+  private wsFragments: Buffer[] = [];
   private ready = false;
   private closed = false;
   private currentJob: SessionJob | null = null;
@@ -370,14 +372,32 @@ export class PersistentWebSessionHost {
         payload = Buffer.from(payload);
       }
       this.wsBuffer = this.wsBuffer.subarray(offset + maskLength + length);
-      if (opcode == 0x8) {
+      // Reassemble fragmented messages: a non-final data frame (0x1/0x2 with
+      // FIN=0) starts a sequence continued by 0x0 frames until FIN=1. Chromium
+      // fragments large (64KB) frames, so without this the wipc stream desyncs
+      // and the report payload is corrupted.
+      const fin = (first & 0x80) !== 0;
+      let effectiveOpcode = opcode;
+      if (opcode == 0x0) {
+        this.wsFragments.push(payload);
+        if (!fin) continue;
+        payload = Buffer.concat(this.wsFragments);
+        this.wsFragments = [];
+        effectiveOpcode = this.wsFragmentOpcode;
+        this.wsFragmentOpcode = 0;
+      } else if ((opcode == 0x1 || opcode == 0x2) && !fin) {
+        this.wsFragmentOpcode = opcode;
+        this.wsFragments = [payload];
+        continue;
+      }
+      if (effectiveOpcode == 0x8) {
         return;
       }
-      if (opcode == 0x1) {
+      if (effectiveOpcode == 0x1) {
         this.onControl(payload.toString("utf8"));
         continue;
       }
-      if (opcode == 0x2 && this.currentJob) {
+      if (effectiveOpcode == 0x2 && this.currentJob) {
         this.currentJob.onBinary(Buffer.from(payload));
       }
     }
@@ -1077,6 +1097,10 @@ async function instantiate(imports) {
     if (typeof helper.instantiate != "function") {
       throw new Error("bindings helper missing instantiate export");
     }
+    // Stub before the helper runs: it reads imports.<module> while building its
+    // import object, so a missing import must be filled here, not just in the
+    // WebAssembly.instantiate wrapper (which runs too late for raw bindings).
+    stubMissingImports(module, imports, ["wasi_snapshot_preview1"]);
     const instance = await captureInstantiateInstance(async () => {
       await helper.instantiate(module, imports);
     });
@@ -1091,9 +1115,29 @@ async function instantiate(imports) {
   }
   const binary = await fetchWasmBinary(wasmUrl);
   const module = new WebAssembly.Module(binary);
+  stubMissingImports(module, imports, ["wasi_snapshot_preview1"]);
   const result = await WebAssembly.instantiate(module, imports);
   const wasmInstance = result instanceof WebAssembly.Instance ? result : result.instance;
   return decorateInstance(wasmInstance);
+}
+
+// Fills function imports the module declares but nothing provided with a no-op
+// stub, so instantiation never fails on a missing import (e.g. an unmocked
+// mockImport target with no host implementation). Mirrors the node runner.
+function stubMissingImports(module, importObject, skipModules) {
+  const skip = new Set(skipModules || []);
+  for (const entry of WebAssembly.Module.imports(module)) {
+    if (entry.kind !== "function" || skip.has(entry.module)) continue;
+    let mod = importObject[entry.module];
+    if (!mod || typeof mod !== "object") {
+      mod = {};
+      importObject[entry.module] = mod;
+    }
+    if (!(entry.name in mod)) {
+      mod[entry.name] = () => 0;
+    }
+  }
+  return importObject;
 }
 
 async function fetchWasmBinary(wasmUrl) {
@@ -1106,6 +1150,9 @@ async function captureInstantiateInstance(run) {
   const originalInstantiate = WebAssembly.instantiate.bind(WebAssembly);
   let captured = null;
   WebAssembly.instantiate = async (source, importObject) => {
+    if (source instanceof WebAssembly.Module && importObject) {
+      stubMissingImports(source, importObject, ["wasi_snapshot_preview1"]);
+    }
     const result = await originalInstantiate(source, importObject);
     captured = result instanceof WebAssembly.Instance ? result : result.instance;
     return result;

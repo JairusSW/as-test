@@ -40,6 +40,11 @@
     },
     "wasmtime": {
       "default": false,
+      "input": [
+        "assembly/__tests__/**/*.spec.ts",
+        "!**/__tmp_*",
+        "!**/mock.spec.ts"
+      ],
       "buildOptions": {
         "target": "wasi"
       },
@@ -51,6 +56,11 @@
     },
     "wasmer": {
       "default": false,
+      "input": [
+        "assembly/__tests__/**/*.spec.ts",
+        "!**/__tmp_*",
+        "!**/mock.spec.ts"
+      ],
       "buildOptions": {
         "target": "wasi"
       },
@@ -62,6 +72,11 @@
     },
     "wazero": {
       "default": false,
+      "input": [
+        "assembly/__tests__/**/*.spec.ts",
+        "!**/__tmp_*",
+        "!**/mock.spec.ts"
+      ],
       "buildOptions": {
         "target": "wasi"
       },

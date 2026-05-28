@@ -56,6 +56,13 @@ export default class Transformer extends Transform {
     for (const target of mockedImportTargets) {
       mock.importMocked.add(target);
     }
+    // Imports that are unmocked somewhere keep their real binding so the
+    // unmocked call falls back to it; imports that are only ever mocked have
+    // their real import removed entirely.
+    const unmockedImportTargets = collectUnmockImportTargets(sources);
+    for (const target of unmockedImportTargets) {
+      mock.importUnmocked.add(target);
+    }
 
     // Loop over every source
     for (const source of sources) {
@@ -164,8 +171,18 @@ function patchModeName(parser: Parser, modeName: string): void {
 }
 
 function collectMockImportTargets(sources: Source[]): Set<string> {
+  return collectImportTargets(sources, /\bmockImport\s*\(\s*["']([^"']+)["']/g);
+}
+
+function collectUnmockImportTargets(sources: Source[]): Set<string> {
+  return collectImportTargets(
+    sources,
+    /\bunmockImport\s*\(\s*["']([^"']+)["']/g,
+  );
+}
+
+function collectImportTargets(sources: Source[], pattern: RegExp): Set<string> {
   const out = new Set<string>();
-  const pattern = /\bmockImport\s*\(\s*["']([^"']+)["']/g;
   for (const source of sources) {
     const text = stripComments(source.text);
     for (const match of text.matchAll(pattern)) {

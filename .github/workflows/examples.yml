@@ -35,8 +35,8 @@ jobs:
       - name: Install root dependencies
         run: bun install
 
-      - name: Build CLI and transform
-        run: bun run build:cli && bun run build:transform
+      - name: Build
+        run: bun run build
 
       - name: Install example dependencies
         working-directory: examples/${{ matrix.example }}

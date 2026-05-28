@@ -247,7 +247,11 @@ async function instantiateRawInstance(
   if (typeof helper.instantiate != "function") {
     throw new Error("bindings helper missing instantiate export");
   }
-  const mergedImports = mergeImports(withNodeIo({}), imports);
+  const mergedImports = stubMissingImports(
+    module,
+    mergeImports(withNodeIo({}), imports),
+    ["wasi_snapshot_preview1"],
+  );
   const instance = await captureHelperInstance(async () => {
     await helper.instantiate!(module, mergedImports);
   });
@@ -347,6 +351,8 @@ async function instantiateWebInstance(
     let ready = false;
     let wsSocket: Duplex | null = null;
     let wsBuffer = Buffer.alloc(0);
+    let wsFragmentOpcode = 0;
+    let wsFragments: Buffer[] = [];
     let stdinBuffer = Buffer.alloc(0);
     let browserProcess: ChildProcess | null = null;
     let browserStderr = "";
@@ -488,15 +494,33 @@ async function instantiateWebInstance(
           payload = Buffer.from(payload);
         }
         wsBuffer = wsBuffer.subarray(offset + maskLength + length);
-        if (opcode == 0x8) {
+        // Reassemble fragmented messages: a non-final data frame (0x1/0x2 with
+        // FIN=0) starts a sequence continued by 0x0 frames until FIN=1. Chromium
+        // fragments large (64KB) frames, so without this the wipc stream
+        // desyncs and the report payload is corrupted.
+        const fin = (first & 0x80) !== 0;
+        let effectiveOpcode = opcode;
+        if (opcode == 0x0) {
+          wsFragments.push(payload);
+          if (!fin) continue;
+          payload = Buffer.concat(wsFragments);
+          wsFragments = [];
+          effectiveOpcode = wsFragmentOpcode;
+          wsFragmentOpcode = 0;
+        } else if ((opcode == 0x1 || opcode == 0x2) && !fin) {
+          wsFragmentOpcode = opcode;
+          wsFragments = [payload];
+          continue;
+        }
+        if (effectiveOpcode == 0x8) {
           finish(0);
           return;
         }
-        if (opcode == 0x1) {
+        if (effectiveOpcode == 0x1) {
           onControl(payload.toString("utf8"));
           continue;
         }
-        if (opcode == 0x2) {
+        if (effectiveOpcode == 0x2) {
           process.stdout.write(payload);
         }
       }
@@ -703,20 +727,33 @@ function createWasmImports(
   module: WebAssembly.Module,
   imports: AnyImports,
 ): AnyImports {
-  const mergedImports = mergeImports(withNodeIo({}), imports);
-  if (!mergedImports.env || typeof mergedImports.env != "object") {
-    mergedImports.env = {};
-  }
+  return stubMissingImports(module, mergeImports(withNodeIo({}), imports));
+}
+
+// Fills any function import the module declares but the caller didn't provide
+// with a no-op stub, so instantiation never fails on a missing import. This
+// covers imports an unmocked `mockImport` target reintroduces (which keep
+// their real binding but have no host implementation in tests). `skipModules`
+// leaves bindings-helper-owned modules (env / wasi) for the helper to fill.
+function stubMissingImports(
+  module: WebAssembly.Module,
+  imports: AnyImports,
+  skipModules: readonly string[] = [],
+): AnyImports {
+  const skip = new Set(skipModules);
+  const bag = imports as Record<string, Record<string, unknown>>;
   for (const entry of WebAssembly.Module.imports(module)) {
-    if (
-      entry.module == "env" &&
-      entry.kind == "function" &&
-      !(entry.name in mergedImports.env)
-    ) {
-      mergedImports.env[entry.name] = () => 0;
+    if (entry.kind != "function" || skip.has(entry.module)) continue;
+    let mod = bag[entry.module];
+    if (!mod || typeof mod != "object") {
+      mod = {};
+      bag[entry.module] = mod;
+    }
+    if (!(entry.name in mod)) {
+      mod[entry.name] = () => 0;
     }
   }
-  return mergedImports;
+  return imports;
 }
 
 let patchedWasiWarning = false;
@@ -1306,6 +1343,16 @@ async function captureHelperInstance(
     source: BufferSource | WebAssembly.Module,
     importObject?: WebAssembly.Imports,
   ) => {
+    // Stub any import the bindings helper left unprovided (e.g. an unmocked
+    // mockImport target with no host implementation), so esm/raw bindings
+    // instantiate instead of failing with a LinkError. env/wasi stay with the
+    // helper.
+    if (source instanceof WebAssembly.Module && importObject) {
+      stubMissingImports(source, importObject as AnyImports, [
+        "env",
+        "wasi_snapshot_preview1",
+      ]);
+    }
     const result = await originalInstantiate(source, importObject);
     if (result instanceof WebAssembly.Instance) {
       instance = result;

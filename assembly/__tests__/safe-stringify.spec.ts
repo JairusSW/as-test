@@ -21,9 +21,9 @@ class WithJSON {
   }
 }
 
-// 2) Class without @json/toJSON. Transform generates equality;
-//    safeStringify falls through to the placeholder. The placeholder is
-//    only visible on failure, so we only assert equality works here.
+// 2) Class without @json/toJSON. Transform generates both equality and a
+//    `__AS_TEST_TO_JSON` structural serializer, so safeStringify renders its
+//    fields (no placeholder). We only assert equality works here.
 class Bare {
   v: i32;
 

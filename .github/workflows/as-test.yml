@@ -7,49 +7,25 @@ on:
   pull_request:
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     env:
       AS_TEST_SKIP_WEB: "1"
-
     steps:
-      - name: Checkout the repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: oven-sh/setup-bun@v1
 
       - name: Install Wasmtime
         run: |
           curl https://wasmtime.dev/install.sh -sSf | bash
           echo "$HOME/.wasmtime/bin" >> $GITHUB_PATH
 
-      - name: Setup Node.js
-        run: |
-          if ! command -v node >/dev/null 2>&1; then
-            NODE_VERSION="v22.11.0"
-            curl -fsSL "https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-linux-x64.tar.xz" \
-              | tar -xJ -C /tmp
-            sudo cp -R "/tmp/node-${NODE_VERSION}-linux-x64/." /usr/local/
-          fi
-          node --version
-
-      - name: Setup Bun
-        run: |
-          curl -fsSL https://bun.sh/install | bash
-          echo "$HOME/.bun/bin" >> $GITHUB_PATH
-
-      - name: Install dependencies
-        run: bun install
-
-      - name: Lint
-        run: bun run lint
-
-      - name: Run tests
-        run: bun run test:ci
-
-      - name: Run integration tests
-        run: bun run test:integration
-
-      - name: Test Summary
-        uses: test-summary/action@v2
-        if: ${{ always() && !env.ACT }}
-        with:
-          paths: ".as-test/reports/*.tap"
+      - run: bun install
+      - run: bun run typecheck
+      - run: bun run lint
+      - run: bun run build
+      - run: bun run test:ci
+      - run: bun run test:integration

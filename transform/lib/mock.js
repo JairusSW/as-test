@@ -6,8 +6,11 @@ export class MockTransform extends Visitor {
     globalStatements = [];
     mocked = new Set();
     importMocked = new Set();
-    visitCallExpression(node) {
-        super.visitCallExpression(node);
+    importUnmocked = new Set();
+    pendingHoist = [];
+    pendingRemoval = [];
+    visitCallExpression(node, ref = null) {
+        super.visitCallExpression(node, ref);
         const name = normalizeName(expressionName(node.expression));
         if (this.mocked.has(name + "_mock")) {
             node.expression = Node.createIdentifierExpression(name + "_mock", node.expression.range);
@@ -25,6 +28,7 @@ export class MockTransform extends Visitor {
             if (!oldFn)
                 return;
             this.mocked.delete(normalizeName(expressionName(oldFn)) + "_mock");
+            this.scheduleRemoval(node, ref);
             return;
         }
         if (name == "unmockImport") {
@@ -34,26 +38,21 @@ export class MockTransform extends Visitor {
             return;
         const oldValue = node.args[0];
         const callback = node.args[1];
-        if (!oldValue || !callback)
+        if (!oldValue || !callback || !callback.declaration)
             return;
-        const newName = normalizeName(expressionName(oldValue));
-        const newFn = Node.createFunctionDeclaration(Node.createIdentifierExpression(newName + "_mock", callback.range), callback.declaration.decorators, 0, callback.declaration.typeParameters, callback.declaration.signature, callback.declaration.body, callback.declaration.arrowKind, callback.range);
-        const currentSource = this.srcCurrent;
-        if (!currentSource)
+        const mockName = normalizeName(expressionName(oldValue)) + "_mock";
+        const newFn = Node.createFunctionDeclaration(Node.createIdentifierExpression(mockName, callback.range), callback.declaration.decorators, 0, callback.declaration.typeParameters, callback.declaration.signature, callback.declaration.body, callback.declaration.arrowKind, callback.range);
+        this.pendingHoist.push(newFn);
+        this.mocked.add(mockName);
+        this.scheduleRemoval(node, ref);
+    }
+    scheduleRemoval(node, ref) {
+        const container = asStatementContainer(ref);
+        if (!container)
             return;
-        const stmts = currentSource.statements;
-        let index = -1;
-        for (let i = 0; i < stmts.length; i++) {
-            const stmt = stmts[i];
-            if (stmt.range.start != node.range.start)
-                continue;
-            index = i;
-            break;
-        }
-        if (index === -1)
-            return;
-        stmts.splice(index, 1, newFn);
-        this.mocked.add(newFn.name.text);
+        const stmt = container.statements.find((s) => s.expression === node);
+        if (stmt)
+            this.pendingRemoval.push({ container, stmt });
     }
     visitFunctionDeclaration(node, isDefault) {
         if (this.mocked.has(node.name.text))
@@ -62,11 +61,23 @@ export class MockTransform extends Visitor {
     }
     visitSource(node) {
         this.mocked = new Set();
+        this.pendingHoist = [];
+        this.pendingRemoval = [];
         this.srcCurrent = node;
         super.visitSource(node);
         const currentSource = this.srcCurrent;
         if (!currentSource)
             return;
+        for (const { container, stmt } of this.pendingRemoval) {
+            const i = container.statements.indexOf(stmt);
+            if (i !== -1)
+                container.statements.splice(i, 1);
+        }
+        this.pendingRemoval = [];
+        if (this.pendingHoist.length) {
+            currentSource.statements.unshift(...this.pendingHoist);
+            this.pendingHoist = [];
+        }
         const stmts = currentSource.statements;
         for (let index = 0; index < stmts.length; index++) {
             const node = stmts[index];
@@ -98,6 +109,17 @@ export class MockTransform extends Visitor {
                 index++;
                 continue;
             }
+            if (this.importUnmocked.has(path) && node.signature.returnType) {
+                const realName = "__as_test_real_" + node.name.text;
+                const r = node.range;
+                const wrapper = buildFallbackWrapper(node, path, realName, r);
+                const mutable = node;
+                mutable.name = Node.createIdentifierExpression(realName, r);
+                mutable.flags &= ~2;
+                stmts.splice(index + 1, 0, wrapper);
+                index++;
+                continue;
+            }
             const args = [
                 Node.createCallExpression(Node.createPropertyAccessExpression(Node.createIdentifierExpression("__mock_import", node.range), Node.createIdentifierExpression("get", node.range), node.range), null, [Node.createStringLiteralExpression(path, node.range)], node.range),
             ];
@@ -119,6 +141,27 @@ function isBodylessTopLevelFunction(node) {
         candidate.name instanceof IdentifierExpression &&
         "signature" in candidate &&
         candidate.body == null);
+}
+function buildFallbackWrapper(node, path, realName, range) {
+    const mockImportGet = Node.createCallExpression(Node.createPropertyAccessExpression(Node.createIdentifierExpression("__mock_import", range), Node.createIdentifierExpression("get", range), range), null, [Node.createStringLiteralExpression(path, range)], range);
+    const indirectArgs = [mockImportGet];
+    const forwardArgs = [];
+    for (const param of node.signature.parameters) {
+        indirectArgs.push(Node.createIdentifierExpression(param.name.text, range));
+        forwardArgs.push(Node.createIdentifierExpression(param.name.text, range));
+    }
+    const ifMocked = Node.createIfStatement(Node.createCallExpression(Node.createPropertyAccessExpression(Node.createIdentifierExpression("__mock_import", range), Node.createIdentifierExpression("has", range), range), null, [Node.createStringLiteralExpression(path, range)], range), Node.createReturnStatement(Node.createCallExpression(Node.createIdentifierExpression("call_indirect", range), null, indirectArgs, range), range), null, range);
+    const callReal = Node.createReturnStatement(Node.createCallExpression(Node.createIdentifierExpression(realName, range), null, forwardArgs, range), range);
+    const signature = Node.createFunctionType(node.signature.parameters, node.signature.returnType, node.signature.explicitThisType, node.signature.isNullable, range);
+    const exported = (node.flags & 2) != 0;
+    return Node.createFunctionDeclaration(Node.createIdentifierExpression(node.name.text, range), null, exported ? 2 : 0, node.typeParameters, signature, Node.createBlockStatement([ifMocked, callReal], range), 0, range);
+}
+function asStatementContainer(ref) {
+    const candidate = ref;
+    if (candidate && Array.isArray(candidate.statements)) {
+        return candidate;
+    }
+    return null;
 }
 function normalizeName(value) {
     return value

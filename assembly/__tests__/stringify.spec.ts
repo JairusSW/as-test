@@ -11,10 +11,10 @@ import { describe, expect, test } from "..";
 import { __as_test_stringify } from "..";
 
 // `__as_test_stringify` is the helper the EqualsTransform-generated
-// `toJSON()` calls into.
+// `__AS_TEST_TO_JSON()` calls into.
 
 // Class with no decorator + no hand-written toJSON. The transform should
-// inject a `toJSON(): string` that produces a flat JSON object.
+// inject a `__AS_TEST_TO_JSON(): string` that produces a flat JSON object.
 class Plain {
   a: i32 = 0;
   b: string = "";
@@ -25,8 +25,8 @@ class Plain {
   }
 }
 
-// Class with a hand-written toJSON — must be left alone by the
-// transform.
+// Class with a hand-written string `toJSON` — the runtime calls it
+// directly (the transform-generated method is dead code here).
 class CustomJSON {
   v: i32 = 0;
 
@@ -36,6 +36,20 @@ class CustomJSON {
 
   toJSON(): string {
     return '{"custom":' + this.v.toString() + "}";
+  }
+}
+
+// Class whose `toJSON` does NOT return a string. The runtime ignores it and
+// falls back to the transform-generated `__AS_TEST_TO_JSON`.
+class NonStringJSON {
+  x: i32 = 0;
+
+  constructor(x: i32) {
+    this.x = x;
+  }
+
+  toJSON(): i32 {
+    return this.x;
   }
 }
 
@@ -242,6 +256,12 @@ describe("stringify: classes", () => {
   test("hand-written toJSON wins over the transform", () => {
     expect(__as_test_stringify<CustomJSON>(new CustomJSON(99))).toBe(
       '{"custom":99}',
+    );
+  });
+
+  test("non-string toJSON falls back to the generated serializer", () => {
+    expect(__as_test_stringify<NonStringJSON>(new NonStringJSON(5))).toBe(
+      '{"x":5}',
     );
   });
 });

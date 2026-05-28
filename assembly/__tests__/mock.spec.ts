@@ -44,4 +44,13 @@ it("should unmock imports", () => {
   expect(getFoo()).toBe("buz");
 });
 
+it("falls back to the real import after unmock without trapping", () => {
+  // Because "mock.foo" is unmocked somewhere, the transform keeps its real
+  // import (renamed) and the wrapper falls back to it when no mock is set, so
+  // calling it here hits the host binding instead of trapping.
+  unmockImport("mock.foo");
+  foo();
+  expect(true).toBe(true);
+});
+
 run();

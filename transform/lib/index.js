@@ -37,6 +37,10 @@ export default class Transformer extends Transform {
         for (const target of mockedImportTargets) {
             mock.importMocked.add(target);
         }
+        const unmockedImportTargets = collectUnmockImportTargets(sources);
+        for (const target of unmockedImportTargets) {
+            mock.importUnmocked.add(target);
+        }
         for (const source of sources) {
             const sourceInfo = analyzeSourceText(source.text);
             const shouldInjectRunCall = source.sourceKind == 1 &&
@@ -110,8 +114,13 @@ function patchModeName(parser, modeName) {
     }
 }
 function collectMockImportTargets(sources) {
+    return collectImportTargets(sources, /\bmockImport\s*\(\s*["']([^"']+)["']/g);
+}
+function collectUnmockImportTargets(sources) {
+    return collectImportTargets(sources, /\bunmockImport\s*\(\s*["']([^"']+)["']/g);
+}
+function collectImportTargets(sources, pattern) {
     const out = new Set();
-    const pattern = /\bmockImport\s*\(\s*["']([^"']+)["']/g;
     for (const source of sources) {
         const text = stripComments(source.text);
         for (const match of text.matchAll(pattern)) {
