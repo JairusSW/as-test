@@ -15,6 +15,10 @@ import { persistCrashRecord } from "../crash-store.js";
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 const MAGIC = Buffer.from("WIPC");
 const HEADER_SIZE = 9;
+// See cli/wipc.ts: the magic can occur by chance in passthrough output, so a
+// declared length above this bound means the match is coincidental.
+const MAX_FRAME_SIZE = 16 * 1024 * 1024;
+const KNOWN_FRAME_TYPES = new Set([0x00, 0x01, 0x02, 0x03]);
 
 export type FuzzRunOverride =
   | { kind: "set"; value: number }
@@ -211,10 +215,14 @@ async function runFuzzTarget(
   };
   const captured = captureFrames((type, payload, respond) => {
     if (type == 0x02) {
-      const event = JSON.parse(payload.toString("utf8")) as Record<
-        string,
-        unknown
-      >;
+      // A coincidental magic + CALL match whose payload is not JSON must not
+      // crash the run (it would be misreported as a fuzz crash); drop it.
+      let event: Record<string, unknown>;
+      try {
+        event = JSON.parse(payload.toString("utf8")) as Record<string, unknown>;
+      } catch {
+        return;
+      }
       const kind = String(event.kind ?? "");
       if (kind == "fuzz:config") {
         const resolved = config as ResolvedFuzzConfig;
@@ -539,6 +547,16 @@ function captureFrames(
       if (buffer.length < HEADER_SIZE) return true;
       const type = buffer.readUInt8(4);
       const length = buffer.readUInt32LE(5);
+      // A coincidental magic match in passthrough output: an unknown type or
+      // an implausible length means these 4 bytes are data, not a frame.
+      // Emit them and resync past the magic so we don't stall or misparse.
+      if (!KNOWN_FRAME_TYPES.has(type) || length > MAX_FRAME_SIZE) {
+        const raw = buffer.subarray(0, MAGIC.length);
+        passthrough = Buffer.concat([passthrough, raw]);
+        originalWrite(raw);
+        buffer = buffer.subarray(MAGIC.length);
+        continue;
+      }
       const frameSize = HEADER_SIZE + length;
       if (buffer.length < frameSize) return true;
       const payload = buffer.subarray(HEADER_SIZE, frameSize);

@@ -45,14 +45,52 @@ export class Channel {
       if (this.buffer.length < Channel.HEADER_SIZE) return;
       const type = this.buffer.readUInt8(4);
       const length = this.buffer.readUInt32LE(5);
+      // The magic can occur by chance inside ordinary stdout output (e.g. a
+      // test printing binary data or the literal string "WIPC"). A genuine
+      // frame always carries a known type and a bounded length; if either
+      // check fails the match is coincidental, so surface the magic bytes as
+      // passthrough and resume scanning past them rather than crash or stall.
+      if (!Channel.isKnownType(type) || length > Channel.MAX_FRAME_SIZE) {
+        this.resyncPastMagic();
+        continue;
+      }
       const frameSize = Channel.HEADER_SIZE + length;
       if (this.buffer.length < frameSize) return;
       const payload = this.buffer.subarray(Channel.HEADER_SIZE, frameSize);
+      if (type === MessageType.CALL) {
+        // CALL payloads are always JSON. If the bytes do not parse the magic
+        // was coincidental — do NOT consume the frame; treat the magic as
+        // output and resync so the rest flushes as passthrough.
+        let parsed;
+        try {
+          parsed = JSON.parse(payload.toString("utf8"));
+        } catch {
+          this.resyncPastMagic();
+          continue;
+        }
+        this.buffer = this.buffer.subarray(frameSize);
+        this.onCall(parsed);
+        continue;
+      }
       this.buffer = this.buffer.subarray(frameSize);
-      this.handleFrame(type, payload);
+      this.dispatchFrame(type, payload);
     }
   }
-  handleFrame(type, payload) {
+  static isKnownType(type) {
+    return (
+      type === MessageType.OPEN ||
+      type === MessageType.CLOSE ||
+      type === MessageType.CALL ||
+      type === MessageType.DATA
+    );
+  }
+  // A coincidental magic match: emit the magic bytes as ordinary output and
+  // advance past them so scanning can continue from the next byte.
+  resyncPastMagic() {
+    this.onPassthrough(this.buffer.subarray(0, Channel.MAGIC.length));
+    this.buffer = this.buffer.subarray(Channel.MAGIC.length);
+  }
+  dispatchFrame(type, payload) {
     switch (type) {
       case MessageType.OPEN:
         this.onOpen();
@@ -60,14 +98,9 @@ export class Channel {
       case MessageType.CLOSE:
         this.onClose();
         break;
-      case MessageType.CALL:
-        this.onCall(JSON.parse(payload.toString("utf8")));
-        break;
       case MessageType.DATA:
         this.onDataMessage(payload);
         break;
-      default:
-        throw new Error(`Unknown frame type: ${type}`);
     }
   }
   onPassthrough(_data) {}
@@ -79,3 +112,9 @@ export class Channel {
 Channel.MAGIC = Buffer.from("WIPC");
 Channel.HEADER_SIZE = 9;
 Channel.MAGIC_PREFIX_MAX = Channel.MAGIC.length - 1;
+// Upper bound on a single frame's declared payload length. Real frames are
+// small JSON events or report chunks (<= 64 KiB); anything larger means the
+// 4 magic bytes appeared by coincidence inside passthrough output. Without
+// this bound a forged length would make us buffer (and swallow real frames)
+// indefinitely. The margin over 64 KiB future-proofs larger report chunks.
+Channel.MAX_FRAME_SIZE = 16 * 1024 * 1024;
