@@ -83,7 +83,7 @@
     "test:modes": "npm run test -- --mode node:bindings,node:bindings:raw,node:bindings:esm,node:wasi,wasmtime,wasmer,wazero,firefox,chromium,webkit,firefox:headless,chromium:headless,webkit:headless",
     "test:examples": "npm --prefix ./examples run test",
     "test:all": "npm run build && npm run test:modes && npm run test:integration && npm run test:examples",
-    "test:ci": "npm run test -- --enable try-as --config ./as-test.ci.config.json",
+    "test:ci": "npm run test -- --mode node:bindings,node:wasi,wasmtime",
     "fuzz": "node ./bin/index.js fuzz",
     "bench:seed": "node ./bin/index.js fuzz --config ./as-test.bench.config.json --clean",
     "bench:seed:compare": "bash ./tools/bench-seed-compare.sh 7",
