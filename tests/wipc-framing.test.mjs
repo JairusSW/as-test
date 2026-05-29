@@ -143,7 +143,10 @@ describe("user output collides with WIPC framing", () => {
 
 function runNode(args) {
   return new Promise((resolve) => {
-    const child = spawn("node", args, { cwd: repoRoot });
+    const child = spawn("node", args, {
+      cwd: repoRoot,
+      env: { ...process.env, NO_COLOR: "1", FORCE_COLOR: "0" },
+    });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (d) => (stdout += d.toString("utf8")));
