@@ -28,6 +28,35 @@
         }
       }
     },
+    "node:bindings:raw": {
+      "default": false,
+      "buildOptions": {
+        "target": "bindings",
+        "args": ["--bindings raw"]
+      },
+      "runOptions": {
+        "runtime": {
+          "cmd": "node .as-test/runners/default.bindings.js"
+        }
+      }
+    },
+    "node:bindings:esm": {
+      "default": false,
+      "input": [
+        "assembly/__tests__/**/*.spec.ts",
+        "!**/__tmp_*",
+        "!**/unmock.spec.ts"
+      ],
+      "buildOptions": {
+        "target": "bindings",
+        "args": ["--bindings esm"]
+      },
+      "runOptions": {
+        "runtime": {
+          "cmd": "node .as-test/runners/default.bindings.js"
+        }
+      }
+    },
     "node:wasi": {
       "buildOptions": {
         "target": "wasi"
@@ -43,7 +72,7 @@
       "input": [
         "assembly/__tests__/**/*.spec.ts",
         "!**/__tmp_*",
-        "!**/mock.spec.ts"
+        "!**/unmock.spec.ts"
       ],
       "buildOptions": {
         "target": "wasi"
@@ -59,7 +88,7 @@
       "input": [
         "assembly/__tests__/**/*.spec.ts",
         "!**/__tmp_*",
-        "!**/mock.spec.ts"
+        "!**/unmock.spec.ts"
       ],
       "buildOptions": {
         "target": "wasi"
@@ -75,7 +104,7 @@
       "input": [
         "assembly/__tests__/**/*.spec.ts",
         "!**/__tmp_*",
-        "!**/mock.spec.ts"
+        "!**/unmock.spec.ts"
       ],
       "buildOptions": {
         "target": "wasi"

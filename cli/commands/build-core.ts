@@ -528,10 +528,13 @@ function getBuildCommand(
 
   const tryAsAlreadyConfigured =
     argsDeclareTryAs(userArgs) || asconfigDeclaresTryAs(config.config);
+  const bindingsAlreadyConfigured =
+    argsDeclareBindings(userArgs) || asconfigDeclaresBindings(config.config);
   const defaultArgs = getDefaultBuildArgs(
     config,
     featureToggles,
     tryAsAlreadyConfigured,
+    bindingsAlreadyConfigured,
   );
   const ascInvocation = resolveAscInvocation(pkgRunner);
   // as-test's own transform goes first so CoverageTransform sees the
@@ -919,6 +922,7 @@ function getDefaultBuildArgs(
   config: Config,
   featureToggles: BuildFeatureToggles,
   tryAsAlreadyConfigured: boolean = false,
+  bindingsAlreadyConfigured: boolean = false,
 ): string[] {
   const buildArgs: string[] = [];
   const effectiveFeatures = resolveEffectiveFeatures(config, featureToggles);
@@ -950,7 +954,6 @@ function getDefaultBuildArgs(
     if (INTERNAL_FEATURE_NAMES.has(feature)) continue;
     buildArgs.push("--enable", feature);
   }
-  // Should also strip any bindings-enabling from asconfig
   if (
     config.buildOptions.target == "bindings" ||
     config.buildOptions.target == "web"
@@ -958,12 +961,18 @@ function getDefaultBuildArgs(
     buildArgs.push(
       "--use",
       "AS_TEST_BINDINGS=1",
-      "--bindings",
-      "raw",
       "--exportRuntime",
       "--exportStart",
       "_start",
     );
+    // `raw` bindings are the default the runtime host knows how to drive.
+    // If the user already declared `--bindings` (via buildOptions.args or
+    // an asconfig), respect their choice — the runtime supports both `raw`
+    // and `esm` — and don't force `raw` on top of it (asc would otherwise
+    // emit glue for both styles, confusing kind detection).
+    if (!bindingsAlreadyConfigured) {
+      buildArgs.push("--bindings", "raw");
+    }
   } else if (config.buildOptions.target == "wasi") {
     const wasiShim = resolveWasiShim();
     if (!wasiShim) {
@@ -1044,6 +1053,54 @@ function argsDeclareTryAs(args: string[]): boolean {
     } else if (arg.startsWith("--transform=")) {
       if (isTryAsTransformSpec(arg.slice("--transform=".length))) return true;
     }
+  }
+  return false;
+}
+
+function argsDeclareBindings(args: string[]): boolean {
+  for (const arg of args) {
+    if (arg === "--bindings" || arg.startsWith("--bindings=")) return true;
+  }
+  return false;
+}
+
+function asconfigDeclaresBindings(
+  configPath: string | undefined,
+  seen: Set<string> = new Set(),
+): boolean {
+  if (!configPath || configPath === "none") return false;
+  const resolved = path.isAbsolute(configPath)
+    ? configPath
+    : path.resolve(process.cwd(), configPath);
+  if (seen.has(resolved)) return false;
+  seen.add(resolved);
+  if (!existsSync(resolved)) return false;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(resolved, "utf8"));
+  } catch {
+    return false;
+  }
+  if (!parsed || typeof parsed !== "object") return false;
+  const obj = parsed as Record<string, unknown>;
+  const options = obj.options;
+  if (options && typeof options === "object") {
+    const bindings = (options as Record<string, unknown>).bindings;
+    if (typeof bindings === "string" && bindings.length) return true;
+    if (Array.isArray(bindings) && bindings.length) return true;
+  }
+  const extendsField = obj.extends;
+  const extendsList = Array.isArray(extendsField)
+    ? extendsField
+    : typeof extendsField === "string"
+      ? [extendsField]
+      : [];
+  for (const ext of extendsList) {
+    if (typeof ext !== "string") continue;
+    const extPath = path.isAbsolute(ext)
+      ? ext
+      : path.resolve(path.dirname(resolved), ext);
+    if (asconfigDeclaresBindings(extPath, seen)) return true;
   }
   return false;
 }

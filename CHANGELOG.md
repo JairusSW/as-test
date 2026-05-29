@@ -1,5 +1,21 @@
 # Change Log
 
+## 2026-05-29 - Unreleased
+
+### esm bindings now run
+
+- fix: `instantiateEsmInstance` (`lib/src/index.ts`) now calls `patchNodeIo()` before importing the bindings helper. An esm helper auto-instantiates at import time and writes the WIPC report by calling the global `process.stdout.write(ArrayBuffer)` directly. `patchNodeIo()` — which teaches `process.stdout.write`/`process.stdin.read` to accept a raw `ArrayBuffer` and route it through `fs.writeSync` — was only wired into the raw path (via `withNodeIo`), never the esm path. So under esm bindings Node threw `ERR_INVALID_ARG_TYPE` ("chunk must be of type string or Buffer…, received an instance of ArrayBuffer") before any report was emitted, and the run crashed with `missing report payload from test runtime`. The patch is now in place by the time the helper instantiates.
+
+### `--bindings` is respected instead of overridden
+
+- feat: as-test no longer forces `--bindings raw` when you've already declared bindings yourself. `getDefaultBuildArgs` (`cli/commands/build-core.ts`) now takes a `bindingsAlreadyConfigured` flag and only appends `--bindings raw` when neither `buildOptions.args` nor a referenced asconfig declares `--bindings`. The other bindings flags (`AS_TEST_BINDINGS=1`, `--exportRuntime`, `--exportStart _start`) are still always injected. Two new detectors back this: `argsDeclareBindings(args)` (scans for `--bindings`/`--bindings=`) and `asconfigDeclaresBindings(configPath)` (reads `options.bindings`, follows `extends`), mirroring the existing try-as detection. Previously `--bindings esm` in `buildOptions.args` was combined with the forced `--bindings raw`, so `asc` emitted glue for **both** styles into one file; the runtime then mis-detected the kind and crashed. With this, `--bindings esm` produces esm-only glue and runs.
+
+### Mocking works on every runtime
+
+- change: `mock.spec.ts` is split into `mock.spec.ts` (mocking + `unmockFn` only) and `unmock.spec.ts` (the `unmockImport` cases). The split tracks the real esm/standalone-WASI boundary: the transform removes a `@external` import from the wasm when it is **only ever mocked**, but keeps it (for fall-back) when it is `unmockImport`'d anywhere. A pure-mock spec therefore imports nothing virtual and runs on **every** runtime — verified via `WebAssembly.Module.imports()`: the pure-mock wasi build imports only `wasi_snapshot_preview1`, while the unmock build imports `mock.foo`. `unmockFn` (function mocks) does not retain an import; only `unmockImport` does.
+- feat: pure `mockImport` specs now run under **esm bindings** and the standalone WASI runtimes (`wasmtime`, `wasmer`, `wazero`) — `mock.spec.ts` is no longer excluded from those modes (it was in v1.5.0). Only `unmock.spec.ts`, which retains a real host binding the host can't supply under those runtimes, is excluded (`!**/unmock.spec.ts`).
+- feat: two new modes in `as-test.config.json` — `node:bindings:raw` and `node:bindings:esm` (both `default: false`) — exercise each bindings style explicitly, and both are added to the `test:modes` matrix so `test:all` covers them.
+
 ## 2026-05-28 - v1.5.0
 
 ### `mockFn` and `mockImport` now work anywhere

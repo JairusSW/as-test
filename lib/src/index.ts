@@ -272,6 +272,10 @@ async function instantiateEsmInstance(
       "esm bindings do not support custom imports in as-test/lib; pass {} or switch to raw bindings",
     );
   }
+  // The esm helper auto-instantiates at import time and writes the WIPC report
+  // by calling the global process.stdout.write with an ArrayBuffer. Patch node
+  // IO before importing so that write (and stdin.read) accept the raw buffer.
+  patchNodeIo();
   const instance = await captureHelperInstance(async () => {
     await import(`${pathToFileURL(helperPath).href}?t=${Date.now()}`);
   });

@@ -80,7 +80,7 @@
     "build:transform": "rm -rf ./transform/lib && tsc -p ./transform && prettier -w ./transform/",
     "test": "node ./bin/index.js test --parallel",
     "test:integration": "node --test tests/*.test.mjs",
-    "test:modes": "npm run test -- --mode node:bindings,node:wasi,wasmtime,wasmer,wazero,firefox,chromium,webkit,firefox:headless,chromium:headless,webkit:headless",
+    "test:modes": "npm run test -- --mode node:bindings,node:bindings:raw,node:bindings:esm,node:wasi,wasmtime,wasmer,wazero,firefox,chromium,webkit,firefox:headless,chromium:headless,webkit:headless",
     "test:examples": "npm --prefix ./examples run test",
     "test:all": "npm run build && npm run test:modes && npm run test:integration && npm run test:examples",
     "test:ci": "npm run test -- --enable try-as --config ./as-test.ci.config.json",
