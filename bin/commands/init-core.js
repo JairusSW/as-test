@@ -3,9 +3,169 @@ import { spawnSync } from "child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import * as path from "path";
 import { createInterface } from "readline";
-import { getCliVersion } from "../util.js";
+import { getCliVersion, getExec } from "../util.js";
 import { buildWebRunnerSource } from "./web-runner-source.js";
 const TARGETS = ["wasi", "bindings", "web"];
+// Popular runtimes offered by the interactive picker. Availability is probed
+// against the machine/project (PATH for native binaries, node_modules for
+// Playwright) so unavailable entries can be dimmed rather than hidden.
+const RUNTIMES = [
+  {
+    value: "node:wasi",
+    label: "Node.js",
+    target: "wasi",
+    cmd: "node .as-test/runners/default.wasi.js",
+    browser: "",
+  },
+  {
+    value: "node:bindings",
+    label: "Node.js",
+    target: "bindings",
+    cmd: "node .as-test/runners/default.bindings.js",
+    browser: "",
+  },
+  {
+    value: "wasmtime",
+    label: "Wasmtime",
+    target: "wasi",
+    cmd: "wasmtime run <file>",
+    browser: "",
+    bin: "wasmtime",
+  },
+  {
+    value: "wasmer",
+    label: "Wasmer",
+    target: "wasi",
+    cmd: "wasmer run <file>",
+    browser: "",
+    bin: "wasmer",
+  },
+  {
+    value: "wazero",
+    label: "wazero",
+    target: "wasi",
+    cmd: "wazero run <file>",
+    browser: "",
+    bin: "wazero",
+  },
+  {
+    value: "chromium",
+    label: "Chromium",
+    target: "web",
+    cmd: "node .as-test/runners/default.web.js",
+    browser: "chromium",
+    needsPlaywright: true,
+  },
+  {
+    value: "firefox",
+    label: "Firefox",
+    target: "web",
+    cmd: "node .as-test/runners/default.web.js",
+    browser: "firefox",
+    needsPlaywright: true,
+  },
+  {
+    value: "webkit",
+    label: "WebKit",
+    target: "web",
+    cmd: "node .as-test/runners/default.web.js",
+    browser: "webkit",
+    needsPlaywright: true,
+  },
+];
+// Probe whether a runtime is usable on this machine/project. Node-based
+// runtimes are always available (we are running under Node); native binaries
+// must resolve on PATH; browser runtimes require Playwright to be installed.
+function probeRuntime(runtime, root) {
+  if (runtime.bin) {
+    if (getExec(runtime.bin)) return { available: true };
+    return { available: false, hint: `${runtime.bin} not on PATH` };
+  }
+  if (runtime.needsPlaywright) {
+    const pkg = path.join(root, "node_modules", "playwright", "package.json");
+    if (existsSync(pkg)) return { available: true };
+    return { available: false, hint: "playwright not installed" };
+  }
+  return { available: true };
+}
+// The default runtime command for a build target, matching the long-standing
+// `--target`/`--yes` behaviour (plain Node runner, no browser).
+function runtimeForTarget(target) {
+  const cmd =
+    target == "wasi"
+      ? "node .as-test/runners/default.wasi.js"
+      : target == "bindings"
+        ? "node .as-test/runners/default.bindings.js"
+        : "node .as-test/runners/default.web.js";
+  return { cmd, browser: "" };
+}
+function defaultRuntimeLabel(target) {
+  if (target == "wasi") return "node:wasi";
+  if (target == "bindings") return "node:bindings";
+  return "web";
+}
+// Ensure a mode key is unique against names already in use, suffixing -2, -3…
+function uniqueModeName(name, taken) {
+  if (!taken.includes(name)) return name;
+  for (let i = 2; ; i++) {
+    const candidate = `${name}-${i}`;
+    if (!taken.includes(candidate)) return candidate;
+  }
+}
+// Prompt for a user-defined runtime: a command (with optional <file>
+// placeholder), a mode name, and — for the web target — an optional browser.
+// Returns null if no command is entered or interactive input is unavailable.
+async function askCustomRuntime(target, face, taken) {
+  if (!face) return null;
+  const cmd = (
+    await ask(
+      `${chalk.bold.blue("◇  Custom runtime command")}\n` +
+        `${chalk.dim("│  <file> is replaced with the generated .wasm — e.g. wasmtime <file>")}\n│  `,
+      face,
+      "",
+    )
+  ).trim();
+  if (!cmd.length) return null;
+  const rawName = (
+    await ask(
+      `${chalk.bold.blue("◇  Name for this runtime (used as the mode key, default: custom)")}\n│  `,
+      face,
+      "",
+    )
+  ).trim();
+  const name = uniqueModeName(rawName.length ? rawName : "custom", taken);
+  let browser = "";
+  if (target == "web") {
+    browser = (
+      await ask(
+        `${chalk.bold.blue("◇  Browser (optional: chromium / firefox / webkit)")}\n│  `,
+        face,
+        "",
+      )
+    ).trim();
+  }
+  printSelectionLine(`${name}: ${cmd}${browser ? ` (${browser})` : ""}`);
+  return { value: name, target, cmd, browser };
+}
+// Turn the selected runtimes into config `modes` — one named mode per runtime,
+// each carrying its build target and runtime command. Every mode runs by
+// default (the absent `default` flag defaults to true), so `ast test` executes
+// them all.
+function buildRuntimeModes(selected) {
+  const modes = {};
+  for (const rt of selected) {
+    modes[rt.value] = {
+      buildOptions: { target: rt.target },
+      runOptions: {
+        runtime: {
+          cmd: rt.cmd,
+          ...(rt.browser ? { browser: rt.browser } : {}),
+        },
+      },
+    };
+  }
+  return modes;
+}
 const EXAMPLE_MODES = ["minimal", "full", "none"];
 const FEATURE_KEYS = ["coverage", "tryAs"];
 const FEATURE_LABELS = {
@@ -27,6 +187,9 @@ export async function init(rawArgs) {
       ? {
           root: path.resolve(process.cwd(), options.dir),
           target: options.target ?? "wasi",
+          runtime: runtimeForTarget(options.target ?? "wasi"),
+          modes: {},
+          runtimeLabel: defaultRuntimeLabel(options.target ?? "wasi"),
           example: options.example ?? "minimal",
           fuzzExample: options.fuzzExample ?? false,
           features: resolveFeatures(options.features, {
@@ -43,6 +206,8 @@ export async function init(rawArgs) {
     printPlan(
       answers.root,
       answers.target,
+      answers.runtimeLabel,
+      Object.keys(answers.modes),
       answers.example,
       answers.fuzzExample,
       answers.features,
@@ -58,6 +223,8 @@ export async function init(rawArgs) {
     const summary = applyInit(
       answers.root,
       answers.target,
+      answers.runtime,
+      answers.modes,
       answers.example,
       answers.fuzzExample,
       answers.features,
@@ -265,6 +432,8 @@ async function runInteractiveOnboarding(options, face) {
   } else {
     printSelectionLine(resolvedRoot);
   }
+  // Step 1: pick the build target (mode). The runtime list is then filtered to
+  // the runtimes that support this target.
   const target =
     options.target ??
     (onboardingMode == "quick"
@@ -272,27 +441,81 @@ async function runInteractiveOnboarding(options, face) {
       : await askMenuChoice(
           "Build target",
           [
-            {
-              value: "wasi",
-              label:
-                "wasi (default runner: node .as-test/runners/default.wasi.js)",
-            },
-            {
-              value: "bindings",
-              label:
-                "bindings (default runner: node .as-test/runners/default.bindings.js)",
-            },
-            {
-              value: "web",
-              label:
-                "web (default runner: node .as-test/runners/default.web.js)",
-            },
+            { value: "wasi", label: "wasi (WebAssembly System Interface)" },
+            { value: "bindings", label: "bindings (Node.js host bindings)" },
+            { value: "web", label: "web (browser via Playwright)" },
           ],
           face,
           "wasi",
         ));
   if (options.target || onboardingMode == "quick") {
     printPromptAndSelectionLine("Build target", target);
+  }
+  // Step 2: pick one or more runtimes, scoped to the chosen target. Unavailable
+  // runtimes (native binary missing from PATH, or Playwright not installed) are
+  // dimmed; "Custom…" lets the user define their own. Each chosen runtime
+  // becomes a config mode so `ast test` runs the whole matrix.
+  let runtime;
+  let runtimeLabel;
+  let modes = {};
+  const targetRuntimes = RUNTIMES.filter((rt) => rt.target == target);
+  if (options.target || onboardingMode == "quick") {
+    // Flag/quick runs are non-interactive: keep the historical Node default.
+    runtime = runtimeForTarget(target);
+    runtimeLabel = defaultRuntimeLabel(target);
+    printPromptAndSelectionLine("Runtime", runtimeLabel);
+  } else {
+    const toggleChoices = targetRuntimes.map((rt) => {
+      const status = probeRuntime(rt, resolvedRoot);
+      return {
+        value: rt.value,
+        label: rt.label,
+        disabled: !status.available,
+        hint: status.hint,
+      };
+    });
+    toggleChoices.push({
+      value: "custom",
+      label: "Custom…",
+      alwaysSelectable: true,
+    });
+    // Pre-select the first available built-in runtime so confirming immediately
+    // yields a sensible single choice.
+    const firstAvailable =
+      targetRuntimes.find((rt) => probeRuntime(rt, resolvedRoot).available)
+        ?.value ?? targetRuntimes[0].value;
+    const initial = {};
+    for (const choice of toggleChoices) {
+      initial[choice.value] = choice.value == firstAvailable;
+    }
+    const result = await askMultiToggle(
+      "Runtimes (↑/↓ move, space toggle, enter confirm — dimmed = not detected)",
+      toggleChoices,
+      face,
+      initial,
+    );
+    const selected = targetRuntimes.filter((rt) => result[rt.value]);
+    if (result["custom"]) {
+      const custom = await askCustomRuntime(
+        target,
+        face,
+        selected.map((rt) => rt.value),
+      );
+      if (custom) selected.push(custom);
+    }
+    if (!selected.length) {
+      // Confirming with nothing selected falls back to the default runtime.
+      const fallback =
+        targetRuntimes.find((rt) => rt.value == firstAvailable) ??
+        targetRuntimes[0];
+      selected.push(fallback);
+    }
+    const primary = selected[0];
+    runtime = { cmd: primary.cmd, browser: primary.browser };
+    runtimeLabel = selected.map((rt) => rt.value).join(", ");
+    // The picker is authoritative: write a mode per chosen runtime so the
+    // exact selection (single, matrix, or custom) is what `ast test` runs.
+    modes = buildRuntimeModes(selected);
   }
   const featureDefaults = { coverage: false, tryAs: false };
   const explicitFeatures =
@@ -355,6 +578,9 @@ async function runInteractiveOnboarding(options, face) {
   return {
     root: resolvedRoot,
     target,
+    runtime,
+    modes,
+    runtimeLabel,
     example,
     fuzzExample,
     features,
@@ -464,7 +690,16 @@ function isTarget(value) {
 function isExampleMode(value) {
   return EXAMPLE_MODES.includes(value);
 }
-function printPlan(root, target, example, fuzzExample, features, install) {
+function printPlan(
+  root,
+  target,
+  runtimeLabel,
+  modeNames,
+  example,
+  fuzzExample,
+  features,
+  install,
+) {
   const displayRoot = () => {
     const rel = path.relative(process.cwd(), root).split(path.sep).join("/");
     if (!rel || rel == ".") return "./";
@@ -568,6 +803,15 @@ function printPlan(root, target, example, fuzzExample, features, install) {
   const treeRoot = buildTree(fileEntries);
   console.log(chalk.bold.blue("◇  Planned Changes"));
   console.log("│" + chalk.dim(`  - Target: ${target}`));
+  console.log(
+    "│" +
+      chalk.dim(
+        `  - Runtime${runtimeLabel.includes(",") ? "s" : ""}: ${runtimeLabel}`,
+      ),
+  );
+  if (modeNames.length) {
+    console.log("│" + chalk.dim(`  - Modes: ${modeNames.join(", ")}`));
+  }
   console.log("│" + chalk.dim(`  - Example: ${example}`));
   console.log(
     "│" + chalk.dim(`  - Fuzzer example: ${fuzzExample ? "yes" : "no"}`),
@@ -586,7 +830,16 @@ function printPlan(root, target, example, fuzzExample, features, install) {
   }
   console.log("│");
 }
-function applyInit(root, target, example, fuzzExample, features, force) {
+function applyInit(
+  root,
+  target,
+  runtime,
+  modes,
+  example,
+  fuzzExample,
+  features,
+  force,
+) {
   const summary = {
     created: [],
     updated: [],
@@ -637,17 +890,17 @@ function applyInit(root, target, example, fuzzExample, features, force) {
     },
     runOptions: {
       runtime: {
-        cmd:
-          target == "wasi"
-            ? "node .as-test/runners/default.wasi.js"
-            : target == "bindings"
-              ? "node .as-test/runners/default.bindings.js"
-              : "node .as-test/runners/default.web.js",
+        cmd: runtime.cmd,
+        ...(runtime.browser ? { browser: runtime.browser } : {}),
       },
       reporter: "default",
     },
-    modes:
-      target == "web"
+    // The interactive picker supplies one mode per selected runtime. The
+    // non-interactive paths (--yes/--target/quick) leave `modes` empty, so the
+    // historical web convenience modes are scaffolded for the web target.
+    modes: Object.keys(modes).length
+      ? modes
+      : target == "web"
         ? {
             web: {
               default: false,
@@ -899,12 +1152,14 @@ async function askChoice(label, choices, face, fallback) {
   throw new Error(`Invalid choice "${answer}" for ${label}`);
 }
 async function askMenuChoice(label, choices, face, fallback) {
-  const fallbackValue = choices.some((choice) => choice.value == fallback)
+  const enabled = choices.filter((choice) => !choice.disabled);
+  const pool = enabled.length ? enabled : choices;
+  const fallbackValue = pool.some((choice) => choice.value == fallback)
     ? fallback
-    : choices[0].value;
+    : pool[0].value;
   if (!face) return fallbackValue;
   if (!canUseArrowMenu(face)) {
-    const values = choices.map((choice) => choice.value);
+    const values = pool.map((choice) => choice.value);
     return askChoice(label, values, face, fallbackValue);
   }
   return askMenuChoiceWithArrows(label, choices, face, fallbackValue);
@@ -915,7 +1170,16 @@ async function askMultiToggle(label, choices, face, initial) {
     return askMultiToggleWithArrows(label, choices, face, initial);
   }
   const result = { ...initial };
+  const anySelectable = choices.some(
+    (choice) => !choice.disabled && !choice.alwaysSelectable,
+  );
   for (const choice of choices) {
+    const selectable =
+      Boolean(choice.alwaysSelectable) || !anySelectable || !choice.disabled;
+    if (!selectable) {
+      result[choice.value] = false;
+      continue;
+    }
     result[choice.value] = await askYesNo(
       `${label} — enable ${choice.label}?`,
       face,
@@ -961,8 +1225,32 @@ function canUseArrowMenu(face) {
 async function askMenuChoiceWithArrows(label, choices, face, fallback) {
   const stdin = process.stdin;
   const stdout = process.stdout;
-  const fallbackIndex = choices.findIndex((choice) => choice.value == fallback);
-  let selectedIndex = fallbackIndex == -1 ? 0 : fallbackIndex;
+  // When nothing is selectable (e.g. every runtime for a target is dimmed
+  // because its tooling isn't installed yet), fall back to letting the user
+  // pick anyway — the dimming stays as an informational warning.
+  const anySelectable = choices.some((choice) => !choice.disabled);
+  const isSelectable = (index) => !anySelectable || !choices[index].disabled;
+  const firstSelectable = choices.findIndex((_, i) => isSelectable(i));
+  const fallbackIndex = choices.findIndex(
+    (choice) => choice.value == fallback && !choice.disabled,
+  );
+  let selectedIndex =
+    fallbackIndex != -1
+      ? fallbackIndex
+      : firstSelectable != -1
+        ? firstSelectable
+        : 0;
+  // Step from `selectedIndex` in `step` direction (wrapping) to the next
+  // selectable option, ignoring disabled entries. Returns the current index
+  // unchanged if nothing else is selectable.
+  const stepSelection = (step) => {
+    for (let i = 1; i <= choices.length; i++) {
+      const candidate =
+        (selectedIndex + step * i + choices.length * i) % choices.length;
+      if (isSelectable(candidate)) return candidate;
+    }
+    return selectedIndex;
+  };
   let renderedLineCount = 0;
   const previousRawMode = Boolean(stdin.isRaw);
   const lineWidth = Math.max(20, (stdout.columns ?? 80) - 2);
@@ -977,6 +1265,15 @@ async function askMenuChoiceWithArrows(label, choices, face, fallback) {
     const lines = [titleLine()];
     for (let i = 0; i < choices.length; i++) {
       const choice = choices[i];
+      if (choice.disabled) {
+        const text = choice.hint
+          ? `${choice.label} (${choice.hint})`
+          : choice.label;
+        lines.push(
+          `│  ${chalk.dim("✕")} ${chalk.dim(clamp(text, Math.max(8, lineWidth - 6)))}`,
+        );
+        continue;
+      }
       const marker = i == selectedIndex ? chalk.blue("●") : chalk.dim("○");
       lines.push(
         `│  ${marker} ${clamp(choice.label, Math.max(8, lineWidth - 6))}`,
@@ -1069,7 +1366,7 @@ async function askMenuChoiceWithArrows(label, choices, face, fallback) {
         input == "\x1b[D" ||
         input == "\x1bOD"
       ) {
-        selectedIndex = (selectedIndex - 1 + choices.length) % choices.length;
+        selectedIndex = stepSelection(-1);
         writeLines(menuLines());
         return;
       }
@@ -1079,11 +1376,12 @@ async function askMenuChoiceWithArrows(label, choices, face, fallback) {
         input == "\x1b[C" ||
         input == "\x1bOC"
       ) {
-        selectedIndex = (selectedIndex + 1) % choices.length;
+        selectedIndex = stepSelection(1);
         writeLines(menuLines());
         return;
       }
       if (input == "\r" || input == "\n") {
+        if (!isSelectable(selectedIndex)) return;
         finish(choices[selectedIndex].value);
         return;
       }
@@ -1101,7 +1399,29 @@ async function askMultiToggleWithArrows(label, choices, face, initial) {
   const stdin = process.stdin;
   const stdout = process.stdout;
   const selected = { ...initial };
-  let cursorIndex = 0;
+  // When no "real" option is selectable (e.g. every browser is dimmed because
+  // Playwright isn't installed yet — which init can fix), allow toggling the
+  // dimmed entries anyway; the dimming stays as an informational warning. The
+  // always-selectable Custom… entry is excluded from this decision.
+  const anySelectable = choices.some(
+    (choice) => !choice.disabled && !choice.alwaysSelectable,
+  );
+  const isSelectable = (index) => {
+    const choice = choices[index];
+    return (
+      Boolean(choice.alwaysSelectable) || !anySelectable || !choice.disabled
+    );
+  };
+  const stepCursor = (step) => {
+    for (let i = 1; i <= choices.length; i++) {
+      const candidate =
+        (cursorIndex + step * i + choices.length * i) % choices.length;
+      if (isSelectable(candidate)) return candidate;
+    }
+    return cursorIndex;
+  };
+  let cursorIndex = choices.findIndex((_, i) => isSelectable(i));
+  if (cursorIndex == -1) cursorIndex = 0;
   let renderedLineCount = 0;
   const previousRawMode = Boolean(stdin.isRaw);
   const lineWidth = Math.max(20, (stdout.columns ?? 80) - 2);
@@ -1118,6 +1438,20 @@ async function askMultiToggleWithArrows(label, choices, face, initial) {
       const choice = choices[i];
       const isOn = Boolean(selected[choice.value]);
       const cursor = i == cursorIndex ? chalk.blue("›") : " ";
+      if (choice.disabled) {
+        const text = choice.hint
+          ? `${choice.label} (${choice.hint})`
+          : choice.label;
+        const dimmed = chalk.dim(clamp(text, Math.max(8, lineWidth - 8)));
+        // Selectable-but-dimmed (installable) keeps its ●/○; hard-blocked uses ✕.
+        const marker = isSelectable(i)
+          ? isOn
+            ? chalk.blue("●")
+            : chalk.dim("○")
+          : chalk.dim("✕");
+        lines.push(`│  ${cursor} ${marker} ${dimmed}`);
+        continue;
+      }
       const marker = isOn ? chalk.blue("●") : chalk.dim("○");
       const text = clamp(choice.label, Math.max(8, lineWidth - 6));
       const painted = i == cursorIndex ? chalk.bold(text) : text;
@@ -1203,16 +1537,17 @@ async function askMultiToggleWithArrows(label, choices, face, initial) {
         return;
       }
       if (input == "\x1b[A" || input == "\x1bOA") {
-        cursorIndex = (cursorIndex - 1 + choices.length) % choices.length;
+        cursorIndex = stepCursor(-1);
         writeLines(menuLines());
         return;
       }
       if (input == "\x1b[B" || input == "\x1bOB") {
-        cursorIndex = (cursorIndex + 1) % choices.length;
+        cursorIndex = stepCursor(1);
         writeLines(menuLines());
         return;
       }
       if (input == " ") {
+        if (!isSelectable(cursorIndex)) return;
         const key = choices[cursorIndex].value;
         selected[key] = !selected[key];
         writeLines(menuLines());
