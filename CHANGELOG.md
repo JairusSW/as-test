@@ -1,6 +1,6 @@
 # Change Log
 
-## 2026-05-29 - Unreleased
+## 2026-05-30 - v1.5.1
 
 ### An early-exiting runtime now fails instead of warning
 
