@@ -26,6 +26,7 @@ import {
 } from "../util.js";
 import { persistCrashRecord } from "../crash-store.js";
 import { BuildWorkerPool } from "../build-worker-pool.js";
+import { resolveSpecFiles, emitSelectorWarnings } from "../selectors.js";
 
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 
@@ -132,14 +133,9 @@ export async function build(
   const pkgRunner = getPkgRunner();
   const sourceInputPatterns =
     overrides.kind === "fuzz" ? config.fuzz.input : config.input;
-  const inputPatterns = resolveInputPatterns(sourceInputPatterns, selectors);
-  const includePatterns = inputPatterns.filter((p) => !p.startsWith("!"));
-  const ignorePatterns = inputPatterns
-    .filter((p) => p.startsWith("!"))
-    .map((p) => p.slice(1));
-  const inputFiles = (
-    await glob(includePatterns, { ignore: ignorePatterns })
-  ).sort((a, b) => a.localeCompare(b));
+  const { files: inputFiles, warnings: selectorWarnings } =
+    await resolveSpecFiles(sourceInputPatterns, selectors);
+  emitSelectorWarnings(selectorWarnings);
   await assertNoArtifactCollisions(sourceInputPatterns);
   warnOnUnknownModeReferences(inputFiles, loadedConfig.modes ?? {});
 
@@ -650,70 +646,6 @@ async function assertNoArtifactCollisions(
     }
     seen.set(artifact, file);
   }
-}
-
-function resolveInputPatterns(
-  configured: string[] | string,
-  selectors: string[],
-): string[] {
-  const configuredInputs = Array.isArray(configured)
-    ? configured
-    : [configured];
-  if (!selectors.length) return configuredInputs;
-
-  const patterns = new Set<string>();
-  for (const selector of expandSelectors(selectors)) {
-    if (!selector) continue;
-    if (isBareSuiteSelector(selector)) {
-      const base = stripSuiteSuffix(selector);
-      for (const configuredInput of configuredInputs) {
-        patterns.add(
-          path.join(path.dirname(configuredInput), `${base}.spec.ts`),
-        );
-      }
-      continue;
-    }
-    patterns.add(selector);
-  }
-  return [...patterns];
-}
-
-function expandSelectors(selectors: string[]): string[] {
-  const expanded: string[] = [];
-  for (const selector of selectors) {
-    if (!selector) continue;
-    if (!shouldSplitSelector(selector)) {
-      expanded.push(selector);
-      continue;
-    }
-    for (const token of selector.split(",")) {
-      const trimmed = token.trim();
-      if (!trimmed.length) continue;
-      expanded.push(trimmed);
-    }
-  }
-  return expanded;
-}
-
-function shouldSplitSelector(selector: string): boolean {
-  return (
-    selector.includes(",") &&
-    !selector.includes("/") &&
-    !selector.includes("\\") &&
-    !/[*?[\]{}]/.test(selector)
-  );
-}
-
-function isBareSuiteSelector(selector: string): boolean {
-  return (
-    !selector.includes("/") &&
-    !selector.includes("\\") &&
-    !/[*?[\]{}]/.test(selector)
-  );
-}
-
-function stripSuiteSuffix(selector: string): string {
-  return selector.replace(/\.spec\.ts$/, "").replace(/\.ts$/, "");
 }
 
 function ensureDeps(config: Config): void {

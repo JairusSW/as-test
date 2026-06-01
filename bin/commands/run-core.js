@@ -1,6 +1,5 @@
 import chalk from "chalk";
 import { spawn } from "child_process";
-import { glob } from "glob";
 import { minimatch } from "minimatch";
 import { Channel, MessageType } from "../wipc.js";
 import {
@@ -21,6 +20,7 @@ import { PassThrough } from "stream";
 import { buildWebRunnerSource } from "./web-runner-source.js";
 import { PersistentWebSessionHost } from "./web-session.js";
 import { build } from "./build-core.js";
+import { resolveSpecFiles, emitSelectorWarnings } from "../selectors.js";
 import { createReporter as createDefaultReporter } from "../reporters/default.js";
 import { createTapReporter } from "../reporters/tap.js";
 import { persistCrashRecord } from "../crash-store.js";
@@ -733,14 +733,9 @@ export async function run(
       }
     }
   }
-  const inputPatterns = resolveInputPatterns(config.input, selectors);
-  const includePatterns = inputPatterns.filter((p) => !p.startsWith("!"));
-  const ignorePatterns = inputPatterns
-    .filter((p) => p.startsWith("!"))
-    .map((p) => p.slice(1));
-  const inputFiles = (
-    await glob(includePatterns, { ignore: ignorePatterns })
-  ).sort((a, b) => a.localeCompare(b));
+  const { files: inputFiles, warnings: selectorWarnings } =
+    await resolveSpecFiles(config.input, selectors);
+  emitSelectorWarnings(selectorWarnings);
   const snapshotEnabled = flags.snapshot !== false;
   const createSnapshots = Boolean(flags.createSnapshots);
   const overwriteSnapshots = Boolean(flags.overwriteSnapshots);
@@ -1363,61 +1358,6 @@ function getConfiguredRuntimeCmd(config) {
 function runtimeNameFromCommand(command) {
   const token = command.trim().split(/\s+/)[0];
   return token && token.length ? token : "runtime";
-}
-function resolveInputPatterns(configured, selectors) {
-  const configuredInputs = Array.isArray(configured)
-    ? configured
-    : [configured];
-  if (!selectors.length) return configuredInputs;
-  const patterns = new Set();
-  for (const selector of expandSelectors(selectors)) {
-    if (!selector) continue;
-    if (isBareSuiteSelector(selector)) {
-      const base = stripSuiteSuffix(selector);
-      for (const configuredInput of configuredInputs) {
-        patterns.add(
-          path.join(path.dirname(configuredInput), `${base}.spec.ts`),
-        );
-      }
-      continue;
-    }
-    patterns.add(selector);
-  }
-  return [...patterns];
-}
-function expandSelectors(selectors) {
-  const expanded = [];
-  for (const selector of selectors) {
-    if (!selector) continue;
-    if (!shouldSplitSelector(selector)) {
-      expanded.push(selector);
-      continue;
-    }
-    for (const token of selector.split(",")) {
-      const trimmed = token.trim();
-      if (!trimmed.length) continue;
-      expanded.push(trimmed);
-    }
-  }
-  return expanded;
-}
-function shouldSplitSelector(selector) {
-  return (
-    selector.includes(",") &&
-    !selector.includes("/") &&
-    !selector.includes("\\") &&
-    !/[*?[\]{}]/.test(selector)
-  );
-}
-function isBareSuiteSelector(selector) {
-  return (
-    !selector.includes("/") &&
-    !selector.includes("\\") &&
-    !/[*?[\]{}]/.test(selector)
-  );
-}
-function stripSuiteSuffix(selector) {
-  return selector.replace(/\.spec\.ts$/, "").replace(/\.ts$/, "");
 }
 function normalizeReport(raw) {
   if (Array.isArray(raw)) {

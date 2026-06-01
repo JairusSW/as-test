@@ -57,6 +57,7 @@ import { BuildWorkerPool } from "./build-worker-pool.js";
 import { PersistentWebSessionHost } from "./commands/web-session.js";
 import { buildRecorderStorage } from "./commands/build-core.js";
 import { DependencyGraph } from "./dependency-graph.js";
+import { resolveSpecFiles, emitSelectorWarnings } from "./selectors.js";
 
 const _args = process.argv.slice(2);
 const flags: string[] = [];
@@ -4490,9 +4491,9 @@ async function resolveSelectedFiles(
   const resolvedConfigPath =
     configPath ?? path.join(process.cwd(), "./as-test.config.json");
   const config = loadConfig(resolvedConfigPath, warn);
-  const patterns = resolveInputPatterns(config.input, selectors);
-  const matches = await glob(patterns);
-  const specs = matches.filter((file) => file.endsWith(".spec.ts"));
+  const { files, warnings } = await resolveSpecFiles(config.input, selectors);
+  if (warn) emitSelectorWarnings(warnings);
+  const specs = files.filter((file) => file.endsWith(".spec.ts"));
   return [...new Set(specs)].sort((a, b) => a.localeCompare(b));
 }
 
@@ -4647,32 +4648,6 @@ function levenshteinDistance(left: string, right: string): number {
     }
   }
   return matrix[left.length]![right.length]!;
-}
-
-function resolveInputPatterns(
-  configured: string[] | string,
-  selectors: string[],
-): string[] {
-  const configuredInputs = Array.isArray(configured)
-    ? configured
-    : [configured];
-  if (!selectors.length) return configuredInputs;
-
-  const patterns = new Set<string>();
-  for (const selector of expandSelectors(selectors)) {
-    if (!selector) continue;
-    if (isBareSuiteSelector(selector)) {
-      const base = stripSuiteSuffix(selector);
-      for (const configuredInput of configuredInputs) {
-        patterns.add(
-          path.join(path.dirname(configuredInput), `${base}.spec.ts`),
-        );
-      }
-      continue;
-    }
-    patterns.add(selector);
-  }
-  return [...patterns];
 }
 
 function resolveFuzzPatterns(

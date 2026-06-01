@@ -1,5 +1,14 @@
 # Change Log
 
+## 2026-06-01 - v1.5.2
+
+### Selectors resolve folders, files, and globs consistently
+
+- feat: positional selectors for `ast test`/`ast run`/`ast build` now resolve through a single shared resolver (`cli/selectors.ts:resolveSpecFiles`), replacing three drifting private copies of `resolveInputPatterns` (in `build-core`, `run-core`, and `index`). Three input shapes are supported:
+  - **Bare folders/files/globs** (no leading `./`) resolve against the configured input root(s) — the static prefix of each `input` glob, e.g. `assembly/__tests__` — searched recursively, and fall back to the cwd only if nothing matched there: `ast test rfc/` → `<root>/**/rfc/**/*.spec.ts`; `ast test foo` → `<root>/**/foo.spec.ts`; `ast test 'rfc/*.spec.ts'` → `<root>/**/rfc/*.spec.ts` (the user's glob appended verbatim). A bare path shorthand like `nested/array` is tried as a cwd path first, then anchored to the test folder.
+  - **`./`-prefixed** selectors (and absolute / `~` paths) are cwd-relative only; on a miss we emit a `did you mean "rfc/*.spec.ts"` hint pointing at the test-folder form when that would have matched.
+- feat: a bare selector that matches under more than one configured input root is flagged with a `WARN` (it still runs everything that matched), and a selector that matches nothing emits a `WARN` naming where it looked. Warnings are deduped by text across the orchestrator + per-file build/run passes (`emitSelectorWarnings`), so each prints once per invocation. Folder selectors (`rfc/`) and `,`-joined bare names (`a,b`) are recognized; selectors with an internal path separator (e.g. the orchestrator's own `assembly/__tests__/foo.spec.ts`) are still treated as direct cwd paths, preserving existing per-file dispatch.
+
 ## 2026-05-30 - v1.5.1
 
 ### An early-exiting runtime now fails instead of warning
