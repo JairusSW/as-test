@@ -211,8 +211,13 @@ function analyzeSourceText(sourceText: string): SourceInfo {
     ? new RegExp(`\\b${escapeRegex(runAlias)}\\s*\\(`).test(text)
     : false;
   return {
-    hasSuiteCalls:
-      /\b(?:describe|test|it|only|xonly|todo|fuzz|xfuzz)\s*\(/.test(text),
+    // The `x?` variants (xdescribe/xtest/xit/xonly/xfuzz) must count as suite
+    // calls too: a file whose only suites are skipped still needs `run()`
+    // injected so it reports itself as skipped instead of emitting no frames
+    // (which the CLI would otherwise see as a runtime crash).
+    hasSuiteCalls: /\b(?:x?describe|x?test|x?it|x?only|todo|x?fuzz)\s*\(/.test(
+      text,
+    ),
     hasRunCall,
     runImportPath,
     hasMockCalls: /\b(?:mockFn|unmockFn|mockImport|unmockImport)\s*\(/.test(
@@ -252,7 +257,7 @@ function detectRunAlias(text: string): string | null {
 }
 
 function looksLikeAsTestImport(specifiers: string): boolean {
-  return /\b(?:describe|test|it|only|xonly|todo|fuzz|xfuzz|expect|beforeAll|afterAll|beforeEach|afterEach|mockFn|unmockFn|mockImport|unmockImport|snapshotFn|log|run)\b/.test(
+  return /\b(?:x?describe|x?test|x?it|x?only|todo|x?fuzz|expect|beforeAll|afterAll|beforeEach|afterEach|mockFn|unmockFn|mockImport|unmockImport|snapshotFn|log|run)\b/.test(
     specifiers,
   );
 }

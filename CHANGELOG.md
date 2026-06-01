@@ -1,5 +1,12 @@
 # Change Log
 
+## 2026-06-01 - v1.5.3
+
+### A file with no runnable tests is skipped, not crashed
+
+- fix: a spec file whose only suites are skip variants (`xdescribe`/`xtest`/`xit`) is now reported as **SKIP** instead of failing with `missing report payload from test runtime`. The transform's auto-`run()` injection keys off `analyzeSourceText` → `hasSuiteCalls` (`transform/src/index.ts`), whose regex was `\b(?:describe|test|it|only|xonly|todo|fuzz|xfuzz)`. `\bdescribe` can't match `xdescribe(` — `x` and `d` are both word chars, so there's no word boundary — and likewise `\btest`/`\bit` miss `xtest`/`xit`. A file whose only suites were skipped therefore reported `hasSuiteCalls = false`, `run()` was never injected, the wasm emitted no lifecycle frames and exited `0`, and the CLI read that silent-but-clean exit as a runtime crash. The regex now matches the `x?` variants (`x?describe|x?test|x?it|x?only|todo|x?fuzz`), so `run()` is injected and the file reports itself skipped (with the suite shown and counted). `looksLikeAsTestImport` got the same `x?` treatment so a file importing _only_ an x-variant still resolves its `run` import path.
+- feat: a spec file with no suites at all (empty, or only imports/comments) is now reported as a skipped file with a `… contains no tests; marked as skipped` warning, instead of `missing report payload`. Such a file never injects `run()` either, so `runProcess` (`cli/commands/run-core.ts`) now treats a clean exit (`code 0`) with zero data frames, no `file-start`/`file-end` events, no suite starts, and no stderr as an empty test file — returning a skip report (`createEmptyFileSkipReport`, `suites: []` so it counts as one skipped file and zero skipped suites) rather than a crash. A file that _does_ have suites always emits `file-start` before anything can go wrong, so this only ever fires for genuinely empty files.
+
 ## 2026-06-01 - v1.5.2
 
 ### Selectors resolve folders, files, and globs consistently

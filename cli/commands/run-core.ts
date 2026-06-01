@@ -2660,6 +2660,22 @@ async function runProcess(
       });
       return synthesized;
     }
+    // A spec file with no test suites never calls `run()`, so it emits no
+    // lifecycle frames and exits cleanly. That is an empty test file, not a
+    // crash — mark it skipped instead of surfacing "missing report payload".
+    if (
+      code === 0 &&
+      reportStream.dataFrames === 0 &&
+      !runtimeEvents.sawFileStart &&
+      !runtimeEvents.sawFileEnd &&
+      runtimeEvents.suiteStarts === 0 &&
+      !hasMeaningfulRuntimeOutput(stderrBuffer)
+    ) {
+      reporter.onWarning?.({
+        message: `${formatSpecDisplayPath(specFile)} contains no tests; marked as skipped`,
+      });
+      return createEmptyFileSkipReport(specFile, modeName);
+    }
     const errorText = "missing report payload from test runtime";
     const diagnostics = buildRuntimeReportDiagnostics(
       code,
@@ -3197,6 +3213,28 @@ function buildRuntimeReportDiagnostics(
     `report stream: dataFrames=${reportStream.dataFrames}, dataBytes=${reportStream.dataBytes}, chunked=${reportStream.sawChunkStart ? "yes" : "no"}, chunkStart=${reportStream.sawChunkStart ? "yes" : "no"}, chunkEnd=${reportStream.sawChunkEnd ? "yes" : "no"}, chunkFrames=${reportStream.chunkFramesReceived}, expectedChunkFrames=${reportStream.chunkCountExpected}, chunkBytes=${reportStream.chunkBytesReceived}, expectedChunkBytes=${reportStream.chunkTotalBytesExpected}`,
     `runtime events: fileStart=${runtimeEvents.sawFileStart ? "yes" : "no"}, fileEnd=${runtimeEvents.sawFileEnd ? "yes" : "no"}, fileVerdict=${runtimeEvents.fileVerdict}, suiteStarts=${runtimeEvents.suiteStarts}, suiteEnds=${runtimeEvents.suiteEnds}, assertionFails=${runtimeEvents.assertionFails}, warnings=${runtimeEvents.warnings}, logs=${runtimeEvents.logs}`,
   ].join("\n");
+}
+
+function createEmptyFileSkipReport(
+  specFile: string,
+  modeName: string | undefined,
+): any {
+  // No suites: a file with zero suites contributes no skipped-suite count, just
+  // a skipped file (an empty `suites` array yields a "none" file verdict, which
+  // collectRunStats tallies as a skipped file). The accompanying onWarning tells
+  // the user the file had no tests.
+  return {
+    file: specFile,
+    modeName: modeName ?? "default",
+    suites: [],
+    coverage: {
+      total: 0,
+      covered: 0,
+      uncovered: 0,
+      percent: 100,
+      points: [],
+    },
+  };
 }
 
 function createRuntimeFailureReport(

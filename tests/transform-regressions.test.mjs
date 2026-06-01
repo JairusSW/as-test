@@ -142,3 +142,86 @@ test("coverage transform: typed arrow parameters inside map() build without TS11
     await fs.rm(specPath, { force: true });
   }
 });
+
+// Bug C: a file whose only suites are skip variants (xdescribe/xtest/xit) must
+// still get run() auto-injected so it reports itself as skipped. Previously the
+// hasSuiteCalls regex only matched the non-x names, so `\bdescribe` failed to
+// match `xdescribe`, run() was never injected, no report frame was emitted, and
+// the CLI surfaced it as "missing report payload from test runtime" (a crash).
+test("xdescribe-only file is reported skipped, not crashed", async () => {
+  const specRel = "assembly/__tests__/__tmp_xdescribe_only.spec.ts";
+  const specPath = path.join(repoRoot, specRel);
+  await fs.writeFile(
+    specPath,
+    [
+      'import { expect, xdescribe } from "..";',
+      "",
+      'xdescribe("only an xdescribe, nothing else", () => {',
+      "  expect((): void => {",
+      "    let x = 1;",
+      "  }).not.toThrow();",
+      "});",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+
+  try {
+    const result = await runNode(
+      ["./bin/index.js", "test", specRel, "--mode", "node:wasi"],
+      {},
+    );
+    const output = result.stdout + result.stderr;
+    assert.equal(
+      result.code,
+      0,
+      `Expected exit 0 but got ${result.code}:\n${output}`,
+    );
+    assert.doesNotMatch(
+      output,
+      /missing report payload/,
+      "all-skipped file must not be treated as a runtime crash",
+    );
+    assert.match(output, /SKIP/, "the file should be reported as skipped");
+    assert.match(output, /Files:\s+0 failed, 1 skipped, 1 total/);
+    assert.match(output, /Suites:\s+0 failed, 1 skipped, 1 total/);
+  } finally {
+    await fs.rm(specPath, { force: true });
+  }
+});
+
+// Bug C (cont.): a spec file with no suites at all never calls run() and emits
+// no frames. A clean exit with zero lifecycle events is an empty test file, not
+// a crash — the CLI marks it skipped (with a warning) rather than reporting a
+// missing report payload.
+test("empty spec file (no suites) is reported skipped, not crashed", async () => {
+  const specRel = "assembly/__tests__/__tmp_empty_file.spec.ts";
+  const specPath = path.join(repoRoot, specRel);
+  await fs.writeFile(
+    specPath,
+    ["// intentionally empty", 'import { expect } from "..";', ""].join("\n"),
+    "utf8",
+  );
+
+  try {
+    const result = await runNode(
+      ["./bin/index.js", "test", specRel, "--mode", "node:wasi"],
+      {},
+    );
+    const output = result.stdout + result.stderr;
+    assert.equal(
+      result.code,
+      0,
+      `Expected exit 0 but got ${result.code}:\n${output}`,
+    );
+    assert.doesNotMatch(
+      output,
+      /missing report payload/,
+      "empty file must not be treated as a runtime crash",
+    );
+    assert.match(output, /contains no tests/, "should warn the file is empty");
+    assert.match(output, /Files:\s+0 failed, 1 skipped, 1 total/);
+  } finally {
+    await fs.rm(specPath, { force: true });
+  }
+});
