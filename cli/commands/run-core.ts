@@ -2674,14 +2674,19 @@ async function runProcess(
       runtimeEvents,
     );
     if (synthesized) {
-      reporter.onWarning?.({
-        message:
-          "runtime report payload missing; reconstructed result from streamed lifecycle events",
-      });
-      if (code !== 0 || hasMeaningfulRuntimeOutput(stderrBuffer)) {
+      const exitedEarly = !runtimeEvents.sawFileEnd;
+      if (
+        exitedEarly ||
+        code !== 0 ||
+        hasMeaningfulRuntimeOutput(stderrBuffer)
+      ) {
         const errorParts: string[] = [];
         if (code !== 0) {
           errorParts.push(`child process exited with code ${code}`);
+        } else if (exitedEarly) {
+          errorParts.push(
+            "test runtime exited before reporting file completion",
+          );
         }
         const stderrText = normalizeRuntimeOutput(stderrBuffer);
         if (stderrText.length) {
@@ -2710,12 +2715,18 @@ async function runProcess(
           modeName,
           code !== 0
             ? `test runtime failed with exit code ${code}`
-            : "test runtime wrote to stderr",
+            : exitedEarly
+              ? "test runtime exited before completing the test file"
+              : "test runtime wrote to stderr",
           errorText,
           stdoutBuffer,
           stderrBuffer,
         );
       }
+      reporter.onWarning?.({
+        message:
+          "runtime report payload missing; reconstructed result from streamed lifecycle events",
+      });
       return synthesized;
     }
     const errorText = "missing report payload from test runtime";
@@ -3068,14 +3079,19 @@ async function runWebSessionProcess(
       runtimeEvents,
     );
     if (synthesized) {
-      reporter.onWarning?.({
-        message:
-          "runtime report payload missing; reconstructed result from streamed lifecycle events",
-      });
-      if (code !== 0 || hasMeaningfulRuntimeOutput(stderrBuffer)) {
+      const exitedEarly = !runtimeEvents.sawFileEnd;
+      if (
+        exitedEarly ||
+        code !== 0 ||
+        hasMeaningfulRuntimeOutput(stderrBuffer)
+      ) {
         const errorParts: string[] = [];
         if (code !== 0) {
           errorParts.push(`child process exited with code ${code}`);
+        } else if (exitedEarly) {
+          errorParts.push(
+            "test runtime exited before reporting file completion",
+          );
         }
         const stderrText = normalizeRuntimeOutput(stderrBuffer);
         if (stderrText.length) {
@@ -3087,10 +3103,35 @@ async function runWebSessionProcess(
           reportStream,
           runtimeEvents,
         );
-        reporter.onWarning?.({
-          message: `${errorParts.join("; ")}\n${diagnostics}`,
+        errorParts.push(diagnostics);
+        const errorText = errorParts.join("\n\n");
+        persistCrashRecord(crashDir, {
+          kind: "test",
+          file: specFile,
+          entryKey: crashEntryKey,
+          mode: modeName ?? "default",
+          error: errorText || "runtime reported an unknown error",
+          stdout: stdoutBuffer,
+          stderr: stderrBuffer,
         });
+        return appendRuntimeFailureReport(
+          synthesized,
+          specFile,
+          modeName,
+          code !== 0
+            ? `test runtime failed with exit code ${code}`
+            : exitedEarly
+              ? "test runtime exited before completing the test file"
+              : "test runtime wrote to stderr",
+          errorText,
+          stdoutBuffer,
+          stderrBuffer,
+        );
       }
+      reporter.onWarning?.({
+        message:
+          "runtime report payload missing; reconstructed result from streamed lifecycle events",
+      });
       return synthesized;
     }
     const diagnostics = buildRuntimeReportDiagnostics(

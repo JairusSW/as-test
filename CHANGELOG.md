@@ -2,6 +2,10 @@
 
 ## 2026-05-29 - Unreleased
 
+### An early-exiting runtime now fails instead of warning
+
+- fix: when the runtime never delivers its final report payload, the CLI reconstructs a result from the streamed lifecycle events (`synthesizeReportFromRuntimeEvents`). Previously this always emitted a `WARN` and returned the reconstruction, only escalating to a `FAIL` if the child exited non-zero or wrote to stderr — so a spec that trapped/exited early with exit code `0` and no stderr came back as a passing reconstruction (the `runtime report payload missing; reconstructed result from streamed lifecycle events` warning storm). Both `runProcess` (WASI/bindings) and `runWebSessionProcess` (web) now treat `!runtimeEvents.sawFileEnd` — the runtime never emitted `event:file-end`, i.e. it exited before the file finished — as a failure: `appendRuntimeFailureReport` with a persisted crash record and a `test runtime exited before completing the test file` message, no misleading `WARN`. A run that _did_ reach `file-end` but simply failed to flush the final report frame is still the recoverable case (`WARN` + reconstructed result). This also closes a gap in the web path, which previously never escalated to a failure in the synthesized branch — it only warned, even on a non-zero exit.
+
 ### esm bindings now run
 
 - fix: `instantiateEsmInstance` (`lib/src/index.ts`) now calls `patchNodeIo()` before importing the bindings helper. An esm helper auto-instantiates at import time and writes the WIPC report by calling the global `process.stdout.write(ArrayBuffer)` directly. `patchNodeIo()` — which teaches `process.stdout.write`/`process.stdin.read` to accept a raw `ArrayBuffer` and route it through `fs.writeSync` — was only wired into the raw path (via `withNodeIo`), never the esm path. So under esm bindings Node threw `ERR_INVALID_ARG_TYPE` ("chunk must be of type string or Buffer…, received an instance of ArrayBuffer") before any report was emitted, and the run crashed with `missing report payload from test runtime`. The patch is now in place by the time the helper instantiates.
@@ -15,6 +19,13 @@
 - change: `mock.spec.ts` is split into `mock.spec.ts` (mocking + `unmockFn` only) and `unmock.spec.ts` (the `unmockImport` cases). The split tracks the real esm/standalone-WASI boundary: the transform removes a `@external` import from the wasm when it is **only ever mocked**, but keeps it (for fall-back) when it is `unmockImport`'d anywhere. A pure-mock spec therefore imports nothing virtual and runs on **every** runtime — verified via `WebAssembly.Module.imports()`: the pure-mock wasi build imports only `wasi_snapshot_preview1`, while the unmock build imports `mock.foo`. `unmockFn` (function mocks) does not retain an import; only `unmockImport` does.
 - feat: pure `mockImport` specs now run under **esm bindings** and the standalone WASI runtimes (`wasmtime`, `wasmer`, `wazero`) — `mock.spec.ts` is no longer excluded from those modes (it was in v1.5.0). Only `unmock.spec.ts`, which retains a real host binding the host can't supply under those runtimes, is excluded (`!**/unmock.spec.ts`).
 - feat: two new modes in `as-test.config.json` — `node:bindings:raw` and `node:bindings:esm` (both `default: false`) — exercise each bindings style explicitly, and both are added to the `test:modes` matrix so `test:all` covers them.
+
+### Watch mode exits with the last verdict
+
+- feat: quitting `--watch` (ctrl+c, both the raw-mode `0x03` path and the `SIGINT` handler in `runWatchLoop`) now exits `1` when the most recent run left any spec failing **or a run is still in flight**, instead of always exiting `0`. The watch loop already tracks currently-failing `(spec, mode)` pairs in its sticky `failingSpecs` map and an `isRunning` flag, so the exit code is `isRunning || failingSpecs.size ? 1 : 0` — an interrupted run counts as a failure. This lets a red watch session fail CI and shell pipelines (`ast test --watch && deploy`) instead of masking the failure on quit.
+
+### CI uses the main config
+
 - chore: removed `as-test.ci.config.json`. `test:ci` now runs against the main `as-test.config.json` (`npm run test -- --mode node:bindings,node:wasi,wasmtime`), so CI uses the same modes, `features` (`try-as`), and per-mode spec exclusions as everything else — `try-as` no longer needs an explicit `--enable`, and the stale CI-only `wasmtime` exclusion that still ran `unmock.spec.ts` (and failed on the missing `mock::foo` host import) is gone.
 
 ## 2026-05-28 - v1.5.0

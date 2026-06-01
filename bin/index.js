@@ -2344,7 +2344,10 @@ async function runWatchLoop(
           if (byte === 0x03) {
             if (rawModeEnabled) stdin.setRawMode(false);
             closeAllWatchers();
-            process.exit(0);
+            // Exit non-zero if the last run left anything failing, or if a run
+            // is still in flight (an interrupted run counts as a failure), so
+            // quitting a red watch session still fails CI / shell pipelines.
+            process.exit(isRunning || failingSpecs.size ? 1 : 0);
           }
           if (isRunning) break;
           if (byte === 0x77 || byte === 0x57) {
@@ -2394,7 +2397,8 @@ async function runWatchLoop(
   process.on("SIGINT", () => {
     if (rawModeEnabled) stdin.setRawMode(false);
     closeAllWatchers();
-    process.exit(0);
+    // Mirror the raw-mode ctrl+c path: a failing or in-flight run exits 1.
+    process.exit(isRunning || failingSpecs.size ? 1 : 0);
   });
   // Keep the process alive
   await new Promise(() => {});
