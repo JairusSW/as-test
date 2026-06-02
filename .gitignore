@@ -7,6 +7,8 @@ build
 .as-test/*
 !.as-test/runners/
 !.as-test/snapshots/
+# Private output root used by tests/build-cache.test.mjs
+.as-test-bc/
 pnpm-lock.yaml
 package-lock.json
 .vscode

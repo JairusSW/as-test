@@ -217,6 +217,7 @@ const TOP_LEVEL_KEYS = new Set([
   "coverageDir",
   "snapshotDir",
   "config",
+  "cache",
   "coverage",
   "features",
   "env",
@@ -253,6 +254,7 @@ function validateConfig(raw, configPath) {
   validateStringField(raw, "coverageDir", "$", issues);
   validateStringField(raw, "snapshotDir", "$", issues);
   validateStringField(raw, "config", "$", issues);
+  validateCacheField(raw, "cache", "$", issues);
   validateCoverageField(raw, "coverage", "$", issues);
   validateFeaturesField(raw, "features", "$", issues);
   validateEnvField(raw, "env", "$", issues);
@@ -379,6 +381,46 @@ function validateOutputField(raw, key, pathPrefix, issues) {
 function validateCoverageField(raw, key, pathPrefix, issues) {
   if (!(key in raw) || raw[key] == undefined) return;
   validateCoverageValue(raw[key], `${pathPrefix}.${key}`, issues);
+}
+function validateCacheField(raw, key, pathPrefix, issues) {
+  if (!(key in raw) || raw[key] == undefined) return;
+  const value = raw[key];
+  const path = `${pathPrefix}.${key}`;
+  if (typeof value == "boolean") return;
+  if (value === "build" || value === "full" || value === "reachable") return;
+  if (value && typeof value == "object" && !Array.isArray(value)) {
+    const obj = value;
+    if (
+      "type" in obj &&
+      obj.type !== "build" &&
+      obj.type !== "full" &&
+      obj.type !== "reachable"
+    ) {
+      issues.push({
+        path: `${path}.type`,
+        message: 'must be "build" or "full"',
+        fix: 'set "type" to "build" or "full"',
+      });
+    }
+    if ("maxTime" in obj && obj.maxTime != undefined) {
+      if (
+        typeof obj.maxTime != "string" ||
+        parseDurationMs(obj.maxTime) == null
+      ) {
+        issues.push({
+          path: `${path}.maxTime`,
+          message: 'must be a duration like "1h", "30m", "90s", or "7d"',
+          fix: 'use a number followed by ms/s/m/h/d, e.g. "1h"',
+        });
+      }
+    }
+    return;
+  }
+  issues.push({
+    path,
+    message: 'must be a boolean, "build"/"full", or { type, maxTime }',
+    fix: 'use false, true, "build", "full", or { "type": "full", "maxTime": "1h" }',
+  });
 }
 function validateCoverageValue(value, path, issues) {
   if (typeof value == "boolean") return;
@@ -758,6 +800,7 @@ function validateModesField(raw, key, pathPrefix, issues) {
     validateStringField(modeObj, "coverageDir", modePath, issues);
     validateStringField(modeObj, "snapshotDir", modePath, issues);
     validateStringField(modeObj, "config", modePath, issues);
+    validateCacheField(modeObj, "cache", modePath, issues);
     validateCoverageField(modeObj, "coverage", modePath, issues);
     validateFeaturesField(modeObj, "features", modePath, issues);
     validateFuzzField(modeObj, "fuzz", modePath, issues);
@@ -1244,6 +1287,7 @@ function mergeRootConfig(base, override) {
     merged.snapshotDir = override.snapshotDir;
   }
   if ("config" in raw) merged.config = override.config;
+  if ("cache" in raw) merged.cache = override.cache;
   if ("coverage" in raw) {
     merged.coverage = mergeCoverageConfig(
       merged.coverage,
@@ -1391,6 +1435,56 @@ export function applyMode(config, modeName) {
 }
 function appendPathSegment(basePath, segment) {
   return join(basePath, segment);
+}
+// Parses a duration string ("500ms", "90s", "30m", "1h", "7d", "1.5h") to
+// milliseconds. Returns null when the format is unrecognized.
+export function parseDurationMs(value) {
+  const match = /^\s*(\d+(?:\.\d+)?)\s*(ms|s|m|h|d)\s*$/.exec(value);
+  if (!match) return null;
+  const amount = Number(match[1]);
+  const unit = match[2];
+  const mult =
+    unit === "ms"
+      ? 1
+      : unit === "s"
+        ? 1000
+        : unit === "m"
+          ? 60000
+          : unit === "h"
+            ? 3600000
+            : 86400000;
+  return amount * mult;
+}
+// Resolves the effective cache mode + expiry for a run. CLI flags win over
+// config: --no-cache forces off, --cache forces full. The config value may be a
+// boolean, a mode string, or an object { type, maxTime }. Default is off
+// (opt-in). maxTime (entry expiry) comes from the object form regardless of the
+// resolved mode.
+export function resolveCacheSettings(configCache, flags) {
+  if (flags.noCache) return { mode: "off", maxTimeMs: null };
+  // "reachable" is accepted for back-compat but treated as "full": reachability
+  // pruning was unsound for AssemblyScript (compile-time-inlined consts, static
+  // fields, @inline bodies, and re-export barrels can change output without
+  // being "reachable"), so it could serve stale results. The full dependency
+  // set is always correct.
+  let mode = "off";
+  let maxTimeMs = null;
+  if (configCache && typeof configCache === "object") {
+    mode = configCache.type === "build" ? "build" : "full";
+    maxTimeMs = configCache.maxTime
+      ? parseDurationMs(configCache.maxTime)
+      : null;
+  } else if (
+    configCache === true ||
+    configCache === "full" ||
+    configCache === "reachable"
+  ) {
+    mode = "full";
+  } else if (configCache === "build") {
+    mode = "build";
+  }
+  if (flags.cache) mode = "full"; // --cache forces full; maxTime (if any) kept
+  return { mode, maxTimeMs };
 }
 export function getCliVersion() {
   const candidates = [

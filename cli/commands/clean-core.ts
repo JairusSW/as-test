@@ -2,6 +2,7 @@ import chalk from "chalk";
 import { existsSync, rmSync } from "fs";
 import * as path from "path";
 import { applyMode, loadConfig } from "../util.js";
+import { resolveCacheDir } from "../build-cache.js";
 
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 
@@ -13,6 +14,10 @@ export async function clean(
   const loadedConfig = loadConfig(configPath, true);
   const targets = new Map<string, string[]>();
   const ownership = buildOwnershipMap(loadedConfig);
+
+  // The incremental cache (.as-test/cache) is a single global dir, not
+  // per-mode, so it is always cleaned whenever `ast clean` runs.
+  collectRootTarget(targets, resolveCacheDir(loadedConfig.outDir), "cache");
 
   if (fullClean) {
     collectRootTarget(targets, loadedConfig.outDir, "build");
@@ -86,7 +91,7 @@ function buildOwnershipMap(
 function collectRootTarget(
   targets: Map<string, string[]>,
   rawPath: string,
-  kind: "build" | "crashes" | "coverage" | "logs",
+  kind: "build" | "crashes" | "coverage" | "logs" | "cache",
 ): void {
   if (!rawPath || rawPath == "none") return;
   const resolved = path.resolve(process.cwd(), rawPath);
@@ -104,7 +109,7 @@ function collectOwnership(
   ownership: Map<string, string[]>,
   rawPath: string,
   modeName: string | undefined,
-  kind: "build" | "crashes" | "coverage" | "logs",
+  kind: "build" | "crashes" | "coverage" | "logs" | "cache",
 ): void {
   if (!rawPath || rawPath == "none") return;
   const resolved = path.resolve(process.cwd(), rawPath);
@@ -122,7 +127,7 @@ function collectTarget(
   targets: Map<string, string[]>,
   rawPath: string,
   modeName: string | undefined,
-  kind: "build" | "crashes" | "coverage" | "logs",
+  kind: "build" | "crashes" | "coverage" | "logs" | "cache",
 ): void {
   if (!rawPath || rawPath == "none") return;
   const resolved = path.resolve(process.cwd(), rawPath);
@@ -157,7 +162,7 @@ function pruneNestedTargets(targets: Map<string, string[]>): void {
 function ensureSafeCleanPath(
   resolvedPath: string,
   rawPath: string,
-  kind: "build" | "crashes" | "coverage" | "logs",
+  kind: "build" | "crashes" | "coverage" | "logs" | "cache",
 ): void {
   const cwd = path.resolve(process.cwd());
   const relative = path.relative(cwd, resolvedPath);

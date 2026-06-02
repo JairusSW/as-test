@@ -27,6 +27,7 @@ import {
 import { persistCrashRecord } from "../crash-store.js";
 import { BuildWorkerPool } from "../build-worker-pool.js";
 import { resolveSpecFiles, emitSelectorWarnings } from "../selectors.js";
+import { cacheStorage } from "../build-cache.js";
 
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 
@@ -66,7 +67,41 @@ type BuildInvocation = {
 export type BuildReuseInfo = {
   signature: string;
   outFile: string;
+  coverageEnabled: boolean;
 };
+
+// The canonical build signature: identical inputs (command, args sans -o, env)
+// yield an identical string. Used by both the cache freshness check inside
+// build() and getBuildReuseInfo() so the two never drift.
+function computeBuildSignature(
+  invocation: BuildInvocation,
+  signatureEnv: Record<string, string | undefined>,
+): string {
+  return JSON.stringify({
+    command: invocation.command,
+    args: stripOutputArgs(invocation.args),
+    apiArgs: invocation.apiArgs ? stripOutputArgs(invocation.apiArgs) : [],
+    env: sortRecord(signatureEnv),
+  });
+}
+
+// The env that actually affects build output, for the cache signature — only
+// as-test's *declared* env (config + buildOptions env + the AS_TEST_* flags),
+// NOT the inherited process.env. The real build env passed to asc is a superset
+// (it spreads process.env for PATH etc.), but hashing that would let volatile
+// vars like FORCE_COLOR/TERM spuriously invalidate the cache every run.
+function buildSignatureEnv(
+  config: Config,
+  coverageEnabled: boolean,
+  modeName?: string,
+): Record<string, string | undefined> {
+  return {
+    ...config.env,
+    ...config.buildOptions.env,
+    AS_TEST_COVERAGE_ENABLED: coverageEnabled ? "1" : "0",
+    AS_TEST_MODE_NAME: modeName ?? "default",
+  };
+}
 
 export type { BuildInvocation };
 
@@ -150,11 +185,15 @@ export async function build(
     AS_TEST_MODE_NAME: modeName ?? "default",
   };
 
+  // The cache needs the in-process API build path (only it can record asc's
+  // file reads), so when a cache context is active fall through to the direct
+  // loop below rather than the child-process serial pool.
   if (
     !resolvedConfig &&
     !process.env.AS_TEST_BUILD_API &&
     !hasCustomBuildCommand(config) &&
-    !buildRecorderStorage.getStore()
+    !buildRecorderStorage.getStore() &&
+    !cacheStorage.getStore()
   ) {
     const pool = getSerialBuildWorkerPool();
     for (const file of inputFiles) {
@@ -182,12 +221,14 @@ export async function build(
     return;
   }
 
+  const cacheCtx = cacheStorage.getStore();
+  const canCache = !!cacheCtx && !hasCustomBuildCommand(config);
+
   for (const file of inputFiles) {
     const outFile = path.join(
       config.outDir,
       resolveArtifactPath(file, sourceInputPatterns),
     );
-    mkdirSync(path.dirname(outFile), { recursive: true });
     const invocation = getBuildCommand(
       config,
       pkgRunner,
@@ -196,8 +237,50 @@ export async function build(
       modeName,
       featureToggles,
     );
+    const signature = canCache
+      ? computeBuildSignature(
+          invocation,
+          buildSignatureEnv(config, coverageEnabled, modeName),
+        )
+      : "";
+    // Cache hit: spec + every recorded dependency unchanged and the build
+    // signature still matches, so the existing .wasm is current — skip asc.
+    if (
+      canCache &&
+      cacheCtx!.cache.isBuildFresh(modeName, file, {
+        signature,
+        coverageEnabled,
+      })
+    ) {
+      continue;
+    }
+    mkdirSync(path.dirname(outFile), { recursive: true });
+    const reads = new Set<string>();
     try {
-      await buildFile(invocation, buildEnv);
+      if (canCache) {
+        // Capture asc's file reads (the spec's transitive deps) so the next
+        // run can tell when any of them changed. Forward to any outer recorder
+        // (e.g. the watch loop's dependency-graph recorder) so it still sees
+        // reads while the cache is active.
+        const outer = buildRecorderStorage.getStore();
+        await buildRecorderStorage.run(
+          {
+            record: (mode, spec, abs) => {
+              reads.add(abs);
+              outer?.record(mode, spec, abs);
+            },
+          },
+          () => buildFile(invocation, buildEnv),
+        );
+        cacheCtx!.cache.recordBuild(modeName, file, {
+          signature,
+          outFile,
+          deps: reads,
+          coverageEnabled,
+        });
+      } else {
+        await buildFile(invocation, buildEnv);
+      }
     } catch (error) {
       const modeLabel = modeName ?? "default";
       const stdout = getBuildStdout(error);
@@ -337,20 +420,13 @@ export async function getBuildReuseInfo(
     config.coverage,
     featureToggles.coverage,
   );
-  const buildEnv = {
-    ...mode.env,
-    ...config.buildOptions.env,
-    AS_TEST_COVERAGE_ENABLED: coverageEnabled ? "1" : "0",
-    AS_TEST_MODE_NAME: modeName ?? "default",
-  };
   return {
-    signature: JSON.stringify({
-      command: invocation.command,
-      args: stripOutputArgs(invocation.args),
-      apiArgs: invocation.apiArgs ? stripOutputArgs(invocation.apiArgs) : [],
-      env: sortRecord(buildEnv),
-    }),
+    signature: computeBuildSignature(
+      invocation,
+      buildSignatureEnv(config, coverageEnabled, modeName),
+    ),
     outFile,
+    coverageEnabled,
   };
 }
 

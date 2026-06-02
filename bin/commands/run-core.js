@@ -20,6 +20,11 @@ import { PassThrough } from "stream";
 import { buildWebRunnerSource } from "./web-runner-source.js";
 import { PersistentWebSessionHost } from "./web-session.js";
 import { build } from "./build-core.js";
+import {
+  cacheStorage,
+  reportHasFailure,
+  sha256OfFile,
+} from "../build-cache.js";
 import { resolveSpecFiles, emitSelectorWarnings } from "../selectors.js";
 import { createReporter as createDefaultReporter } from "../reporters/default.js";
 import { createTapReporter } from "../reporters/tap.js";
@@ -808,6 +813,7 @@ export async function run(
       ? await PersistentWebSessionHost.start(false)
       : null;
   const webSession = options.webSession ?? ownedWebSession;
+  const cacheCtx = cacheStorage.getStore();
   try {
     for (let i = 0; i < inputFiles.length; i++) {
       const file = inputFiles[i];
@@ -815,6 +821,72 @@ export async function run(
         config.outDir,
         resolveArtifactPath(file, config.input),
       );
+      // Tier 2: replay a stored passing report instead of running. build() ran
+      // first this session and validated the build is fresh (else it cleared
+      // the stored report), so here we only re-check the run-specific inputs.
+      if (cacheCtx?.replay) {
+        const snapPath = resolveSnapshotPath(
+          file,
+          config.snapshotDir,
+          config.input,
+        );
+        const snapshotSha = existsSync(snapPath)
+          ? sha256OfFile(snapPath)
+          : null;
+        if (
+          cacheCtx.cache.canReplay(options.modeName, file, {
+            runtimeCmd: runtimeCommand,
+            snapshotSha,
+          })
+        ) {
+          const cached = cacheCtx.cache.getReport(options.modeName, file);
+          if (cached && !reportHasFailure(cached)) {
+            const cachedSuites = Array.isArray(cached.suites)
+              ? cached.suites
+              : [];
+            const selected = options.suiteSelectors?.length
+              ? filterSelectedSuites(
+                  cachedSuites,
+                  options.suiteSelectors,
+                  file,
+                  options.modeName ?? "default",
+                )
+              : cachedSuites;
+            replayCachedReport(reporter, file, selected);
+            const cachedSnap = cached.snapshotSummary ?? {
+              matched: 0,
+              created: 0,
+              updated: 0,
+              failed: 0,
+            };
+            snapshotSummary.matched += cachedSnap.matched ?? 0;
+            snapshotSummary.created += cachedSnap.created ?? 0;
+            snapshotSummary.updated += cachedSnap.updated ?? 0;
+            snapshotSummary.failed += cachedSnap.failed ?? 0;
+            reports.push({
+              file,
+              modeName: options.modeName ?? "default",
+              suites: selected,
+              coverage: cached.coverage ?? {
+                total: 0,
+                covered: 0,
+                uncovered: 0,
+                percent: 100,
+                points: [],
+              },
+              runCommand: cached.runCommand ?? "",
+              buildCommand:
+                options.buildCommandsByFile?.[file] ??
+                options.buildCommand ??
+                cached.buildCommand ??
+                "",
+              snapshotSummary: cachedSnap,
+              cached: true,
+            });
+            continue;
+          }
+        }
+      }
       if (!existsSync(outFile)) {
         const buildStartedAt = Date.now();
         await build(
@@ -929,7 +1001,7 @@ export async function run(
       snapshotSummary.created += snapshotStore.created;
       snapshotSummary.updated += snapshotStore.updated;
       snapshotSummary.failed += snapshotStore.failed;
-      reports.push({
+      const fileReport = {
         file,
         modeName: options.modeName ?? "default",
         suites: selectedSuites,
@@ -943,7 +1015,29 @@ export async function run(
           updated: snapshotStore.updated,
           failed: snapshotStore.failed,
         },
-      });
+        // When the cache is active, mark freshly-run reports `false` (replays
+        // are marked `true`) so the summary can show a cache hit/miss split.
+        // Left undefined when the cache is off so no Cache line is shown.
+        ...(cacheCtx?.cache ? { cached: false } : {}),
+      };
+      reports.push(fileReport);
+      // Persist this report so an unchanged future run can replay it (Tier 2).
+      // recordBuild ran during build() this session, so the entry exists.
+      if (cacheCtx?.cache) {
+        const snapPath = resolveSnapshotPath(
+          file,
+          config.snapshotDir,
+          config.input,
+        );
+        const snapshotSha = existsSync(snapPath)
+          ? sha256OfFile(snapPath)
+          : null;
+        cacheCtx.cache.recordReport(options.modeName, file, {
+          report: fileReport,
+          snapshotSha,
+          runtimeCmd: runtimeCommand,
+        });
+      }
     }
   } finally {
     await ownedWebSession?.close();
@@ -2778,6 +2872,58 @@ function shouldSuppressWasiWarningLine(line) {
     return true;
   }
   return false;
+}
+// Drive the reporter from a stored (passing) file report so a replayed spec
+// still scrolls past the live display and is counted, exactly as a fresh run
+// would render it. Only passing/skipped reports are replayed, so there are no
+// assertion failures to re-emit.
+function replayCachedReport(reporter, file, suites) {
+  reporter.onFileStart?.({
+    file,
+    depth: 0,
+    suiteKind: "file",
+    description: file,
+  });
+  let verdict = "none";
+  for (const suite of suites) {
+    verdict = mergeReplayVerdict(
+      verdict,
+      emitReplaySuite(reporter, file, suite),
+    );
+  }
+  reporter.onFileEnd?.({
+    file,
+    depth: 0,
+    suiteKind: "file",
+    description: file,
+    verdict,
+    cached: true,
+  });
+}
+function emitReplaySuite(reporter, file, suite) {
+  const depth = Number(suite?.depth ?? 0);
+  const kind = String(suite?.kind ?? "");
+  const description = String(suite?.description ?? "");
+  reporter.onSuiteStart?.({ file, depth, suiteKind: kind, description });
+  let verdict = String(suite?.verdict ?? "none");
+  const subs = Array.isArray(suite?.suites) ? suite.suites : [];
+  for (const sub of subs) {
+    verdict = mergeReplayVerdict(verdict, emitReplaySuite(reporter, file, sub));
+  }
+  reporter.onSuiteEnd?.({
+    file,
+    depth,
+    suiteKind: kind,
+    description,
+    verdict: String(suite?.verdict ?? verdict),
+  });
+  return verdict;
+}
+function mergeReplayVerdict(a, b) {
+  if (a === "fail" || b === "fail") return "fail";
+  if (a === "ok" || b === "ok") return "ok";
+  if (a === "skip" || b === "skip") return "skip";
+  return "none";
 }
 function collectRunStats(reports) {
   const stats = {

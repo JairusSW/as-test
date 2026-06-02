@@ -158,14 +158,28 @@ class DefaultReporter implements TestReporter {
   private renderFileResult(event: ProgressEvent): string {
     const verdict = event.verdict ?? "none";
     const time = event.time ? ` ${chalk.dim(event.time)}` : "";
-    const file = formatSpecDisplayPath(event.file);
+    const name = formatSpecDisplayPath(event.file);
+    // A replayed (cached) result is de-emphasized: badge, filename, and tag are
+    // all dimmed so freshly-run specs stand out from unchanged ones.
+    if (event.cached) {
+      // Replayed-from-cache: keep the coloured verdict badge (white text) so it
+      // stays scannable, but dim the filename and show "(cache)" in place of the
+      // timing so freshly-run specs still stand out.
+      const badge =
+        verdict == "fail"
+          ? chalk.bgRed.white(" FAIL ")
+          : verdict == "ok"
+            ? chalk.bgGreenBright.white(" PASS ")
+            : chalk.bgBlackBright.white(" SKIP ");
+      return `${badge} ${chalk.dim(name)} ${chalk.dim("(cache)")}`;
+    }
     if (verdict == "fail")
-      return `${chalk.bgRed.white(" FAIL ")} ${file}${time}`;
+      return `${chalk.bgRed.white(" FAIL ")} ${name}${time}`;
     if (this.fileHasWarning)
-      return `${chalk.bgYellow.black(" WARN ")} ${file}${time}`;
+      return `${chalk.bgYellow.black(" WARN ")} ${name}${time}`;
     if (verdict == "ok")
-      return `${chalk.bgGreenBright.black(" PASS ")} ${file}${time}`;
-    return `${chalk.bgBlackBright.white(" SKIP ")} ${file}${time}`;
+      return `${chalk.bgGreenBright.black(" PASS ")} ${name}${time}`;
+    return `${chalk.bgBlackBright.white(" SKIP ")} ${name}${time}`;
   }
 
   onRunStart(event: {
@@ -988,8 +1002,18 @@ function renderTotals(
     skipped: stats.skippedTests,
     total: stats.failedTests + stats.passedTests + stats.skippedTests,
   };
+  const cacheSummary = computeCacheSummary(event.reports);
   const layout = createSummaryLayout([
     event.fuzzSummary,
+    // "cached" and "failed" are the same length, so the cache summary aligns in
+    // the shared first column.
+    cacheSummary
+      ? {
+          failed: cacheSummary.cached,
+          skipped: cacheSummary.skipped,
+          total: cacheSummary.total,
+        }
+      : undefined,
     filesSummary,
     suitesSummary,
     testsSummary,
@@ -1005,6 +1029,9 @@ function renderTotals(
   if (event.modeSummary) {
     renderModeSummary(event.modeSummary, layout);
   }
+  if (cacheSummary) {
+    renderCacheSummary(cacheSummary, layout);
+  }
 
   process.stdout.write(
     chalk.bold("Time:".padEnd(9)) +
@@ -1012,6 +1039,40 @@ function renderTotals(
       chalk.dim(` (${formatTime(event.buildTime)} build)`) +
       "\n",
   );
+}
+
+// When the cache is active, every report carries a `cached` flag (true =
+// replayed from cache, false = freshly run). Returns the hit/miss split, or
+// undefined when the cache is off (no report sets the flag) so no line shows.
+function computeCacheSummary(
+  reports: unknown[],
+): { cached: number; skipped: number; total: number } | undefined {
+  const flagged = reports.filter(
+    (r): r is { cached: boolean } =>
+      typeof (r as { cached?: unknown })?.cached === "boolean",
+  );
+  if (!flagged.length) return undefined;
+  const cached = flagged.filter((r) => r.cached).length;
+  return { cached, skipped: flagged.length - cached, total: flagged.length };
+}
+
+// Renders the "Cache:" line in the shared three-column layout (cached / skipped
+// / total) so it lines up with Files/Suites/Tests/Modes.
+function renderCacheSummary(
+  summary: { cached: number; skipped: number; total: number },
+  layout: SummaryLayout,
+): void {
+  const cachedText = `${summary.cached} cached`;
+  const skippedText = `${summary.skipped} skipped`;
+  const totalText = `${summary.total} total`;
+  process.stdout.write(chalk.bold("Cache:".padEnd(9)));
+  process.stdout.write(
+    chalk.bold.greenBright(cachedText.padStart(layout.failedWidth)),
+  );
+  process.stdout.write(", ");
+  process.stdout.write(chalk.gray(skippedText.padStart(layout.skippedWidth)));
+  process.stdout.write(", ");
+  process.stdout.write(totalText.padStart(layout.totalWidth) + "\n");
 }
 
 function renderModeSummary(

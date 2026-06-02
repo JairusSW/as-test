@@ -2,6 +2,7 @@ import chalk from "chalk";
 import { existsSync, rmSync } from "fs";
 import * as path from "path";
 import { applyMode, loadConfig } from "../util.js";
+import { resolveCacheDir } from "../build-cache.js";
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), "./as-test.config.json");
 export async function clean(
   configPath = DEFAULT_CONFIG_PATH,
@@ -11,6 +12,9 @@ export async function clean(
   const loadedConfig = loadConfig(configPath, true);
   const targets = new Map();
   const ownership = buildOwnershipMap(loadedConfig);
+  // The incremental cache (.as-test/cache) is a single global dir, not
+  // per-mode, so it is always cleaned whenever `ast clean` runs.
+  collectRootTarget(targets, resolveCacheDir(loadedConfig.outDir), "cache");
   if (fullClean) {
     collectRootTarget(targets, loadedConfig.outDir, "build");
     collectRootTarget(targets, loadedConfig.fuzz.crashDir, "crashes");

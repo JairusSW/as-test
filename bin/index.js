@@ -6,6 +6,7 @@ import {
   flushModeWarnings,
   formatInvocation as formatBuildInvocation,
   getBuildInvocationPreview,
+  getBuildReuseInfo,
   warnOnUnknownModeReferences,
 } from "./commands/build.js";
 import { createRunReporter, resetCollectedLogs, run } from "./commands/run.js";
@@ -41,6 +42,8 @@ import { BuildWorkerPool } from "./build-worker-pool.js";
 import { PersistentWebSessionHost } from "./commands/web-session.js";
 import { buildRecorderStorage } from "./commands/build-core.js";
 import { DependencyGraph } from "./dependency-graph.js";
+import { BuildCache, cacheStorage, resolveCacheDir } from "./build-cache.js";
+import { resolveCacheSettings } from "./util.js";
 import { resolveSpecFiles, emitSelectorWarnings } from "./selectors.js";
 const _args = process.argv.slice(2);
 const flags = [];
@@ -476,6 +479,12 @@ function printCommandHelp(command) {
     );
     process.stdout.write(
       "  --watch, -w              Re-run on source or spec changes\n",
+    );
+    process.stdout.write(
+      "  --cache                  Skip recompiling/rerunning specs unchanged since the last run\n",
+    );
+    process.stdout.write(
+      "  --no-cache               Ignore the cache for this run (overrides config)\n",
     );
     process.stdout.write("  --help, -h               Show this help\n");
     return;
@@ -1239,31 +1248,57 @@ class ParallelQueueDisplay {
     this.showStartLines = showStartLines;
     this.active = new Map();
     this.renderedLines = 0;
+    // Files complete out of order under --parallel (a cache replay finishes
+    // instantly while a fresh build is still running). To keep output in the
+    // order specs were resolved, each token gets a start sequence (start() is
+    // called in resolved/index order) and completed outputs are emitted only as
+    // the contiguous prefix of that sequence fills in.
+    this.seqByToken = new Map();
+    this.nextSeq = 0;
+    this.nextFlushSeq = 0;
+    this.pending = new Map();
     this.enabled = showStartLines && canRewriteParallelQueue();
   }
   start(file) {
     const token = Symbol(file);
-    if (!this.showStartLines) return token;
-    const line = `${chalk.bgBlackBright.white(" .... ")} ${file}`;
+    this.seqByToken.set(token, this.nextSeq++);
     if (!this.enabled) return token;
+    const line = `${chalk.bgBlackBright.white(" .... ")} ${file}`;
     this.clear();
     this.active.set(token, line);
     this.render();
     return token;
   }
   complete(token, output) {
-    if (!this.showStartLines || !this.enabled) {
-      process.stdout.write(output);
-      return;
-    }
-    this.clear();
-    process.stdout.write(output);
+    const seq = this.seqByToken.get(token) ?? this.nextFlushSeq;
+    this.seqByToken.delete(token);
     this.active.delete(token);
-    this.render();
+    this.pending.set(seq, output);
+    this.flushOrdered();
+  }
+  // Emit the contiguous run of completed outputs starting at nextFlushSeq, so
+  // results print in resolved order regardless of completion order.
+  flushOrdered() {
+    if (!this.pending.has(this.nextFlushSeq)) return;
+    if (this.enabled) this.clear();
+    while (this.pending.has(this.nextFlushSeq)) {
+      process.stdout.write(this.pending.get(this.nextFlushSeq));
+      this.pending.delete(this.nextFlushSeq);
+      this.nextFlushSeq++;
+    }
+    if (this.enabled) this.render();
   }
   flush() {
-    if (!this.enabled) return;
-    this.clear();
+    // Drain anything still buffered (e.g. a gap left by an errored spec) in
+    // sequence order, then clear the live block.
+    if (this.pending.size) {
+      if (this.enabled) this.clear();
+      for (const seq of [...this.pending.keys()].sort((a, b) => a - b)) {
+        process.stdout.write(this.pending.get(seq));
+      }
+      this.pending.clear();
+    }
+    if (this.enabled) this.clear();
   }
   clear() {
     if (!this.renderedLines) return;
@@ -1329,6 +1364,29 @@ async function buildFileForMode(args) {
   // recorder so the dependency graph still gets populated under --parallel.
   const recorder = buildRecorderStorage.getStore();
   if (args.buildPool) {
+    // The non-pool branch delegates to build(), which owns the cache logic.
+    // The pool builds in child processes, so handle the cache here: skip when
+    // fresh, else collect the worker's reported reads and record them.
+    const cacheCtx = cacheStorage.getStore();
+    const reuse = cacheCtx
+      ? await getBuildReuseInfo(
+          args.configPath,
+          args.file,
+          args.modeName,
+          args.buildFeatureToggles,
+        )
+      : null;
+    if (
+      cacheCtx &&
+      reuse &&
+      cacheCtx.cache.isBuildFresh(args.modeName, args.file, {
+        signature: reuse.signature,
+        coverageEnabled: reuse.coverageEnabled,
+      })
+    ) {
+      return;
+    }
+    const reads = cacheCtx && reuse ? new Set() : null;
     const buildInvocation = await getBuildInvocationPreview(
       args.configPath,
       args.file,
@@ -1341,12 +1399,24 @@ async function buildFileForMode(args) {
       modeName: args.modeName,
       buildCommand: formatBuildInvocation(buildInvocation),
       featureToggles: args.buildFeatureToggles,
-      onReads: recorder
-        ? (reads) => {
-            for (const r of reads) recorder.record(r.mode, r.spec, r.file);
-          }
-        : undefined,
+      onReads:
+        recorder || reads
+          ? (entries) => {
+              for (const r of entries) {
+                recorder?.record(r.mode, r.spec, r.file);
+                reads?.add(r.file);
+              }
+            }
+          : undefined,
     });
+    if (cacheCtx && reuse && reads) {
+      cacheCtx.cache.recordBuild(args.modeName, args.file, {
+        signature: reuse.signature,
+        outFile: reuse.outFile,
+        deps: reads,
+        coverageEnabled: reuse.coverageEnabled,
+      });
+    }
   } else {
     await build(
       args.configPath,
@@ -1949,17 +2019,70 @@ async function runTestModes(
     );
     return;
   }
-  const failed = await runTestModesCore(
-    runFlags,
-    configPath,
-    selectors,
-    suiteSelectors,
-    fuzzerSelectors,
-    modes,
-    buildFeatureToggles,
-    fuzzEnabled,
-    fuzzOverrides,
+  // Opt-in incremental cache for the whole non-watch run (watch keeps its own
+  // in-memory dependency graph). Fuzzing is non-deterministic, so never cache.
+  const baseConfig = loadConfig(
+    configPath ?? path.join(process.cwd(), "./as-test.config.json"),
   );
+  const { mode: cacheMode, maxTimeMs } = resolveCacheSettings(
+    baseConfig.cache,
+    {
+      cache: runFlags.cache,
+      noCache: runFlags.noCache,
+    },
+  );
+  const cacheEnabled = cacheMode !== "off" && !fuzzEnabled;
+  if (!cacheEnabled) {
+    const failed = await runTestModesCore(
+      runFlags,
+      configPath,
+      selectors,
+      suiteSelectors,
+      fuzzerSelectors,
+      modes,
+      buildFeatureToggles,
+      fuzzEnabled,
+      fuzzOverrides,
+    );
+    process.exit(failed ? 1 : 0);
+  }
+  const cacheDir = resolveCacheDir(baseConfig.outDir);
+  const cache = BuildCache.load(cacheDir, getCliVersion(), { maxTimeMs });
+  // Replay (Tier 2) is unsafe while writing snapshots — those mutate .snap, so
+  // a replayed snapshot summary would be wrong. Build-skip still applies.
+  const replay =
+    cacheMode === "full" &&
+    !runFlags.createSnapshots &&
+    !runFlags.overwriteSnapshots;
+  // Only prune entries on a full run: a selector-scoped run (`ast test foo`)
+  // resolves a subset, so pruning to it would wipe every other spec's entry.
+  let liveKeys = null;
+  if (!selectors.length) {
+    const files = await resolveSelectedFiles(configPath, [], false);
+    liveKeys = new Set();
+    for (const modeName of modes) {
+      for (const file of files) liveKeys.add(cache.keyFor(modeName, file));
+    }
+  }
+  let failed = false;
+  try {
+    failed = await cacheStorage.run({ cache, replay }, () =>
+      runTestModesCore(
+        runFlags,
+        configPath,
+        selectors,
+        suiteSelectors,
+        fuzzerSelectors,
+        modes,
+        buildFeatureToggles,
+        fuzzEnabled,
+        fuzzOverrides,
+      ),
+    );
+  } finally {
+    if (liveKeys) cache.prune(liveKeys);
+    cache.save();
+  }
   process.exit(failed ? 1 : 0);
 }
 async function runWatchLoop(
@@ -1977,6 +2100,43 @@ async function runWatchLoop(
     configPath ?? path.join(process.cwd(), "./as-test.config.json");
   const absConfigPath = path.resolve(resolvedConfigPath);
   let config = loadConfig(resolvedConfigPath, false);
+  // Persistent incremental cache, honored under --watch too (the dependency
+  // graph above only governs which specs re-run; the cache skips recompiling /
+  // replays unchanged ones, which makes the initial watch run and "run all"
+  // fast). Resolved from flags+config; toggleable live with `c`.
+  const initialCache = resolveCacheSettings(config.cache, {
+    cache: runFlags.cache,
+    noCache: runFlags.noCache,
+  });
+  let cacheMode = fuzzEnabled ? "off" : initialCache.mode;
+  const cacheMaxTimeMs = initialCache.maxTimeMs;
+  // The mode `c` toggles back on to (the configured mode, or "full" if the
+  // cache started off).
+  const cacheToggleMode =
+    initialCache.mode === "off" ? "full" : initialCache.mode;
+  // Wraps a run in the cache context (fresh per run so `now`/maxTime are
+  // current), unless the cache is off. Entry-pruning is intentionally skipped
+  // under watch — scoped re-runs resolve only a subset of specs, so pruning to
+  // them would wipe the rest of the cache.
+  async function withCache(fn) {
+    if (cacheMode === "off") {
+      await fn();
+      return;
+    }
+    const cacheDir = resolveCacheDir(config.outDir);
+    const cache = BuildCache.load(cacheDir, getCliVersion(), {
+      maxTimeMs: cacheMaxTimeMs,
+    });
+    const replay =
+      cacheMode === "full" &&
+      !runFlags.createSnapshots &&
+      !runFlags.overwriteSnapshots;
+    try {
+      await cacheStorage.run({ cache, replay }, fn);
+    } finally {
+      cache.save();
+    }
+  }
   // Respect the user's parallelism flags. Worker-pool builds forward their
   // file-read records back through IPC (see BuildWorkerPool / build-worker
   // and buildFileForMode), so the dependency graph stays correct under
@@ -2026,12 +2186,14 @@ async function runWatchLoop(
         : "";
       return chalk.dim(
         `Auto-run paused${pending}. ` +
-          chalk.bold("w") +
-          " = resume, " +
-          chalk.bold("a") +
-          " = re-run all, " +
           chalk.bold("space") +
           " = retry failing, " +
+          chalk.bold("a") +
+          " = re-run all, " +
+          chalk.bold("w") +
+          " = resume, " +
+          chalk.bold("c") +
+          ` = cache (${cacheMode === "off" ? "off" : "on"}), ` +
           chalk.bold("ctrl+c") +
           " = stop.\n",
       );
@@ -2044,9 +2206,22 @@ async function runWatchLoop(
         " = re-run all, " +
         chalk.bold("w") +
         " = pause, " +
+        chalk.bold("c") +
+        ` = cache (${cacheMode === "off" ? "off" : "on"}), ` +
         chalk.bold("ctrl+c") +
         " = stop.\n",
     );
+  }
+  // Rewrites the footer line in place (the cursor sits one line below it after
+  // every doRun / prior rewrite), so toggling w/c updates the hint without
+  // accumulating new lines in scrollback. Falls back to a plain write when not
+  // on a rewritable TTY.
+  function rewriteFooter() {
+    if (process.stdout.isTTY) {
+      process.stdout.write("\x1b[1A\r\x1b[2K" + watchFooter());
+    } else {
+      process.stdout.write(watchFooter());
+    }
   }
   function writeWatchHeader(headline, detail) {
     // Preserve scrollback — never `console.clear()`. A blank line plus a
@@ -2185,21 +2360,23 @@ async function runWatchLoop(
       },
     };
     try {
-      await buildRecorderStorage.run(recorder, async () => {
-        await runTestModesCore(
-          watchRunFlags,
-          configPath,
-          runSelectors,
-          suiteSelectors,
-          fuzzerSelectors,
-          modes,
-          buildFeatureToggles,
-          fuzzEnabled,
-          fuzzOverrides,
-          (outcome) =>
-            recordSpecOutcome(outcome.file, outcome.mode, outcome.failed),
-        );
-      });
+      await withCache(() =>
+        buildRecorderStorage.run(recorder, async () => {
+          await runTestModesCore(
+            watchRunFlags,
+            configPath,
+            runSelectors,
+            suiteSelectors,
+            fuzzerSelectors,
+            modes,
+            buildFeatureToggles,
+            fuzzEnabled,
+            fuzzOverrides,
+            (outcome) =>
+              recordSpecOutcome(outcome.file, outcome.mode, outcome.failed),
+          );
+        }),
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       process.stderr.write(chalk.red("Error: ") + message + "\n");
@@ -2352,31 +2529,14 @@ async function runWatchLoop(
           }
           if (isRunning) break;
           if (byte === 0x77 || byte === 0x57) {
-            // `w` — toggle auto-run / manual mode.
+            // `w` — toggle auto-run / manual mode. Resuming with edits pending
+            // kicks off a run (which prints its own header); otherwise just
+            // refresh the footer in place.
             autoRun = !autoRun;
-            if (autoRun) {
-              const hadPending = changedWhilePaused.size > 0;
-              if (hadPending) {
-                process.stdout.write(
-                  "\n" +
-                    chalk.dim(
-                      "Auto-run resumed — re-running all (files changed while paused).\n",
-                    ),
-                );
-                scheduleManualRerun("manual-runall");
-              } else {
-                process.stdout.write(
-                  "\n" + chalk.dim("Auto-run resumed.\n") + watchFooter(),
-                );
-              }
+            if (autoRun && changedWhilePaused.size > 0) {
+              scheduleManualRerun("manual-runall");
             } else {
-              process.stdout.write(
-                "\n" +
-                  chalk.dim(
-                    "Auto-run paused — edits won't re-run. Press w to resume, or a / space to run now.\n",
-                  ) +
-                  watchFooter(),
-              );
+              rewriteFooter();
             }
             break;
           }
@@ -2386,6 +2546,15 @@ async function runWatchLoop(
           }
           if (byte === 0x61 || byte === 0x41) {
             scheduleManualRerun("manual-runall");
+            break;
+          }
+          if (byte === 0x63 || byte === 0x43) {
+            // `c` — toggle the incremental cache for subsequent runs. No-op
+            // while fuzzing (the cache is unsafe there). Updates the footer in
+            // place to reflect the new state.
+            if (fuzzEnabled) break;
+            cacheMode = cacheMode === "off" ? cacheToggleMode : "off";
+            rewriteFooter();
             break;
           }
         }
@@ -3575,6 +3744,22 @@ function formatMatrixFileResultLine(
   showPerModeTimes,
 ) {
   const verdict = resolveMatrixVerdict(results);
+  // A file whose every mode was replayed from cache is de-emphasized: dim-grey
+  // badge + filename, and "(cache)" in place of the timing.
+  const cached =
+    results.length > 0 &&
+    results.every(
+      (r) => r.reports.length > 0 && r.reports.every((rep) => rep.cached),
+    );
+  if (cached) {
+    const badge =
+      verdict == "fail"
+        ? chalk.bgRed.white(" FAIL ")
+        : verdict == "ok"
+          ? chalk.bgGreenBright.white(" PASS ")
+          : chalk.bgBlackBright.white(" SKIP ");
+    return `${badge} ${chalk.dim(file)} ${chalk.dim("(cache)")}`;
+  }
   const badge =
     verdict == "fail"
       ? chalk.bgRed.white(" FAIL ")

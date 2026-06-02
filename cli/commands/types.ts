@@ -24,4 +24,6 @@ export type RunFlags = {
   browser?: string;
   reporterPath?: string;
   watch?: boolean;
+  cache?: boolean;
+  noCache?: boolean;
 };

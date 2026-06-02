@@ -88,6 +88,8 @@ export async function executeTestCommand(
     browser: deps.resolveBrowserOverride(rawArgs, "test"),
     reporterPath: deps.resolveReporterOverride(rawArgs, "test"),
     watch: flags.includes("--watch") || flags.includes("-w"),
+    cache: flags.includes("--cache"),
+    noCache: flags.includes("--no-cache"),
   };
   const fuzzEnabled = flags.includes("--fuzz");
   const fuzzOverrides = deps.resolveFuzzOverrides(rawArgs, "test");

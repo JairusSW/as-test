@@ -20,6 +20,9 @@ export type ProgressEvent = {
   description: string;
   verdict?: string;
   time?: string;
+  // Set on a file-end event replayed from the incremental cache instead of an
+  // actual run, so reporters can mark it (e.g. "(cached)").
+  cached?: boolean;
 };
 
 export type SnapshotMissingEvent = {

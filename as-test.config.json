@@ -5,6 +5,10 @@
   "coverage": true,
   "features": ["try-as"],
   "env": {},
+  "cache": {
+    "type": "full",
+    "maxTime": "60s"
+  },
   "fuzz": {
     "input": ["assembly/__fuzz__/**/*.fuzz.ts"],
     "runs": 1000,

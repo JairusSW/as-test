@@ -6,6 +6,13 @@ export class Config {
   coverageDir: string = "./.as-test/coverage";
   snapshotDir: string = "./.as-test/snapshots";
   config: string = "none";
+  // Incremental test cache (opt-in). false = off; "build" = skip recompiling
+  // unchanged specs; "full"/true = also replay passing run results. The object
+  // form adds `maxTime` (e.g. "1h", "30m", "7d") to expire entries older than
+  // that, forcing a rebuild+rerun. ("reachable" is accepted as a deprecated
+  // alias for "full" — reachability-based dep pruning was unsound for
+  // AssemblyScript's compile-time inlining.) Enable per run with --cache / --no-cache.
+  cache: boolean | "build" | "full" | "reachable" | CacheOptions = false;
   coverage: boolean | CoverageOptions = false;
   features: string[] = [];
   env: Record<string, string> = {};
@@ -13,6 +20,16 @@ export class Config {
   runOptions: RunOptions = new RunOptions();
   fuzz: FuzzConfig = new FuzzConfig();
   modes: Record<string, ModeConfig> = {};
+}
+
+export class CacheOptions {
+  // Cache tier: "build" (skip rebuilds) or "full" (also replay runs).
+  // "reachable" is accepted as a deprecated alias for "full".
+  type: "build" | "full" | "reachable" = "full";
+  // Optional expiry: a duration string (e.g. "1h", "30m", "90s", "7d"). Entries
+  // built longer ago than this are treated as stale and rebuilt+rerun. Empty =
+  // no expiry.
+  maxTime: string = "";
 }
 
 export const INTERNAL_FEATURE_NAMES = new Set(["try-as"]);

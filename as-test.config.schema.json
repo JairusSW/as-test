@@ -87,6 +87,28 @@
       "description": "Reserved config field used by existing projects.",
       "default": "none"
     },
+    "cache": {
+      "description": "Incremental test cache (opt-in). false = off; \"build\" = skip recompiling unchanged specs; \"full\"/true = also replay passing run results; \"reachable\" = full + reachability-pruned deps. The object form adds \"maxTime\" to expire entries older than that. Override per run with --cache / --no-cache.",
+      "oneOf": [
+        { "type": "boolean" },
+        { "type": "string", "enum": ["build", "full", "reachable"] },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["build", "full", "reachable"]
+            },
+            "maxTime": {
+              "type": "string",
+              "description": "Entry expiry, e.g. \"1h\", \"30m\", \"90s\", \"7d\"."
+            }
+          }
+        }
+      ],
+      "default": false
+    },
     "coverage": {
       "description": "Coverage settings. Use a boolean for quick toggle or object for options.",
       "oneOf": [
@@ -377,6 +399,24 @@
               "config": {
                 "type": "string",
                 "description": "Mode-specific asconfig path or \"none\"."
+              },
+              "cache": {
+                "description": "Mode-specific incremental cache setting.",
+                "oneOf": [
+                  { "type": "boolean" },
+                  { "type": "string", "enum": ["build", "full", "reachable"] },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": ["build", "full", "reachable"]
+                      },
+                      "maxTime": { "type": "string" }
+                    }
+                  }
+                ]
               },
               "coverage": {
                 "description": "Mode-specific coverage settings.",
