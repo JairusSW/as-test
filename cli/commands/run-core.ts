@@ -14,7 +14,6 @@ import {
   tokenizeCommand,
 } from "../util.js";
 import * as path from "path";
-import { pathToFileURL } from "url";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { PassThrough } from "stream";
 import { buildWebRunnerSource } from "./web-runner-source.js";
@@ -34,14 +33,10 @@ import {
   CoverageSummary,
   LogGroup,
   LogSummary,
-  ReporterContext,
-  ReporterFactory,
+  RenderContext,
   RunStats,
-  TestReporter,
-} from "../reporters/types.js";
-import { createReporter as createDefaultReporter } from "../reporters/default.js";
-import { createTapReporter } from "../reporters/tap.js";
-import type { TapReporterConfig } from "../reporters/tap.js";
+} from "../render/types.js";
+import { TestRenderer } from "../render/renderer.js";
 import { persistCrashRecord } from "../crash-store.js";
 import { describeCoveragePoint } from "../coverage-points.js";
 
@@ -60,9 +55,7 @@ type RunFlags = {
 };
 
 type RunExecutionOptions = {
-  reporter?: TestReporter;
-  reporterKind?: ReporterKind;
-  reporterPath?: string;
+  renderer?: TestRenderer;
   webSession?: PersistentWebSessionHost | null;
   suiteSelectors?: string[];
   modeName?: string;
@@ -96,14 +89,6 @@ type SuiteSelectionMatch = {
 type RuntimeInvocation = {
   command: string;
   args: string[];
-};
-
-type ReporterKind = "default" | "tap" | "custom";
-type ReporterConfigObject = {
-  name?: unknown;
-  options?: unknown;
-  outDir?: unknown;
-  outFile?: unknown;
 };
 
 // Reports the build+run verdict for a single (file, mode) pair. The watch
@@ -1057,17 +1042,9 @@ export async function run(
     getConfiguredRuntimeCmd(config),
     config.buildOptions.target,
   );
-  const reporterSelection = resolveReporterSelection(
-    options.reporterPath,
-    config.runOptions.reporter,
-  );
-  const reporterKind = options.reporterKind ?? reporterSelection.kind;
-  const reporter =
-    options.reporter ??
-    (await loadReporter(reporterSelection, resolvedConfigPath, {
-      stdout: process.stdout,
-      stderr: process.stderr,
-    }));
+  const renderer =
+    options.renderer ??
+    new TestRenderer({ stdout: process.stdout, stderr: process.stderr });
 
   const runtimeTokens = tokenizeCommand(runtimeCommand);
   if (!runtimeTokens.length) {
@@ -1086,7 +1063,7 @@ export async function run(
   }
 
   if (options.emitRunStart !== false) {
-    reporter.onRunStart?.({
+    renderer.onRunStart({
       runtimeName: runtimeNameFromCommand(runtimeCommand),
       clean: cleanOutput,
       verbose: Boolean(flags.verbose),
@@ -1161,7 +1138,7 @@ export async function run(
                   options.modeName ?? "default",
                 )
               : cachedSuites;
-            replayCachedReport(reporter, file, selected);
+            replayCachedReport(renderer, file, selected);
             const cachedSnap = cached.snapshotSummary ?? {
               matched: 0,
               created: 0,
@@ -1273,8 +1250,7 @@ export async function run(
               snapshotEnabled,
               createSnapshots,
               overwriteSnapshots,
-              reporter,
-              reporterKind == "tap",
+              renderer,
               runtimeEnv,
             )
           : await runProcess(
@@ -1287,8 +1263,7 @@ export async function run(
               snapshotEnabled,
               createSnapshots,
               overwriteSnapshots,
-              reporter,
-              reporterKind == "tap",
+              renderer,
               runtimeEnv,
             );
       } catch (error) {
@@ -1415,7 +1390,7 @@ export async function run(
     );
     const unexecutedModes = Math.max(0, totalModes - executedModes);
     const modeFailed = Boolean(stats.failedFiles || snapshotSummary.failed);
-    reporter.onRunComplete?.({
+    renderer.onRunComplete({
       clean: cleanOutput,
       snapshotEnabled,
       showCoverage,
@@ -1435,7 +1410,6 @@ export async function run(
         total: totalModes,
       },
     });
-    reporter.flush?.();
   }
 
   const failed = Boolean(stats.failedFiles || snapshotSummary.failed);
@@ -2406,8 +2380,7 @@ async function runProcess(
   snapshotEnabled: boolean,
   createSnapshots: boolean,
   overwriteSnapshots: boolean,
-  reporter: TestReporter,
-  tapMode: boolean = false,
+  renderer: TestRenderer,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<any> {
   const child = spawn(invocation.command, invocation.args, {
@@ -2467,11 +2440,7 @@ async function runProcess(
   class TestChannel extends Channel {
     protected onPassthrough(data: Buffer): void {
       stdoutBuffer += data.toString("utf8");
-      if (tapMode) {
-        process.stderr.write(data);
-      } else {
-        process.stdout.write(data);
-      }
+      process.stdout.write(data);
     }
 
     protected onCall(msg: unknown): void {
@@ -2479,7 +2448,7 @@ async function runProcess(
       const kind = String(event.kind ?? "");
       if (kind === "event:assert-fail") {
         runtimeEvents.assertionFails++;
-        reporter.onAssertionFail?.({
+        renderer.onAssertionFail({
           key: String(event.key ?? ""),
           instr: String(event.instr ?? ""),
           left: String(event.left ?? ""),
@@ -2491,7 +2460,7 @@ async function runProcess(
       if (kind === "event:file-start") {
         runtimeEvents.sawFileStart = true;
         runtimeEvents.fileName = String(event.file ?? runtimeEvents.fileName);
-        reporter.onFileStart?.({
+        renderer.onFileStart({
           file: String(event.file ?? "unknown"),
           depth: 0,
           suiteKind: "file",
@@ -2504,7 +2473,7 @@ async function runProcess(
         runtimeEvents.fileName = String(event.file ?? runtimeEvents.fileName);
         runtimeEvents.fileVerdict = String(event.verdict ?? "none");
         runtimeEvents.fileTime = String(event.time ?? "");
-        reporter.onFileEnd?.({
+        renderer.onFileEnd({
           file: String(event.file ?? "unknown"),
           depth: 0,
           suiteKind: "file",
@@ -2516,7 +2485,7 @@ async function runProcess(
       }
       if (kind === "event:suite-start") {
         runtimeEvents.suiteStarts++;
-        reporter.onSuiteStart?.({
+        renderer.onSuiteStart({
           file: String(event.file ?? "unknown"),
           depth: Number(event.depth ?? 0),
           suiteKind: String(event.suiteKind ?? ""),
@@ -2526,7 +2495,7 @@ async function runProcess(
       }
       if (kind === "event:suite-end") {
         runtimeEvents.suiteEnds++;
-        reporter.onSuiteEnd?.({
+        renderer.onSuiteEnd({
           file: String(event.file ?? "unknown"),
           depth: Number(event.depth ?? 0),
           suiteKind: String(event.suiteKind ?? ""),
@@ -2537,14 +2506,14 @@ async function runProcess(
       }
       if (kind === "event:warn") {
         runtimeEvents.warnings++;
-        reporter.onWarning?.({
+        renderer.onWarning({
           message: String(event.message ?? ""),
         });
         return;
       }
       if (kind === "event:log") {
         runtimeEvents.logs++;
-        reporter.onLog?.({
+        renderer.onLog({
           file: String(event.file ?? "unknown"),
           depth: Number(event.depth ?? 0),
           text: String(event.text ?? ""),
@@ -2562,7 +2531,7 @@ async function runProcess(
           overwriteSnapshots,
         );
         if (result.warnMissing) {
-          reporter.onSnapshotMissing?.({ key });
+          renderer.onSnapshotMissing({ key });
         }
         this.send(
           MessageType.CALL,
@@ -2758,7 +2727,7 @@ async function runProcess(
           stderrBuffer,
         );
       }
-      reporter.onWarning?.({
+      renderer.onWarning({
         message:
           "runtime report payload missing; reconstructed result from streamed lifecycle events",
       });
@@ -2775,7 +2744,7 @@ async function runProcess(
       runtimeEvents.suiteStarts === 0 &&
       !hasMeaningfulRuntimeOutput(stderrBuffer)
     ) {
-      reporter.onWarning?.({
+      renderer.onWarning({
         message: `${formatSpecDisplayPath(specFile)} contains no tests; marked as skipped`,
       });
       return createEmptyFileSkipReport(specFile, modeName);
@@ -2850,8 +2819,7 @@ async function runWebSessionProcess(
   snapshotEnabled: boolean,
   createSnapshots: boolean,
   overwriteSnapshots: boolean,
-  reporter: TestReporter,
-  tapMode: boolean = false,
+  renderer: TestRenderer,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<any> {
   const input = new PassThrough();
@@ -2889,11 +2857,7 @@ async function runWebSessionProcess(
   class TestChannel extends Channel {
     protected onPassthrough(data: Buffer): void {
       stdoutBuffer += data.toString("utf8");
-      if (tapMode) {
-        process.stderr.write(data);
-      } else {
-        process.stdout.write(data);
-      }
+      process.stdout.write(data);
     }
 
     protected onCall(msg: unknown): void {
@@ -2901,7 +2865,7 @@ async function runWebSessionProcess(
       const kind = String(event.kind ?? "");
       if (kind === "event:assert-fail") {
         runtimeEvents.assertionFails++;
-        reporter.onAssertionFail?.({
+        renderer.onAssertionFail({
           key: String(event.key ?? ""),
           instr: String(event.instr ?? ""),
           left: String(event.left ?? ""),
@@ -2913,7 +2877,7 @@ async function runWebSessionProcess(
       if (kind === "event:file-start") {
         runtimeEvents.sawFileStart = true;
         runtimeEvents.fileName = String(event.file ?? runtimeEvents.fileName);
-        reporter.onFileStart?.({
+        renderer.onFileStart({
           file: String(event.file ?? "unknown"),
           depth: 0,
           suiteKind: "file",
@@ -2926,7 +2890,7 @@ async function runWebSessionProcess(
         runtimeEvents.fileName = String(event.file ?? runtimeEvents.fileName);
         runtimeEvents.fileVerdict = String(event.verdict ?? "none");
         runtimeEvents.fileTime = String(event.time ?? "");
-        reporter.onFileEnd?.({
+        renderer.onFileEnd({
           file: String(event.file ?? "unknown"),
           depth: 0,
           suiteKind: "file",
@@ -2938,7 +2902,7 @@ async function runWebSessionProcess(
       }
       if (kind === "event:suite-start") {
         runtimeEvents.suiteStarts++;
-        reporter.onSuiteStart?.({
+        renderer.onSuiteStart({
           file: String(event.file ?? "unknown"),
           depth: Number(event.depth ?? 0),
           suiteKind: String(event.suiteKind ?? ""),
@@ -2948,7 +2912,7 @@ async function runWebSessionProcess(
       }
       if (kind === "event:suite-end") {
         runtimeEvents.suiteEnds++;
-        reporter.onSuiteEnd?.({
+        renderer.onSuiteEnd({
           file: String(event.file ?? "unknown"),
           depth: Number(event.depth ?? 0),
           suiteKind: String(event.suiteKind ?? ""),
@@ -2959,14 +2923,14 @@ async function runWebSessionProcess(
       }
       if (kind === "event:warn") {
         runtimeEvents.warnings++;
-        reporter.onWarning?.({
+        renderer.onWarning({
           message: String(event.message ?? ""),
         });
         return;
       }
       if (kind === "event:log") {
         runtimeEvents.logs++;
-        reporter.onLog?.({
+        renderer.onLog({
           file: String(event.file ?? "unknown"),
           depth: Number(event.depth ?? 0),
           text: String(event.text ?? ""),
@@ -2984,7 +2948,7 @@ async function runWebSessionProcess(
           overwriteSnapshots,
         );
         if (result.warnMissing) {
-          reporter.onSnapshotMissing?.({ key });
+          renderer.onSnapshotMissing({ key });
         }
         this.send(
           MessageType.CALL,
@@ -3179,7 +3143,7 @@ async function runWebSessionProcess(
           stderrBuffer,
         );
       }
-      reporter.onWarning?.({
+      renderer.onWarning({
         message:
           "runtime report payload missing; reconstructed result from streamed lifecycle events",
       });
@@ -3217,7 +3181,7 @@ async function runWebSessionProcess(
       reportStream,
       runtimeEvents,
     );
-    reporter.onWarning?.({
+    renderer.onWarning({
       message: [
         code !== 0 ? `child process exited with code ${code}` : "",
         normalizeRuntimeOutput(stderrBuffer),
@@ -3451,11 +3415,11 @@ function shouldSuppressWasiWarningLine(line: string): boolean {
 // would render it. Only passing/skipped reports are replayed, so there are no
 // assertion failures to re-emit.
 function replayCachedReport(
-  reporter: TestReporter,
+  renderer: TestRenderer,
   file: string,
   suites: any[],
 ): void {
-  reporter.onFileStart?.({
+  renderer.onFileStart({
     file,
     depth: 0,
     suiteKind: "file",
@@ -3465,10 +3429,10 @@ function replayCachedReport(
   for (const suite of suites) {
     verdict = mergeReplayVerdict(
       verdict,
-      emitReplaySuite(reporter, file, suite),
+      emitReplaySuite(renderer, file, suite),
     );
   }
-  reporter.onFileEnd?.({
+  renderer.onFileEnd({
     file,
     depth: 0,
     suiteKind: "file",
@@ -3479,20 +3443,20 @@ function replayCachedReport(
 }
 
 function emitReplaySuite(
-  reporter: TestReporter,
+  renderer: TestRenderer,
   file: string,
   suite: any,
 ): string {
   const depth = Number(suite?.depth ?? 0);
   const kind = String(suite?.kind ?? "");
   const description = String(suite?.description ?? "");
-  reporter.onSuiteStart?.({ file, depth, suiteKind: kind, description });
+  renderer.onSuiteStart({ file, depth, suiteKind: kind, description });
   let verdict = String(suite?.verdict ?? "none");
   const subs = Array.isArray(suite?.suites) ? suite.suites : [];
   for (const sub of subs) {
-    verdict = mergeReplayVerdict(verdict, emitReplaySuite(reporter, file, sub));
+    verdict = mergeReplayVerdict(verdict, emitReplaySuite(renderer, file, sub));
   }
-  reporter.onSuiteEnd?.({
+  renderer.onSuiteEnd({
     file,
     depth,
     suiteKind: kind,
@@ -3645,209 +3609,35 @@ function mergeVerdict(current: Verdict, next: Verdict): Verdict {
   return "none";
 }
 
-export async function createRunReporter(
+// The CLI's single built-in renderer. Resolves config (for the mode-aware
+// runtime name) and hands back a fresh TestRenderer bound to the given streams.
+// `context` lets callers redirect output to a buffer for parallel runs.
+export function createRenderer(
   configPath: string = DEFAULT_CONFIG_PATH,
-  reporterPath?: string,
   modeName?: string,
-  context: ReporterContext = {
+  context: RenderContext = {
     stdout: process.stdout,
     stderr: process.stderr,
   },
-): Promise<{
-  reporter: TestReporter;
-  reporterKind: ReporterKind;
+): {
+  renderer: TestRenderer;
   runtimeName: string;
   resolvedConfigPath: string;
-}> {
+} {
   const resolvedConfigPath = configPath ?? DEFAULT_CONFIG_PATH;
   const loadedConfig = loadConfig(resolvedConfigPath);
   const mode = applyMode(loadedConfig, modeName);
   const config = mode.config;
-  const selection = resolveReporterSelection(
-    reporterPath,
-    config.runOptions.reporter,
-  );
-  const reporter = await loadReporter(selection, resolvedConfigPath, {
-    stdout: context.stdout,
-    stderr: context.stderr,
-  });
   const runtimeCommand = resolveRuntimeCommand(
     getConfiguredRuntimeCmd(config),
     config.buildOptions.target,
     false,
   );
   return {
-    reporter,
-    reporterKind: selection.kind,
+    renderer: new TestRenderer(context),
     runtimeName: runtimeNameFromCommand(runtimeCommand),
     resolvedConfigPath,
   };
-}
-
-async function loadReporter(
-  selection: ReporterSelection,
-  configPath: string,
-  context: ReporterContext,
-): Promise<TestReporter> {
-  if (selection.kind == "default") {
-    return createDefaultReporter(context);
-  }
-  if (selection.kind == "tap") {
-    return createTapReporter(context, selection.tap);
-  }
-  const reporterPath = selection.reporterPath;
-  if (!reporterPath) {
-    return createDefaultReporter(context);
-  }
-  const resolved = path.isAbsolute(reporterPath)
-    ? reporterPath
-    : path.resolve(path.dirname(configPath), reporterPath);
-
-  try {
-    const mod = (await import(pathToFileURL(resolved).href)) as Record<
-      string,
-      unknown
-    >;
-    const factory = resolveReporterFactory(mod);
-    return factory(context);
-  } catch (error) {
-    const reporterError = new Error(
-      `could not load reporter "${reporterPath}": ${String(error)}`,
-    ) as Error & { cause?: unknown };
-    reporterError.cause = error;
-    throw reporterError;
-  }
-}
-
-type ReporterSelection = {
-  kind: ReporterKind;
-  reporterPath: string;
-  tap: TapReporterConfig;
-};
-
-function resolveReporterSelection(
-  cliValue: string | undefined,
-  configValue: unknown,
-): ReporterSelection {
-  const parsed = parseReporterConfig(configValue);
-  const raw = resolveCliReporter(
-    process.argv.slice(2),
-    cliValue ?? parsed.name,
-  );
-  const normalized = raw.trim();
-  const canonical = normalized.toLowerCase();
-
-  if (!normalized.length || canonical == "default") {
-    return { kind: "default", reporterPath: "", tap: parsed.tap };
-  }
-
-  if (canonical == "tap" || canonical == "tap13") {
-    return { kind: "tap", reporterPath: "", tap: parsed.tap };
-  }
-
-  return { kind: "custom", reporterPath: normalized, tap: parsed.tap };
-}
-
-function resolveCliReporter(argv: string[], fallback: string): string {
-  let resolved = fallback;
-  for (let i = 0; i < argv.length; i++) {
-    const token = argv[i]!;
-    if (token == "--tap") {
-      resolved = "tap";
-      continue;
-    }
-    if (token == "--reporter") {
-      const value = argv[i + 1];
-      if (!value || value.startsWith("-")) {
-        throw new Error(`--reporter requires a value`);
-      }
-      resolved = value;
-      i++;
-      continue;
-    }
-    if (token.startsWith("--reporter=")) {
-      const value = token.slice("--reporter=".length);
-      if (!value.length) {
-        throw new Error(`--reporter requires a value`);
-      }
-      resolved = value;
-      continue;
-    }
-  }
-  return resolved;
-}
-
-function parseReporterConfig(value: unknown): {
-  name: string;
-  tap: TapReporterConfig;
-} {
-  const tap: TapReporterConfig = {
-    mode: "single-file",
-    outDir: "./.as-test/reports",
-    outFile: "./.as-test/reports/report.tap",
-  };
-
-  if (typeof value == "string") {
-    return { name: value, tap };
-  }
-
-  if (!value || typeof value != "object") {
-    return { name: "", tap };
-  }
-
-  const config = value as ReporterConfigObject;
-  const name = typeof config.name == "string" ? config.name : "";
-
-  if (typeof config.outDir == "string" && config.outDir.trim().length) {
-    tap.outDir = config.outDir.trim();
-  }
-  if (typeof config.outFile == "string" && config.outFile.trim().length) {
-    tap.outFile = config.outFile.trim();
-  } else if (tap.outDir && tap.outDir.length) {
-    tap.outFile = path.join(tap.outDir, "report.tap");
-  }
-
-  if (Array.isArray(config.options)) {
-    const options = config.options
-      .filter((option): option is string => typeof option == "string")
-      .map((option) => option.toLowerCase());
-    if (options.includes("per-file")) {
-      tap.mode = "per-file";
-      if (!config.outFile && tap.outDir && tap.outDir.length) {
-        tap.outFile = path.join(tap.outDir, "report.tap");
-      }
-    } else {
-      tap.mode = "single-file";
-    }
-  }
-
-  return { name, tap };
-}
-
-function resolveReporterFactory(mod: Record<string, unknown>): ReporterFactory {
-  const fromNamed = mod.createReporter;
-  if (typeof fromNamed == "function") {
-    return fromNamed as ReporterFactory;
-  }
-
-  const fromDefault = mod.default;
-  if (typeof fromDefault == "function") {
-    return fromDefault as ReporterFactory;
-  }
-  if (
-    fromDefault &&
-    typeof fromDefault == "object" &&
-    "createReporter" in (fromDefault as Record<string, unknown>)
-  ) {
-    const nested = (fromDefault as Record<string, unknown>).createReporter;
-    if (typeof nested == "function") {
-      return nested as ReporterFactory;
-    }
-  }
-
-  throw new Error(
-    `reporter module must export a factory as "createReporter" or default`,
-  );
 }
 
 export const __coverageInternals = {

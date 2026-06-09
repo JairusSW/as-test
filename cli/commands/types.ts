@@ -22,7 +22,6 @@ export type RunFlags = {
   runJobs: number;
   coverage?: boolean;
   browser?: string;
-  reporterPath?: string;
   watch?: boolean;
   cache?: boolean;
   noCache?: boolean;

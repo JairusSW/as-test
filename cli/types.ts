@@ -70,7 +70,6 @@ export class BuildOptions {
 
 export class RunOptions {
   runtime: Runtime = new Runtime();
-  reporter: string | ReporterConfig = "";
   env: Record<string, string> = {};
 }
 
@@ -83,13 +82,6 @@ export class ModeConfig {
   path?: string;
   default: boolean = true;
   config: Config = new Config();
-}
-
-export class ReporterConfig {
-  name: string = "";
-  options: string[] = [];
-  outDir: string = "";
-  outFile: string = "";
 }
 
 export class FuzzConfig {

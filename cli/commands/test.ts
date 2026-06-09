@@ -20,10 +20,6 @@ type TestCommandDeps = {
     rawArgs: string[],
     command: "test",
   ): string | undefined;
-  resolveReporterOverride(
-    rawArgs: string[],
-    command: "test",
-  ): string | undefined;
   resolveShowCoverageMode(
     rawArgs: string[],
     command: "test",
@@ -86,7 +82,6 @@ export async function executeTestCommand(
     ...deps.resolveParallelJobs(rawArgs, "test"),
     coverage: featureToggles.coverage,
     browser: deps.resolveBrowserOverride(rawArgs, "test"),
-    reporterPath: deps.resolveReporterOverride(rawArgs, "test"),
     watch: flags.includes("--watch") || flags.includes("-w"),
     cache: flags.includes("--cache"),
     noCache: flags.includes("--no-cache"),

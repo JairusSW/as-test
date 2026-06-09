@@ -195,7 +195,6 @@
   "runOptions": {
     "runtime": {
       "cmd": "node .as-test/runners/default.wasi.js"
-    },
-    "reporter": "default"
+    }
   }
 }

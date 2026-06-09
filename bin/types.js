@@ -75,7 +75,6 @@ export class BuildOptions {
 export class RunOptions {
   constructor() {
     this.runtime = new Runtime();
-    this.reporter = "";
     this.env = {};
   }
 }
@@ -89,14 +88,6 @@ export class ModeConfig {
   constructor() {
     this.default = true;
     this.config = new Config();
-  }
-}
-export class ReporterConfig {
-  constructor() {
-    this.name = "";
-    this.options = [];
-    this.outDir = "";
-    this.outFile = "";
   }
 }
 export class FuzzConfig {

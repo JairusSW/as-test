@@ -893,7 +893,6 @@ function applyInit(
         cmd: runtime.cmd,
         ...(runtime.browser ? { browser: runtime.browser } : {}),
       },
-      reporter: "default",
     },
     // The interactive picker supplies one mode per selected runtime. The
     // non-interactive paths (--yes/--target/quick) leave `modes` empty, so the

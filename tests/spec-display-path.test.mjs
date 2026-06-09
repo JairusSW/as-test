@@ -31,7 +31,7 @@ test("formatSpecDisplayPath trims nested __tests__ roots", async () => {
 
 test("reporting paths use the shared spec display helper", async () => {
   const reporterSource = await fs.readFile(
-    path.join(repoRoot, "cli/reporters/default.ts"),
+    path.join(repoRoot, "cli/render/renderer.ts"),
     "utf8",
   );
   const runCoreSource = await fs.readFile(

@@ -9,7 +9,7 @@ import {
   getBuildReuseInfo,
   warnOnUnknownModeReferences,
 } from "./commands/build.js";
-import { createRunReporter, resetCollectedLogs, run } from "./commands/run.js";
+import { createRenderer, resetCollectedLogs, run } from "./commands/run.js";
 import { executeBuildCommand } from "./commands/build.js";
 import { executeRunCommand } from "./commands/run.js";
 import { executeTestCommand } from "./commands/test.js";
@@ -38,6 +38,7 @@ import { createInterface } from "readline";
 import { existsSync, watch as fsWatch } from "fs";
 import { minimatch } from "minimatch";
 import { availableParallelism, cpus } from "os";
+import { SilentRenderer } from "./render/renderer.js";
 import { BuildWorkerPool } from "./build-worker-pool.js";
 import { PersistentWebSessionHost } from "./commands/web-session.js";
 import { buildRecorderStorage } from "./commands/build-core.js";
@@ -89,7 +90,6 @@ if (!args.length) {
         resolveFeatureToggles,
         resolveParallelJobs,
         resolveBrowserOverride,
-        resolveReporterOverride,
         resolveShowCoverageMode,
         resolveExecutionModes,
         listExecutionPlan,
@@ -107,7 +107,6 @@ if (!args.length) {
         resolveFeatureToggles,
         resolveParallelJobs,
         resolveBrowserOverride,
-        resolveReporterOverride,
         resolveShowCoverageMode,
         resolveFuzzOverrides,
         resolveExecutionModes,
@@ -370,12 +369,6 @@ function printCommandHelp(command) {
       "  --disable <list>         Disable features, comma-separated\n",
     );
     process.stdout.write(
-      "  --reporter <name|path>   Use built-in reporter (default|tap) or custom module path\n",
-    );
-    process.stdout.write(
-      "  --tap                    Shortcut for --reporter tap\n",
-    );
-    process.stdout.write(
       "  --verbose                Keep expanded suite/test lines and live updates\n",
     );
     process.stdout.write(
@@ -458,12 +451,6 @@ function printCommandHelp(command) {
     );
     process.stdout.write(
       "  --run-jobs <n>           Limit concurrent run tasks (defaults to --jobs)\n",
-    );
-    process.stdout.write(
-      "  --reporter <name|path>   Use built-in reporter (default|tap) or custom module path\n",
-    );
-    process.stdout.write(
-      "  --tap                    Shortcut for --reporter tap\n",
     );
     process.stdout.write(
       "  --verbose                Keep expanded suite/test lines and live updates\n",
@@ -643,10 +630,6 @@ function resolveCommandArgs(rawArgs, command) {
     if (arg.startsWith("--mode=")) {
       continue;
     }
-    if (arg == "--reporter") {
-      i++;
-      continue;
-    }
     if (
       arg == "--suite" ||
       arg == "--suites" ||
@@ -656,18 +639,12 @@ function resolveCommandArgs(rawArgs, command) {
       i++;
       continue;
     }
-    if (arg.startsWith("--reporter=")) {
-      continue;
-    }
     if (
       arg.startsWith("--suite=") ||
       arg.startsWith("--suites=") ||
       arg.startsWith("--fuzzer=") ||
       arg.startsWith("--fuzzers=")
     ) {
-      continue;
-    }
-    if (arg == "--tap") {
       continue;
     }
     if (arg == "--fuzz") {
@@ -986,31 +963,6 @@ function resolveBrowserOverride(rawArgs, command) {
   }
   return undefined;
 }
-function resolveReporterOverride(rawArgs, command) {
-  let seenCommand = false;
-  for (let i = 0; i < rawArgs.length; i++) {
-    const arg = rawArgs[i];
-    if (!seenCommand) {
-      if (arg == command) seenCommand = true;
-      continue;
-    }
-    if (arg == "--reporter") {
-      const next = rawArgs[i + 1];
-      if (next && !next.startsWith("-")) {
-        return next;
-      }
-      return undefined;
-    }
-    if (arg.startsWith("--reporter=")) {
-      const value = arg.slice("--reporter=".length);
-      return value.length ? value : undefined;
-    }
-    if (arg == "--tap") {
-      return "tap";
-    }
-  }
-  return undefined;
-}
 function resolveShowCoverageMode(rawArgs, command) {
   let seenCommand = false;
   for (let i = 0; i < rawArgs.length; i++) {
@@ -1187,15 +1139,14 @@ function createBufferedStream() {
     },
   };
 }
-async function createBufferedReporter(configPath, reporterPath, modeName) {
+function createBufferedRenderer(configPath, modeName) {
   const stream = createBufferedStream();
-  const session = await createRunReporter(configPath, reporterPath, modeName, {
+  const session = createRenderer(configPath, modeName, {
     stdout: stream,
     stderr: stream,
   });
   return {
-    reporter: session.reporter,
-    reporterKind: session.reporterKind,
+    renderer: session.renderer,
     runtimeName: session.runtimeName,
     output: () => stream.read(),
   };
@@ -1408,7 +1359,7 @@ async function runTestSequential(
   fileSummaryTotal,
   allowNoSpecFiles = false,
   modeName,
-  reporterOverride,
+  rendererOverride,
   webSession = null,
   emitRunComplete = true,
   onSpecOutcome,
@@ -1419,15 +1370,11 @@ async function runTestSequential(
       throw await buildNoTestFilesMatchedError(configPath, selectors);
     }
   }
-  const reporterSession = await createRunReporter(
-    configPath,
-    runFlags.reporterPath,
-    modeName,
-  );
-  const reporter = reporterOverride ?? reporterSession.reporter;
+  const renderSession = createRenderer(configPath, modeName);
+  const renderer = rendererOverride ?? renderSession.renderer;
   const snapshotEnabled = runFlags.snapshot !== false;
-  reporter.onRunStart?.({
-    runtimeName: reporterSession.runtimeName,
+  renderer.onRunStart?.({
+    runtimeName: renderSession.runtimeName,
     clean: runFlags.clean,
     verbose: runFlags.verbose,
     showLogs: runFlags.showLogs,
@@ -1452,7 +1399,7 @@ async function runTestSequential(
       );
       const artifactKey = resolveArtifactStem(file, inputPatterns);
       result = await run(runFlags, configPath, [file], false, {
-        reporter,
+        renderer,
         webSession,
         suiteSelectors,
         emitRunStart: false,
@@ -1477,7 +1424,7 @@ async function runTestSequential(
     fileSummaryTotal,
   );
   if (emitRunComplete) {
-    reporter.onRunComplete?.({
+    renderer.onRunComplete?.({
       clean: runFlags.clean,
       snapshotEnabled,
       showCoverage: runFlags.showCoverage,
@@ -1496,7 +1443,6 @@ async function runTestSequential(
         modeSummaryTotal,
       ),
     });
-    reporter.flush?.();
     flushModeWarnings(process.argv.includes("--show-warnings"));
   }
   return {
@@ -1645,7 +1591,6 @@ async function runRuntimeModes(
   );
   for (const modeName of modes) {
     const result = await run(effectiveRunFlags, configPath, selectors, false, {
-      reporterPath: effectiveRunFlags.reporterPath,
       modeName,
       suiteSelectors,
       modeSummaryTotal,
@@ -1693,23 +1638,22 @@ async function runRuntimeMatrix(
   if (!files.length) {
     throw await buildNoTestFilesMatchedError(configPath, selectors);
   }
-  const reporterSession = await createRunReporter(configPath);
-  const reporter = reporterSession.reporter;
+  const renderSession = createRenderer(configPath);
+  const renderer = renderSession.renderer;
   const snapshotEnabled = runFlags.snapshot !== false;
-  reporter.onRunStart?.({
-    runtimeName: reporterSession.runtimeName,
+  renderer.onRunStart?.({
+    runtimeName: renderSession.runtimeName,
     clean: runFlags.clean,
     verbose: runFlags.verbose,
     showLogs: runFlags.showLogs,
     snapshotEnabled,
     createSnapshots: runFlags.createSnapshots,
   });
-  const silentReporter = {};
+  const silentRenderer = new SilentRenderer();
   const allResults = [];
   const modeLabels = modes.map((modeName) => modeName ?? "default");
   const showPerModeTimes = Boolean(runFlags.verbose);
-  const liveMatrix =
-    reporterSession.reporterKind == "default" && canRewriteStdout();
+  const liveMatrix = canRewriteStdout();
   const modeState = modes.map(() => ({
     failed: false,
     passed: false,
@@ -1739,8 +1683,7 @@ async function runRuntimeMatrix(
         );
         const artifactKey = resolveArtifactStem(file, inputPatterns);
         const result = await run(runFlags, configPath, [file], false, {
-          reporter: silentReporter,
-          reporterKind: "default",
+          renderer: silentRenderer,
           suiteSelectors,
           emitRunStart: false,
           emitRunComplete: false,
@@ -1770,16 +1713,14 @@ async function runRuntimeMatrix(
         throw error;
       }
     }
-    if (reporterSession.reporterKind == "default") {
-      renderMatrixFileResult(
-        fileName,
-        modeLabels,
-        fileResults,
-        modeTimes,
-        liveMatrix,
-        showPerModeTimes,
-      );
-    }
+    renderMatrixFileResult(
+      fileName,
+      modeLabels,
+      fileResults,
+      modeTimes,
+      liveMatrix,
+      showPerModeTimes,
+    );
     const verdict = resolveMatrixVerdict(fileResults);
     if (verdict == "fail") {
       fileState[fileIndex].failed = true;
@@ -1793,7 +1734,7 @@ async function runRuntimeMatrix(
     fileState,
     fileSummaryTotal,
   );
-  reporter.onRunComplete?.({
+  renderer.onRunComplete?.({
     clean: runFlags.clean,
     snapshotEnabled,
     showCoverage: runFlags.showCoverage,
@@ -1901,11 +1842,7 @@ async function runTestModesCore(
   );
   try {
     for (const modeName of modes) {
-      const reporterSession = await createRunReporter(
-        configPath,
-        effectiveRunFlags.reporterPath,
-        modeName,
-      );
+      const renderSession = createRenderer(configPath, modeName);
       const modeResult = await runTestSequential(
         effectiveRunFlags,
         configPath,
@@ -1916,26 +1853,24 @@ async function runTestModesCore(
         fileSummaryTotal,
         fuzzEnabled,
         modeName,
-        reporterSession.reporter,
+        renderSession.renderer,
         sharedWebSession,
         !fuzzEnabled,
         onSpecOutcome,
       );
       if (modeResult.failed) failed = true;
       if (fuzzEnabled) {
-        if (reporterSession.reporterKind == "default") {
-          process.stdout.write("\n");
-        }
+        process.stdout.write("\n");
         const fuzzResults = await runFuzzMatrixResults(
           configPath,
           selectors,
           fuzzerSelectors,
           [modeName],
           fuzzOverrides,
-          reporterSession.reporter,
+          renderSession.renderer,
         );
         if (fuzzResults.some(hasFuzzFailures)) failed = true;
-        reporterSession.reporter.onRunComplete?.({
+        renderSession.renderer.onRunComplete?.({
           clean: runFlags.clean,
           snapshotEnabled: effectiveRunFlags.snapshot !== false,
           showCoverage: effectiveRunFlags.showCoverage,
@@ -1957,7 +1892,6 @@ async function runTestModesCore(
             modeSummaryTotal,
           ),
         });
-        reporterSession.reporter.flush?.();
         flushModeWarnings(process.argv.includes("--show-warnings"));
       }
     }
@@ -2677,23 +2611,22 @@ async function runTestMatrix(
       throw await buildNoTestFilesMatchedError(configPath, selectors, true);
     }
   }
-  const reporterSession = await createRunReporter(configPath);
-  const reporter = reporterSession.reporter;
+  const renderSession = createRenderer(configPath);
+  const renderer = renderSession.renderer;
   const snapshotEnabled = runFlags.snapshot !== false;
-  reporter.onRunStart?.({
-    runtimeName: reporterSession.runtimeName,
+  renderer.onRunStart?.({
+    runtimeName: renderSession.runtimeName,
     clean: runFlags.clean,
     verbose: runFlags.verbose,
     showLogs: runFlags.showLogs,
     snapshotEnabled,
     createSnapshots: runFlags.createSnapshots,
   });
-  const silentReporter = {};
+  const silentRenderer = new SilentRenderer();
   const allResults = [];
   const modeLabels = modes.map((modeName) => modeName ?? "default");
   const showPerModeTimes = Boolean(runFlags.verbose);
-  const liveMatrix =
-    reporterSession.reporterKind == "default" && canRewriteStdout();
+  const liveMatrix = canRewriteStdout();
   const modeState = modes.map(() => ({
     failed: false,
     passed: false,
@@ -2732,8 +2665,7 @@ async function runTestMatrix(
         );
         const artifactKey = resolveArtifactStem(file, inputPatterns);
         result = await run(runFlags, configPath, [file], false, {
-          reporter: silentReporter,
-          reporterKind: "default",
+          renderer: silentRenderer,
           emitRunStart: false,
           emitRunComplete: false,
           logFileName: `test.${artifactKey}.log.json`,
@@ -2762,16 +2694,14 @@ async function runTestMatrix(
       allResults.push(result);
       onSpecOutcome?.({ file, mode: modeName, failed: result.failed });
     }
-    if (reporterSession.reporterKind == "default") {
-      renderMatrixFileResult(
-        fileName,
-        modeLabels,
-        fileResults,
-        modeTimes,
-        liveMatrix,
-        showPerModeTimes,
-      );
-    }
+    renderMatrixFileResult(
+      fileName,
+      modeLabels,
+      fileResults,
+      modeTimes,
+      liveMatrix,
+      showPerModeTimes,
+    );
     const verdict = resolveMatrixVerdict(fileResults);
     if (verdict == "fail") {
       fileState[fileIndex].failed = true;
@@ -2788,22 +2718,20 @@ async function runTestMatrix(
   let failed = allResults.some((result) => result.failed);
   let fuzzSummary;
   if (fuzzEnabled) {
-    if (reporterSession.reporterKind == "default") {
-      process.stdout.write("\n");
-    }
+    process.stdout.write("\n");
     const fuzzResults = await runFuzzMatrixResults(
       configPath,
       selectors,
       fuzzerSelectors,
       modes,
       fuzzOverrides,
-      reporter,
+      renderer,
     );
     if (fuzzResults.some(hasFuzzFailures)) failed = true;
     fuzzSummary = summarizeFuzzExecutions(fuzzResults);
     buildIntervals.push(...collectFuzzBuildIntervals(fuzzResults));
   }
-  reporter.onRunComplete?.({
+  renderer.onRunComplete?.({
     clean: runFlags.clean,
     snapshotEnabled,
     showCoverage: runFlags.showCoverage,
@@ -2819,7 +2747,6 @@ async function runTestMatrix(
     fuzzSummary,
     modeSummary: buildModeSummary(modeState, modeSummaryTotal),
   });
-  reporter.flush?.();
   flushModeWarnings(process.argv.includes("--show-warnings"));
   return failed;
 }
@@ -2854,27 +2781,25 @@ async function runFuzzModes(
       runJobs,
       clean,
     );
-    const reporterSession = await createRunReporter(configPath);
-    reporterSession.reporter.onFuzzComplete?.(
+    const renderSession = createRenderer(configPath);
+    renderSession.renderer.onFuzzComplete?.(
       buildFuzzCompleteEvent(results, modes),
     );
-    reporterSession.reporter.flush?.();
     process.exit(results.some(hasFuzzFailures) ? 1 : 0);
     return;
   }
-  const reporterSession = await createRunReporter(configPath);
+  const renderSession = createRenderer(configPath);
   const results = await runFuzzMatrixResults(
     configPath,
     selectors,
     fuzzerSelectors,
     modes,
     overrides,
-    reporterSession.reporter,
+    renderSession.renderer,
   );
-  reporterSession.reporter.onFuzzComplete?.(
+  renderSession.renderer.onFuzzComplete?.(
     buildFuzzCompleteEvent(results, modes),
   );
-  reporterSession.reporter.flush?.();
   process.exit(results.some(hasFuzzFailures) ? 1 : 0);
 }
 async function runRuntimeSingleParallel(
@@ -2890,15 +2815,11 @@ async function runRuntimeSingleParallel(
   if (!files.length) {
     throw await buildNoTestFilesMatchedError(configPath, selectors);
   }
-  const reporterSession = await createRunReporter(
-    configPath,
-    runFlags.reporterPath,
-    modeName,
-  );
-  const reporter = reporterSession.reporter;
+  const renderSession = createRenderer(configPath, modeName);
+  const renderer = renderSession.renderer;
   const snapshotEnabled = runFlags.snapshot !== false;
-  reporter.onRunStart?.({
-    runtimeName: reporterSession.runtimeName,
+  renderer.onRunStart?.({
+    runtimeName: renderSession.runtimeName,
     clean: runFlags.clean,
     verbose: runFlags.verbose,
     showLogs: runFlags.showLogs,
@@ -2912,7 +2833,7 @@ async function runRuntimeSingleParallel(
     {},
   );
   const results = new Array(files.length);
-  const useQueueDisplay = reporterSession.reporterKind == "default";
+  const useQueueDisplay = true;
   const queueDisplay = new ParallelQueueDisplay(
     useQueueDisplay && !runFlags.clean,
   );
@@ -2923,18 +2844,13 @@ async function runRuntimeSingleParallel(
       ? renderQueuedFileStart(queueDisplay, formatSpecDisplayPath(file))
       : null;
     const buffered = useQueueDisplay
-      ? await createBufferedReporter(
-          configPath,
-          runFlags.reporterPath,
-          modeName,
-        )
+      ? createBufferedRenderer(configPath, modeName)
       : null;
     let result;
     try {
       result = await runLimit(() =>
         run({ ...runFlags, clean: true }, configPath, [file], false, {
-          reporter: buffered?.reporter,
-          reporterKind: buffered?.reporterKind,
+          renderer: buffered?.renderer,
           modeName,
           suiteSelectors,
           emitRunComplete: false,
@@ -2949,7 +2865,6 @@ async function runRuntimeSingleParallel(
       if (!buildFailure) throw error;
       result = createBuildFailureRunResult(buildFailure);
     }
-    buffered?.reporter.flush?.();
     results[index] = result;
     if (buffered && token != null) {
       queueDisplay.complete(token, buffered.output());
@@ -2961,7 +2876,7 @@ async function runRuntimeSingleParallel(
     summary.stats,
     fileSummaryTotal,
   );
-  reporter.onRunComplete?.({
+  renderer.onRunComplete?.({
     clean: runFlags.clean,
     snapshotEnabled,
     showCoverage: runFlags.showCoverage,
@@ -2980,7 +2895,6 @@ async function runRuntimeSingleParallel(
       modeSummaryTotal,
     ),
   });
-  reporter.flush?.();
   flushModeWarnings(process.argv.includes("--show-warnings"));
   return results.some((result) => result.failed);
 }
@@ -2997,26 +2911,23 @@ async function runRuntimeMatrixParallel(
   if (!files.length) {
     throw await buildNoTestFilesMatchedError(configPath, selectors);
   }
-  const reporterSession = await createRunReporter(
-    configPath,
-    runFlags.reporterPath,
-  );
-  const reporter = reporterSession.reporter;
+  const renderSession = createRenderer(configPath);
+  const renderer = renderSession.renderer;
   const snapshotEnabled = runFlags.snapshot !== false;
-  reporter.onRunStart?.({
-    runtimeName: reporterSession.runtimeName,
+  renderer.onRunStart?.({
+    runtimeName: renderSession.runtimeName,
     clean: runFlags.clean,
     verbose: runFlags.verbose,
     showLogs: runFlags.showLogs,
     snapshotEnabled,
     createSnapshots: runFlags.createSnapshots,
   });
-  const silentReporter = {};
+  const silentRenderer = new SilentRenderer();
   const modeLabels = modes.map((modeName) => modeName ?? "default");
   const showPerModeTimes = Boolean(runFlags.verbose);
   const inputPatterns = await loadInputPatterns(configPath);
   const ordered = new Array(files.length);
-  const useQueueDisplay = reporterSession.reporterKind == "default";
+  const useQueueDisplay = true;
   const queueDisplay = new ParallelQueueDisplay(
     useQueueDisplay && !runFlags.clean,
   );
@@ -3056,8 +2967,7 @@ async function runRuntimeMatrixParallel(
           );
           const artifactKey = resolveArtifactStem(file, inputPatterns);
           result = await run(runFlags, configPath, [file], false, {
-            reporter: silentReporter,
-            reporterKind: "default",
+            renderer: silentRenderer,
             suiteSelectors,
             emitRunStart: false,
             emitRunComplete: false,
@@ -3113,7 +3023,7 @@ async function runRuntimeMatrixParallel(
     fileState,
     fileSummaryTotal,
   );
-  reporter.onRunComplete?.({
+  renderer.onRunComplete?.({
     clean: runFlags.clean,
     snapshotEnabled,
     showCoverage: runFlags.showCoverage,
@@ -3128,7 +3038,6 @@ async function runRuntimeMatrixParallel(
     logSummary: summary.logSummary,
     modeSummary: buildModeSummary(modeState, modeSummaryTotal),
   });
-  reporter.flush?.();
   flushModeWarnings(process.argv.includes("--show-warnings"));
   return allResults.some((result) => result.failed);
 }
@@ -3150,15 +3059,11 @@ async function runTestSingleParallel(
   if (!files.length && !fuzzEnabled) {
     throw await buildNoTestFilesMatchedError(configPath, selectors);
   }
-  const reporterSession = await createRunReporter(
-    configPath,
-    runFlags.reporterPath,
-    modeName,
-  );
-  const reporter = reporterSession.reporter;
+  const renderSession = createRenderer(configPath, modeName);
+  const renderer = renderSession.renderer;
   const snapshotEnabled = runFlags.snapshot !== false;
-  reporter.onRunStart?.({
-    runtimeName: reporterSession.runtimeName,
+  renderer.onRunStart?.({
+    runtimeName: renderSession.runtimeName,
     clean: runFlags.clean,
     verbose: runFlags.verbose,
     showLogs: runFlags.showLogs,
@@ -3167,7 +3072,7 @@ async function runTestSingleParallel(
   });
   const inputPatterns = await loadInputPatterns(configPath);
   const results = new Array(files.length);
-  const useQueueDisplay = reporterSession.reporterKind == "default";
+  const useQueueDisplay = true;
   const queueDisplay = new ParallelQueueDisplay(
     useQueueDisplay && !runFlags.clean,
   );
@@ -3185,11 +3090,7 @@ async function runTestSingleParallel(
           ? renderQueuedFileStart(queueDisplay, formatSpecDisplayPath(file))
           : null;
         const buffered = useQueueDisplay
-          ? await createBufferedReporter(
-              configPath,
-              runFlags.reporterPath,
-              modeName,
-            )
+          ? createBufferedRenderer(configPath, modeName)
           : null;
         let result;
         try {
@@ -3215,8 +3116,7 @@ async function runTestSingleParallel(
             [file],
             false,
             {
-              reporter: buffered?.reporter,
-              reporterKind: buffered?.reporterKind,
+              renderer: buffered?.renderer,
               suiteSelectors,
               emitRunComplete: false,
               logFileName: `test.${artifactKey}.log.json`,
@@ -3230,7 +3130,6 @@ async function runTestSingleParallel(
           if (!buildFailure) throw error;
           result = createBuildFailureRunResult(buildFailure);
         }
-        buffered?.reporter.flush?.();
         results[index] = result;
         onSpecOutcome?.({ file, mode: modeName, failed: result.failed });
         if (buffered && token != null) {
@@ -3251,9 +3150,7 @@ async function runTestSingleParallel(
   let failed = runResults.some((result) => result.failed);
   let fuzzSummary;
   if (fuzzEnabled) {
-    if (reporterSession.reporterKind == "default") {
-      process.stdout.write("\n");
-    }
+    process.stdout.write("\n");
     const fuzzResults = await runFuzzMatrixResultsParallel(
       configPath,
       selectors,
@@ -3269,7 +3166,7 @@ async function runTestSingleParallel(
     fuzzSummary = summarizeFuzzExecutions(fuzzResults);
     buildIntervals.push(...collectFuzzBuildIntervals(fuzzResults));
   }
-  reporter.onRunComplete?.({
+  renderer.onRunComplete?.({
     clean: runFlags.clean,
     snapshotEnabled,
     showCoverage: runFlags.showCoverage,
@@ -3289,7 +3186,6 @@ async function runTestSingleParallel(
       modeSummaryTotal,
     ),
   });
-  reporter.flush?.();
   flushModeWarnings(process.argv.includes("--show-warnings"));
   return failed;
 }
@@ -3329,26 +3225,23 @@ async function runTestMatrixParallel(
       throw await buildNoTestFilesMatchedError(configPath, selectors, true);
     }
   }
-  const reporterSession = await createRunReporter(
-    configPath,
-    runFlags.reporterPath,
-  );
-  const reporter = reporterSession.reporter;
+  const renderSession = createRenderer(configPath);
+  const renderer = renderSession.renderer;
   const snapshotEnabled = runFlags.snapshot !== false;
-  reporter.onRunStart?.({
-    runtimeName: reporterSession.runtimeName,
+  renderer.onRunStart?.({
+    runtimeName: renderSession.runtimeName,
     clean: runFlags.clean,
     verbose: runFlags.verbose,
     showLogs: runFlags.showLogs,
     snapshotEnabled,
     createSnapshots: runFlags.createSnapshots,
   });
-  const silentReporter = {};
+  const silentRenderer = new SilentRenderer();
   const modeLabels = modes.map((modeName) => modeName ?? "default");
   const showPerModeTimes = Boolean(runFlags.verbose);
   const inputPatterns = await loadInputPatterns(configPath);
   const ordered = new Array(files.length);
-  const useQueueDisplay = reporterSession.reporterKind == "default";
+  const useQueueDisplay = true;
   const queueDisplay = new ParallelQueueDisplay(
     useQueueDisplay && !runFlags.clean,
   );
@@ -3388,8 +3281,7 @@ async function runTestMatrixParallel(
           );
           const artifactKey = resolveArtifactStem(file, inputPatterns);
           result = await run(runFlags, configPath, [file], false, {
-            reporter: silentReporter,
-            reporterKind: "default",
+            renderer: silentRenderer,
             suiteSelectors,
             emitRunStart: false,
             emitRunComplete: false,
@@ -3449,9 +3341,7 @@ async function runTestMatrixParallel(
   let failed = allResults.some((result) => result.failed);
   let fuzzSummary;
   if (fuzzEnabled) {
-    if (reporterSession.reporterKind == "default") {
-      process.stdout.write("\n");
-    }
+    process.stdout.write("\n");
     const fuzzResults = await runFuzzMatrixResultsParallel(
       configPath,
       selectors,
@@ -3467,7 +3357,7 @@ async function runTestMatrixParallel(
     fuzzSummary = summarizeFuzzExecutions(fuzzResults);
     buildIntervals.push(...collectFuzzBuildIntervals(fuzzResults));
   }
-  reporter.onRunComplete?.({
+  renderer.onRunComplete?.({
     clean: runFlags.clean,
     snapshotEnabled,
     showCoverage: runFlags.showCoverage,
@@ -3483,7 +3373,6 @@ async function runTestMatrixParallel(
     fuzzSummary,
     modeSummary: buildModeSummary(modeState, modeSummaryTotal),
   });
-  reporter.flush?.();
   flushModeWarnings(process.argv.includes("--show-warnings"));
   return failed;
 }
@@ -3531,9 +3420,8 @@ async function runFuzzMatrixResultsParallel(
       fileResults.push(...modeResults);
     }
     ordered[index] = fileResults;
-    const buffered = await createBufferedReporter(configPath);
-    buffered.reporter.onFuzzFileComplete?.({ file, results: fileResults });
-    buffered.reporter.flush?.();
+    const buffered = createBufferedRenderer(configPath);
+    buffered.renderer.onFuzzFileComplete?.({ file, results: fileResults });
     queueDisplay.complete(token, buffered.output());
   });
   queueDisplay.flush();
@@ -3545,7 +3433,7 @@ async function runFuzzMatrixResults(
   fuzzerSelectors,
   modes,
   overrides,
-  reporter,
+  renderer,
 ) {
   const results = [];
   for (const modeName of modes) {
@@ -3566,7 +3454,7 @@ async function runFuzzMatrixResults(
       );
       fileResults.push(...modeResults);
       results.push(...modeResults);
-      reporter?.onFuzzFileComplete?.({ file, results: fileResults });
+      renderer?.onFuzzFileComplete?.({ file, results: fileResults });
     }
   }
   if (!results.length) {

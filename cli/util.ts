@@ -7,7 +7,6 @@ import {
   FuzzConfig,
   ModeConfig,
   normalizeFeatureName,
-  ReporterConfig,
   RunOptions,
   Runtime,
 } from "./types.js";
@@ -149,29 +148,6 @@ function parseConfigRaw(
       ? config.buildOptions.target
       : "wasi";
   config.runOptions = Object.assign(new RunOptions(), runOptionsRaw);
-  const reporterRaw = runOptionsRaw.reporter;
-  if (typeof reporterRaw == "string") {
-    config.runOptions.reporter = reporterRaw;
-  } else if (reporterRaw && typeof reporterRaw == "object") {
-    const reporterConfig = Object.assign(
-      new ReporterConfig(),
-      reporterRaw as Record<string, unknown>,
-    );
-    reporterConfig.name =
-      typeof reporterConfig.name == "string" ? reporterConfig.name : "";
-    reporterConfig.options = Array.isArray(reporterConfig.options)
-      ? reporterConfig.options.filter(
-          (value): value is string => typeof value == "string",
-        )
-      : [];
-    reporterConfig.outDir =
-      typeof reporterConfig.outDir == "string" ? reporterConfig.outDir : "";
-    reporterConfig.outFile =
-      typeof reporterConfig.outFile == "string" ? reporterConfig.outFile : "";
-    config.runOptions.reporter = reporterConfig;
-  } else {
-    config.runOptions.reporter = "";
-  }
 
   const runtimeRaw = runOptionsRaw.runtime as
     | Record<string, unknown>
@@ -277,9 +253,8 @@ const TOP_LEVEL_KEYS = new Set([
 ]);
 
 const BUILD_OPTION_KEYS = new Set(["cmd", "args", "target", "env"]);
-const RUN_OPTION_KEYS = new Set(["runtime", "reporter", "run", "env"]); // includes legacy "run"
+const RUN_OPTION_KEYS = new Set(["runtime", "run", "env"]); // includes legacy "run"
 const RUNTIME_OPTION_KEYS = new Set(["cmd", "run", "browser"]); // includes legacy "run"
-const REPORTER_OPTION_KEYS = new Set(["name", "options", "outDir", "outFile"]);
 const OUTPUT_OPTION_KEYS = new Set(["build", "logs", "coverage", "snapshots"]);
 const FUZZ_OPTION_KEYS = new Set([
   "input",
@@ -788,59 +763,6 @@ function validateRunOptionsField(
     }
   }
 
-  if ("reporter" in obj && obj.reporter != undefined) {
-    const reporter = obj.reporter;
-    if (typeof reporter == "string") return;
-    if (!reporter || typeof reporter != "object" || Array.isArray(reporter)) {
-      issues.push({
-        path: `${pathPrefix}.${key}.reporter`,
-        message: "must be a string or object",
-        fix: 'use "default", "tap", or { "name": "...", ... }',
-      });
-      return;
-    }
-    const reporterObj = reporter as Record<string, unknown>;
-    validateUnknownKeys(
-      reporterObj,
-      REPORTER_OPTION_KEYS,
-      `${pathPrefix}.${key}.reporter`,
-      issues,
-    );
-    if ("name" in reporterObj && typeof reporterObj.name != "string") {
-      issues.push({
-        path: `${pathPrefix}.${key}.reporter.name`,
-        message: "must be a string",
-        fix: 'set to "default", "tap", or module path',
-      });
-    }
-    if (!("name" in reporterObj)) {
-      issues.push({
-        path: `${pathPrefix}.${key}.reporter`,
-        message: 'object reporter config requires "name"',
-        fix: 'example: { "name": "tap", "outDir": "./.as-test/reports" }',
-      });
-    }
-    if ("options" in reporterObj && !isStringArray(reporterObj.options)) {
-      issues.push({
-        path: `${pathPrefix}.${key}.reporter.options`,
-        message: "must be an array of strings",
-        fix: 'example: "options": ["single-file"]',
-      });
-    }
-    if ("outDir" in reporterObj && typeof reporterObj.outDir != "string") {
-      issues.push({
-        path: `${pathPrefix}.${key}.reporter.outDir`,
-        message: "must be a string",
-      });
-    }
-    if ("outFile" in reporterObj && typeof reporterObj.outFile != "string") {
-      issues.push({
-        path: `${pathPrefix}.${key}.reporter.outFile`,
-        message: "must be a string",
-      });
-    }
-  }
-
   validateEnvField(obj, "env", `${pathPrefix}.${key}`, issues);
 }
 
@@ -1303,19 +1225,9 @@ function cloneRuntime(runtime: Runtime): Runtime {
   return Object.assign(new Runtime(), runtime);
 }
 
-function cloneReporterConfig(
-  reporter: string | ReporterConfig,
-): string | ReporterConfig {
-  if (typeof reporter == "string") return reporter;
-  const cloned = Object.assign(new ReporterConfig(), reporter);
-  cloned.options = [...(reporter.options ?? [])];
-  return cloned;
-}
-
 function cloneRunOptions(options: RunOptions): RunOptions {
   const cloned = Object.assign(new RunOptions(), options);
   cloned.runtime = cloneRuntime(options.runtime);
-  cloned.reporter = cloneReporterConfig(options.reporter);
   cloned.env = { ...options.env };
   return cloned;
 }
@@ -1433,33 +1345,6 @@ function mergeCoverageConfig(
   return mergedBase;
 }
 
-function mergeReporterConfigByRaw(
-  base: string | ReporterConfig,
-  override: string | ReporterConfig,
-  raw: unknown,
-): string | ReporterConfig {
-  if (typeof raw == "string") return override;
-  if (!raw || typeof raw != "object" || Array.isArray(raw)) {
-    return cloneReporterConfig(base);
-  }
-
-  const mergedBase: ReporterConfig =
-    typeof base == "string"
-      ? new ReporterConfig()
-      : (cloneReporterConfig(base) as ReporterConfig);
-  const overrideConfig: ReporterConfig =
-    typeof override == "string"
-      ? new ReporterConfig()
-      : (cloneReporterConfig(override) as ReporterConfig);
-  const rawObject = raw as Record<string, unknown>;
-
-  if ("name" in rawObject) mergedBase.name = overrideConfig.name;
-  if ("options" in rawObject) mergedBase.options = [...overrideConfig.options];
-  if ("outDir" in rawObject) mergedBase.outDir = overrideConfig.outDir;
-  if ("outFile" in rawObject) mergedBase.outFile = overrideConfig.outFile;
-  return mergedBase;
-}
-
 function mergeBuildOptions(
   base: BuildOptions,
   override: BuildOptions,
@@ -1492,13 +1377,6 @@ function mergeRunOptions(
     if (runtimeRaw && "browser" in runtimeRaw) {
       merged.runtime.browser = override.runtime.browser;
     }
-  }
-  if ("reporter" in raw) {
-    merged.reporter = mergeReporterConfigByRaw(
-      merged.reporter,
-      override.reporter,
-      raw.reporter,
-    );
   }
   if ("env" in raw) {
     merged.env = { ...override.env };

@@ -4,35 +4,61 @@ import { readFileSync } from "fs";
 import * as path from "path";
 import { formatSpecDisplayPath, formatTime } from "../util.js";
 import { describeCoveragePoint } from "../coverage-points.js";
-export const createReporter = (context) => {
-  return new DefaultReporter(context);
-};
-class DefaultReporter {
-  constructor(context) {
-    this.context = context;
-    this.currentFile = null;
-    this.openSuites = [];
-    this.verboseSuites = [];
-    this.renderedLines = 0;
-    this.fileHasWarning = false;
-    this.verboseMode = false;
-    this.cleanMode = false;
-    this.showLogsMode = false;
-    this.hasRenderedTestFiles = false;
-    this.hasRenderedFuzzFiles = false;
+import {
+  FuzzCompleteEvent,
+  FuzzFileCompleteEvent,
+  FuzzResult,
+  LogEvent,
+  ProgressEvent,
+  RenderContext,
+  RealtimeFailureEvent,
+  RunCompleteEvent,
+  RunStartEvent,
+  SnapshotMissingEvent,
+  SnapshotSummary,
+  WarningEvent,
+} from "./types.js";
+
+// The single built-in console renderer. There is no pluggable reporter layer —
+// run-core/index drive this class directly. `SilentRenderer` (below) is the
+// no-op variant used where a run must produce no live output (matrix paths that
+// format their own result lines).
+export class TestRenderer {
+  private currentFile: string | null = null;
+  private openSuites: { depth: number; description: string }[] = [];
+  private verboseSuites: {
+    depth: number;
+    description: string;
+    verdict: string;
+  }[] = [];
+  private renderedLines = 0;
+  private fileHasWarning = false;
+  private verboseMode = false;
+  private cleanMode = false;
+  private showLogsMode = false;
+  private hasRenderedTestFiles = false;
+  private hasRenderedFuzzFiles = false;
+
+  constructor(private readonly context: RenderContext) {}
+
+  private canRewriteLine(): boolean {
+    return (
+      !this.cleanMode &&
+      Boolean((this.context.stdout as { isTTY?: boolean }).isTTY)
+    );
   }
-  canRewriteLine() {
-    return !this.cleanMode && Boolean(this.context.stdout.isTTY);
-  }
-  badgeRunning() {
+
+  private badgeRunning(): string {
     return chalk.bgBlackBright.white(" .... ");
   }
-  badgeFromVerdict(verdict) {
+
+  private badgeFromVerdict(verdict: string): string {
     if (verdict == "ok") return chalk.bgGreenBright.black(" PASS ");
     if (verdict == "fail") return chalk.bgRed.white(" FAIL ");
     return chalk.bgBlackBright.white(" SKIP ");
   }
-  clearRenderedBlock() {
+
+  private clearRenderedBlock(): void {
     if (!this.renderedLines || !this.canRewriteLine()) return;
     for (let i = 0; i < this.renderedLines; i++) {
       this.context.stdout.write("\r\x1b[2K");
@@ -42,13 +68,15 @@ class DefaultReporter {
     }
     this.renderedLines = 0;
   }
-  drawLiveBlock(lines) {
+
+  private drawLiveBlock(lines: string[]): void {
     this.clearRenderedBlock();
     if (!lines.length) return;
     this.context.stdout.write(lines.join("\n"));
     this.renderedLines = lines.length;
   }
-  renderLiveState() {
+
+  private renderLiveState(): void {
     if (!this.canRewriteLine() || !this.currentFile) return;
     const lines = [
       `${this.badgeRunning()} ${formatSpecDisplayPath(this.currentFile)}`,
@@ -60,7 +88,8 @@ class DefaultReporter {
     }
     this.drawLiveBlock(lines);
   }
-  renderVerboseState(fileEnd) {
+
+  private renderVerboseState(fileEnd?: ProgressEvent): void {
     if (!this.canRewriteLine() || !this.currentFile) return;
     const lines = [
       fileEnd
@@ -78,9 +107,14 @@ class DefaultReporter {
     }
     this.drawLiveBlock(lines);
   }
-  setVerboseSuiteVerdict(depth, description, verdict) {
+
+  private setVerboseSuiteVerdict(
+    depth: number,
+    description: string,
+    verdict: string,
+  ): void {
     for (let i = this.verboseSuites.length - 1; i >= 0; i--) {
-      const suite = this.verboseSuites[i];
+      const suite = this.verboseSuites[i]!;
       if (
         suite.depth == depth &&
         (!description.length || suite.description == description) &&
@@ -93,12 +127,18 @@ class DefaultReporter {
     }
     this.verboseSuites.push({ depth, description, verdict });
   }
-  collapseToDepth(depth) {
+
+  private collapseToDepth(depth: number): void {
     while (this.openSuites.length > depth) {
       this.openSuites.pop();
     }
   }
-  renderSuiteCompleteFrame(depth, description, verdict) {
+
+  private renderSuiteCompleteFrame(
+    depth: number,
+    description: string,
+    verdict: string,
+  ): void {
     if (!this.canRewriteLine() || !this.currentFile) return;
     const lines = [`${this.badgeRunning()} ${this.currentFile}`];
     for (let i = 0; i < depth; i++) {
@@ -113,7 +153,8 @@ class DefaultReporter {
     );
     this.drawLiveBlock(lines);
   }
-  renderFileResult(event) {
+
+  private renderFileResult(event: ProgressEvent): string {
     const verdict = event.verdict ?? "none";
     const time = event.time ? ` ${chalk.dim(event.time)}` : "";
     const name = formatSpecDisplayPath(event.file);
@@ -139,14 +180,16 @@ class DefaultReporter {
       return `${chalk.bgGreenBright.black(" PASS ")} ${name}${time}`;
     return `${chalk.bgBlackBright.white(" SKIP ")} ${name}${time}`;
   }
-  onRunStart(event) {
+
+  onRunStart(event: RunStartEvent): void {
     this.verboseMode = Boolean(event.verbose);
     this.cleanMode = Boolean(event.clean);
     this.showLogsMode = Boolean(event.showLogs);
     this.hasRenderedTestFiles = false;
     this.hasRenderedFuzzFiles = false;
   }
-  onFileStart(event) {
+
+  onFileStart(event: ProgressEvent): void {
     this.currentFile = event.file;
     this.openSuites = [];
     this.verboseSuites = [];
@@ -178,7 +221,8 @@ class DefaultReporter {
     }
     this.renderLiveState();
   }
-  onFileEnd(event) {
+
+  onFileEnd(event: ProgressEvent): void {
     this.hasRenderedTestFiles = true;
     if (this.verboseMode && this.canRewriteLine()) {
       this.renderVerboseState(event);
@@ -190,6 +234,7 @@ class DefaultReporter {
       this.fileHasWarning = false;
       return;
     }
+
     const result = this.renderFileResult(event);
     this.clearRenderedBlock();
     this.context.stdout.write(`${result}\n`);
@@ -198,7 +243,8 @@ class DefaultReporter {
     this.verboseSuites = [];
     this.fileHasWarning = false;
   }
-  onSuiteStart(event) {
+
+  onSuiteStart(event: ProgressEvent): void {
     if (this.cleanMode) return;
     if (!this.verboseMode) return;
     const depth = Math.max(event.depth, 0);
@@ -223,7 +269,8 @@ class DefaultReporter {
     this.openSuites.push({ depth, description: event.description });
     this.renderLiveState();
   }
-  onSuiteEnd(event) {
+
+  onSuiteEnd(event: ProgressEvent): void {
     if (this.cleanMode) return;
     if (!this.verboseMode) return;
     const depth = Math.max(event.depth, 0);
@@ -253,8 +300,10 @@ class DefaultReporter {
     this.collapseToDepth(depth);
     this.renderLiveState();
   }
-  onAssertionFail(_event) {}
-  onSnapshotMissing(event) {
+
+  onAssertionFail(_event: RealtimeFailureEvent): void {}
+
+  onSnapshotMissing(event: SnapshotMissingEvent): void {
     this.fileHasWarning = true;
     const warnLine = `${chalk.bgYellow.black(" WARN ")} missing snapshot for ${chalk.dim(event.key)}. Re-run with ${chalk.bold("--create-snapshots")} to create it.\n`;
     if (!this.canRewriteLine() || !this.currentFile) {
@@ -269,7 +318,8 @@ class DefaultReporter {
       this.renderLiveState();
     }
   }
-  onWarning(event) {
+
+  onWarning(event: WarningEvent): void {
     this.fileHasWarning = true;
     const warnLine = `${chalk.bgYellow.black(" WARN ")} ${event.message}\n`;
     if (!this.canRewriteLine() || !this.currentFile) {
@@ -284,7 +334,8 @@ class DefaultReporter {
       this.renderLiveState();
     }
   }
-  onLog(event) {
+
+  onLog(event: LogEvent): void {
     if (this.cleanMode) return;
     // With --show-logs we print one clean grouped block at the end instead of
     // streaming inline, so suppress the inline emit here.
@@ -296,7 +347,8 @@ class DefaultReporter {
       );
     }
   }
-  onRunComplete(event) {
+
+  onRunComplete(event: RunCompleteEvent): void {
     this.clearRenderedBlock();
     if (!event.clean) {
       renderFailedSuites(event.stats.failedEntries);
@@ -316,17 +368,19 @@ class DefaultReporter {
     renderTotals(event.stats, event);
     this.renderLogs(event);
   }
+
   // After the totals: either point the user at the aggregated log file (default)
   // or, with --show-logs, print the captured logs (the same cross-mode-deduped
   // body that was written to latest.log). Skipped in clean mode. When logs were
   // already streamed inline (verbose or a non-TTY stream), we only re-point at
   // the file rather than printing them twice.
-  renderLogs(event) {
+  private renderLogs(event: RunCompleteEvent): void {
     if (this.cleanMode) return;
     const summary = event.logSummary;
     if (!summary || summary.count <= 0) return;
     const out = this.context.stdout;
     const plural = summary.count === 1 ? "" : "s";
+
     // --show-logs: print the clean, cross-mode-deduped block (inline streaming
     // was suppressed in onLog). Otherwise just point at the aggregated file —
     // unless logs were already streamed inline (verbose / non-TTY).
@@ -337,6 +391,7 @@ class DefaultReporter {
       );
       return;
     }
+
     const shownInline = this.verboseMode || !this.canRewriteLine();
     const where = summary.file ? ` → ${chalk.cyan(summary.file)}` : "";
     out.write(`\n${summary.count} log${plural} captured${where}\n`);
@@ -344,17 +399,23 @@ class DefaultReporter {
       out.write(`${chalk.dim("  run with --show-logs to print them")}\n`);
     }
   }
-  onFuzzComplete(event) {
+
+  onFuzzComplete(event: FuzzCompleteEvent): void {
     renderFuzzSummary(this.context, event, this.hasRenderedTestFiles);
   }
-  onFuzzFileComplete(event) {
+
+  onFuzzFileComplete(event: FuzzFileCompleteEvent): void {
     this.hasRenderedFuzzFiles = true;
     renderFuzzFileSummary(this.context, event.results);
   }
 }
-function renderFuzzFileSummary(context, results) {
+
+function renderFuzzFileSummary(
+  context: RenderContext,
+  results: FuzzResult[],
+): void {
   if (!results.length) return;
-  const file = results[0].file;
+  const file = results[0]!.file;
   const itemFailed = results.some(
     (mode) =>
       mode.crashes > 0 || mode.fuzzers.some((fuzzer) => fuzzer.failed > 0),
@@ -381,13 +442,21 @@ function renderFuzzFileSummary(context, results) {
   );
   renderFailedFuzzers(groupFuzzResultsByFile(results));
 }
-function renderFuzzSummary(context, event, hasRenderedTestFiles) {
+
+function renderFuzzSummary(
+  context: RenderContext,
+  event: FuzzCompleteEvent,
+  hasRenderedTestFiles: boolean,
+): void {
   context.stdout.write("\n");
   if (!hasRenderedTestFiles) {
     renderStandaloneFuzzTotals(event);
   }
 }
-function renderFailedFuzzers(results) {
+
+function renderFailedFuzzers(
+  results: ReturnType<typeof groupFuzzResultsByFile>,
+): boolean {
   let rendered = false;
   for (const result of results) {
     for (const modeResult of result.modes) {
@@ -398,6 +467,7 @@ function renderFailedFuzzers(results) {
         modeResult.modeName,
         modeResult.fuzzers[0]?.selector,
       );
+
       if (modeResult.crashes > 0 && !modeResult.fuzzers.length) {
         if (!rendered) {
           console.log("");
@@ -411,11 +481,14 @@ function renderFailedFuzzers(results) {
         console.log(chalk.dim(`Repro: ${repro}`));
         console.log(chalk.dim(`Seed: ${modeResult.seed}`));
         if (modeResult.crashFiles.length) {
-          console.log(chalk.dim(`Crash: ${modeResult.crashFiles[0]}`));
+          console.log(
+            chalk.dim(`Crash: ${modeResult.crashFiles[0] as string}`),
+          );
         }
         console.log("");
         continue;
       }
+
       for (const fuzzer of modeResult.fuzzers) {
         if (fuzzer.failed <= 0 && fuzzer.crashed <= 0) continue;
         if (!rendered) {
@@ -428,8 +501,12 @@ function renderFailedFuzzers(results) {
           modeResult.modeName,
           fuzzer.selector,
         );
+
         console.log(
-          `${chalk.bgRed(" FAIL ")} ${formatFuzzFailureTitle(modeResult.file, fuzzer.name)}`,
+          `${chalk.bgRed(" FAIL ")} ${formatFuzzFailureTitle(
+            modeResult.file,
+            fuzzer.name,
+          )}`,
         );
         if (fuzzer.failure) {
           renderAssertionFailureDetails(
@@ -468,7 +545,9 @@ function renderFailedFuzzers(results) {
         if (fuzzer.crashFile?.length) {
           console.log(chalk.dim(`Crash: ${fuzzer.crashFile}`));
         } else if (modeResult.crashFiles.length) {
-          console.log(chalk.dim(`Crash: ${modeResult.crashFiles[0]}`));
+          console.log(
+            chalk.dim(`Crash: ${modeResult.crashFiles[0] as string}`),
+          );
         }
         console.log("");
       }
@@ -476,8 +555,12 @@ function renderFailedFuzzers(results) {
   }
   return rendered;
 }
-function groupFuzzResultsByFile(results) {
-  const grouped = new Map();
+
+function groupFuzzResultsByFile(results: FuzzCompleteEvent["results"]): {
+  file: string;
+  modes: FuzzCompleteEvent["results"];
+}[] {
+  const grouped = new Map<string, FuzzCompleteEvent["results"]>();
   for (const result of results) {
     const current = grouped.get(result.file) ?? [];
     current.push(result);
@@ -487,42 +570,57 @@ function groupFuzzResultsByFile(results) {
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([file, modes]) => ({ file, modes }));
 }
-function firstFuzzCrashFile(results) {
+
+function firstFuzzCrashFile(
+  results: FuzzCompleteEvent["results"],
+): string | null {
   for (const result of results) {
-    if (result.crashFiles.length) return result.crashFiles[0];
+    if (result.crashFiles.length) return result.crashFiles[0] as string;
   }
   return null;
 }
-function averageFuzzModeTime(results) {
+
+function averageFuzzModeTime(results: FuzzCompleteEvent["results"]): number {
   if (!results.length) return 0;
   return results.reduce((sum, result) => sum + result.time, 0) / results.length;
 }
-function buildFuzzReproCommand(file, seed, modeName, fuzzer, runs) {
+
+function buildFuzzReproCommand(
+  file: string,
+  seed: number,
+  modeName: string,
+  fuzzer?: string,
+  runs?: number,
+): string {
   const modeArg = modeName != "default" ? ` --mode ${modeName}` : "";
   const fuzzerArg = fuzzer?.length ? ` --fuzzer ${fuzzer}` : "";
   const runsArg = typeof runs == "number" ? ` --runs ${runs}` : "";
   return `ast fuzz ${file}${modeArg}${fuzzerArg} --seed ${seed}${runsArg}`;
 }
-function formatFailingSeeds(fuzzer) {
+
+function formatFailingSeeds(fuzzer: FuzzResult["fuzzers"][number]): string {
   return (fuzzer.failures ?? [])
     .map((failure) => String(failure.seed))
     .join(", ");
 }
-function toRelativeResultPath(file) {
+
+function toRelativeResultPath(file: string): string {
   const relative = path.relative(
     process.cwd(),
     path.resolve(process.cwd(), file),
   );
   return relative.length ? relative : file;
 }
-function formatFuzzFailureTitle(file, name) {
+
+function formatFuzzFailureTitle(file: string, name: string): string {
   const location = findFuzzLocation(file, name);
   const suffix = location
     ? ` (${formatSpecDisplayPath(file)}:${location})`
     : ` (${formatSpecDisplayPath(file)})`;
   return `${chalk.dim(name)}${chalk.dim(suffix)}`;
 }
-function findFuzzLocation(file, name) {
+
+function findFuzzLocation(file: string, name: string): string | null {
   try {
     const source = readFileSync(path.resolve(process.cwd(), file), "utf8");
     const patterns = [`fuzz("${name}"`, `fuzz('${name}'`];
@@ -533,6 +631,7 @@ function findFuzzLocation(file, name) {
       if (index != -1) break;
     }
     if (index == -1) return null;
+
     let line = 1;
     let column = 1;
     for (let i = 0; i < index; i++) {
@@ -548,12 +647,13 @@ function findFuzzLocation(file, name) {
     return null;
   }
 }
-function renderFailedSuites(failedEntries) {
+
+function renderFailedSuites(failedEntries: unknown[]): void {
   if (!failedEntries.length) return;
   console.log("");
-  const grouped = new Map();
+  const grouped = new Map<string, FailureDisplay>();
   for (const failed of failedEntries) {
-    const failedAny = failed;
+    const failedAny = failed as Record<string, unknown>;
     if (!failedAny?.file) continue;
     const file = String(failedAny.file);
     collectSuiteFailures(failed, file, [], grouped);
@@ -562,21 +662,40 @@ function renderFailedSuites(failedEntries) {
     renderCollectedFailure(failure);
   }
 }
+
+type FailureDisplay = {
+  title: string;
+  where: string;
+  file: string;
+  suitePath: string;
+  left: unknown;
+  right: unknown;
+  message: string;
+  isRuntimeError: boolean;
+  isBuildError: boolean;
+  modes: Set<string>;
+  runCommands: Map<string, string>;
+  buildCommands: Map<string, string>;
+};
+
 function collectSuiteFailures(
-  suite,
-  file,
-  path,
-  grouped,
-  inheritedModeName = "",
-) {
-  const suiteAny = suite;
+  suite: unknown,
+  file: string,
+  path: string[],
+  grouped: Map<string, FailureDisplay>,
+  inheritedModeName: string = "",
+): void {
+  const suiteAny = suite as Record<string, unknown>;
   const nextPath = [...path, String(suiteAny.description ?? "unknown")];
   const modeName = String(suiteAny.modeName ?? inheritedModeName);
   const isRuntimeErrorSuite = String(suiteAny.kind ?? "") == "runtime-error";
   const isBuildErrorSuite = String(suiteAny.kind ?? "") == "build-error";
-  const tests = Array.isArray(suiteAny.tests) ? suiteAny.tests : [];
+  const tests = Array.isArray(suiteAny.tests)
+    ? (suiteAny.tests as Record<string, unknown>[])
+    : [];
+
   for (let i = 0; i < tests.length; i++) {
-    const test = tests[i];
+    const test = tests[i]!;
     if (test.verdict != "fail") continue;
     const assertionIndex = i + 1;
     const title = `${nextPath.join(" > ")}#${assertionIndex}`;
@@ -601,9 +720,9 @@ function collectSuiteFailures(
           isRuntimeErrorSuite || String(test.type ?? "") == "runtime-error",
         isBuildError:
           isBuildErrorSuite || String(test.type ?? "") == "build-error",
-        modes: new Set(),
-        runCommands: new Map(),
-        buildCommands: new Map(),
+        modes: new Set<string>(),
+        runCommands: new Map<string, string>(),
+        buildCommands: new Map<string, string>(),
       };
       grouped.set(dedupeKey, failure);
     }
@@ -619,12 +738,16 @@ function collectSuiteFailures(
       failure.buildCommands.set(modeName, buildCommand);
     }
   }
-  const suites = Array.isArray(suiteAny.suites) ? suiteAny.suites : [];
+
+  const suites = Array.isArray(suiteAny.suites)
+    ? (suiteAny.suites as unknown[])
+    : [];
   for (const sub of suites) {
     collectSuiteFailures(sub, file, nextPath, grouped, modeName);
   }
 }
-function renderCollectedFailure(failure) {
+
+function renderCollectedFailure(failure: FailureDisplay): void {
   console.log(
     `${chalk.bgRed(" FAIL ")} ${chalk.dim(failure.title)} ${chalk.dim("(" + failure.where + ")")}`,
   );
@@ -639,18 +762,24 @@ function renderCollectedFailure(failure) {
     } else if (modes.length > 1) {
       console.log(chalk.dim(`Modes: ${modes.join(", ")}`));
     }
+
     const relativeFile = toRelativeResultPath(failure.file);
     const repro =
       failure.suitePath.length && modes.length == 1
         ? buildSuiteReproCommand(relativeFile, failure.suitePath, modes[0])
         : buildFileReproCommand(relativeFile, modes);
     console.log(chalk.dim(`Repro: ${repro}`));
+
     renderModeCommands("Build", failure.buildCommands, modes);
     renderModeCommands("Run", failure.runCommands, modes);
   }
   renderAssertionFailureDetails(failure.left, failure.right, failure.message);
 }
-function renderBuildFailureDetails(failure, modes) {
+
+function renderBuildFailureDetails(
+  failure: FailureDisplay,
+  modes: string[],
+): void {
   console.log("");
   console.log(chalk.bold(" Oops! Looks like the test failed to build!"));
   console.log(
@@ -672,7 +801,11 @@ function renderBuildFailureDetails(failure, modes) {
   console.log("");
   console.log(chalk.dim(" Here's a log dump too:"));
 }
-function renderRuntimeFailureDetails(failure, modes) {
+
+function renderRuntimeFailureDetails(
+  failure: FailureDisplay,
+  modes: string[],
+): void {
   console.log("");
   console.log(chalk.bold(" Oops! Looks like the runtime crashed!"));
   console.log(
@@ -701,12 +834,18 @@ function renderRuntimeFailureDetails(failure, modes) {
   console.log("");
   console.log(chalk.dim(" Here's a log dump too:"));
 }
-function buildSuiteReproCommand(file, suitePath, modeName) {
+
+function buildSuiteReproCommand(
+  file: string,
+  suitePath: string,
+  modeName?: string,
+): string {
   const modeArg =
     modeName && modeName != "default" ? ` --mode ${modeName}` : "";
   return `ast run ${file}${modeArg} --suite ${suitePath}`;
 }
-function buildFileReproCommand(file, modes) {
+
+function buildFileReproCommand(file: string, modes: string[]): string {
   const normalizedModes = modes.filter(Boolean).sort();
   if (normalizedModes.length == 1 && normalizedModes[0] != "default") {
     return `ast run ${file} --mode ${normalizedModes[0]}`;
@@ -719,7 +858,12 @@ function buildFileReproCommand(file, modes) {
   }
   return `ast run ${file}`;
 }
-function renderModeCommands(label, commands, modes) {
+
+function renderModeCommands(
+  label: string,
+  commands: Map<string, string>,
+  modes: string[],
+): void {
   if (!commands.size) return;
   const uniqueCommands = new Set([...commands.values()].filter(Boolean));
   if (uniqueCommands.size == 1) {
@@ -733,7 +877,11 @@ function renderModeCommands(label, commands, modes) {
     console.log(chalk.dim(`  [${mode}] ${command}`));
   }
 }
-function buildRuntimeReproRunCommand(runCommand, buildCommand) {
+
+function buildRuntimeReproRunCommand(
+  runCommand: string,
+  buildCommand: string,
+): string {
   if (!runCommand.length) return "";
   const artifactPath = extractBuildArtifactPath(buildCommand);
   if (!artifactPath) {
@@ -744,16 +892,23 @@ function buildRuntimeReproRunCommand(runCommand, buildCommand) {
   }
   return runCommand;
 }
-function extractBuildArtifactPath(buildCommand) {
+
+function extractBuildArtifactPath(buildCommand: string): string | null {
   const outMatch = buildCommand.match(
     /(?:^|\s)(?:-o|--outFile)\s+(?:"([^"]+)"|'([^']+)'|(\S+))/,
   );
   return outMatch?.[1] ?? outMatch?.[2] ?? outMatch?.[3] ?? null;
 }
-function normalizeFailureMessage(message) {
+
+function normalizeFailureMessage(message: string): string {
   return message.replace(/\r\n/g, "\n").trim();
 }
-function renderAssertionFailureDetails(leftRaw, rightRaw, messageRaw) {
+
+function renderAssertionFailureDetails(
+  leftRaw: unknown,
+  rightRaw: unknown,
+  messageRaw: unknown,
+): void {
   const left = JSON.stringify(leftRaw);
   const right = JSON.stringify(rightRaw);
   const message = String(messageRaw ?? "");
@@ -770,6 +925,7 @@ function renderAssertionFailureDetails(leftRaw, rightRaw, messageRaw) {
     }
     return;
   }
+
   const diffResult = diff(left, right);
   let expected = "";
   for (const res of diffResult.diff) {
@@ -794,7 +950,11 @@ function renderAssertionFailureDetails(leftRaw, rightRaw, messageRaw) {
   console.log(`${chalk.dim("(expected) ->")} ${expected}`);
   console.log(`${chalk.dim("(received) ->")} ${chalk.dim(left)}\n`);
 }
-function renderSnapshotSummary(snapshotSummary, leadingGap = true) {
+
+function renderSnapshotSummary(
+  snapshotSummary: SnapshotSummary,
+  leadingGap: boolean = true,
+): void {
   if (leadingGap) {
     console.log("");
   }
@@ -802,7 +962,22 @@ function renderSnapshotSummary(snapshotSummary, leadingGap = true) {
     `${chalk.bold("Snapshots:")} ${chalk.greenBright(snapshotSummary.matched)} matched, ${chalk.blueBright(snapshotSummary.created)} created, ${chalk.blueBright(snapshotSummary.updated)} updated, ${snapshotSummary.failed ? chalk.red(snapshotSummary.failed) : chalk.greenBright("0")} failed`,
   );
 }
-function renderTotals(stats, event) {
+
+function renderTotals(
+  stats: {
+    failedFiles: number;
+    passedFiles: number;
+    skippedFiles: number;
+    failedSuites: number;
+    passedSuites: number;
+    skippedSuites: number;
+    failedTests: number;
+    passedTests: number;
+    skippedTests: number;
+    time: number;
+  },
+  event: RunCompleteEvent,
+): void {
   console.log("");
   const filesSummary = {
     failed: stats.failedFiles,
@@ -842,12 +1017,14 @@ function renderTotals(stats, event) {
   renderSummaryLine("Files:", filesSummary, layout);
   renderSummaryLine("Suites:", suitesSummary, layout);
   renderSummaryLine("Tests:", testsSummary, layout);
+
   if (event.modeSummary) {
     renderModeSummary(event.modeSummary, layout);
   }
   if (cacheSummary) {
     renderCacheSummary(cacheSummary, layout);
   }
+
   process.stdout.write(
     chalk.bold("Time:".padEnd(9)) +
       formatTime(stats.time) +
@@ -855,18 +1032,28 @@ function renderTotals(stats, event) {
       "\n",
   );
 }
+
 // When the cache is active, every report carries a `cached` flag (true =
 // replayed from cache, false = freshly run). Returns the hit/miss split, or
 // undefined when the cache is off (no report sets the flag) so no line shows.
-function computeCacheSummary(reports) {
-  const flagged = reports.filter((r) => typeof r?.cached === "boolean");
+function computeCacheSummary(
+  reports: unknown[],
+): { cached: number; skipped: number; total: number } | undefined {
+  const flagged = reports.filter(
+    (r): r is { cached: boolean } =>
+      typeof (r as { cached?: unknown })?.cached === "boolean",
+  );
   if (!flagged.length) return undefined;
   const cached = flagged.filter((r) => r.cached).length;
   return { cached, skipped: flagged.length - cached, total: flagged.length };
 }
+
 // Renders the "Cache:" line in the shared three-column layout (cached / skipped
 // / total) so it lines up with Files/Suites/Tests/Modes.
-function renderCacheSummary(summary, layout) {
+function renderCacheSummary(
+  summary: { cached: number; skipped: number; total: number },
+  layout: SummaryLayout,
+): void {
   const cachedText = `${summary.cached} cached`;
   const skippedText = `${summary.skipped} skipped`;
   const totalText = `${summary.total} total`;
@@ -879,13 +1066,30 @@ function renderCacheSummary(summary, layout) {
   process.stdout.write(", ");
   process.stdout.write(totalText.padStart(layout.totalWidth) + "\n");
 }
-function renderModeSummary(summary, layout) {
+
+function renderModeSummary(
+  summary: {
+    failed: number;
+    skipped: number;
+    total: number;
+  },
+  layout?: SummaryLayout,
+): void {
   renderSummaryLine("Modes:", summary, layout);
 }
-function renderFuzzTotals(summary, layout) {
+
+function renderFuzzTotals(
+  summary: {
+    failed: number;
+    skipped: number;
+    total: number;
+  },
+  layout?: SummaryLayout,
+): void {
   renderSummaryLine("Fuzz:", summary, layout);
 }
-function renderStandaloneFuzzTotals(event) {
+
+function renderStandaloneFuzzTotals(event: FuzzCompleteEvent): void {
   console.log("");
   const layout = createSummaryLayout([
     event.fuzzingSummary,
@@ -902,7 +1106,23 @@ function renderStandaloneFuzzTotals(event) {
       "\n",
   );
 }
-function createSummaryLayout(summaries) {
+
+type SummaryLayout = {
+  failedWidth: number;
+  skippedWidth: number;
+  totalWidth: number;
+};
+
+function createSummaryLayout(
+  summaries: Array<
+    | {
+        failed: number;
+        skipped: number;
+        total: number;
+      }
+    | undefined
+  >,
+): SummaryLayout {
   return {
     failedWidth: Math.max(
       ...summaries.map((summary) =>
@@ -921,15 +1141,20 @@ function createSummaryLayout(summaries) {
     ),
   };
 }
+
 function renderSummaryLine(
-  label,
-  summary,
-  layout = {
+  label: string,
+  summary: {
+    failed: number;
+    skipped: number;
+    total: number;
+  },
+  layout: SummaryLayout = {
     failedWidth: `${summary.failed} failed`.length,
     skippedWidth: `${summary.skipped} skipped`.length,
     totalWidth: `${summary.total} total`.length,
   },
-) {
+): void {
   const failedText = `${summary.failed} failed`;
   const skippedText = `${summary.skipped} skipped`;
   const totalText = `${summary.total} total`;
@@ -944,7 +1169,23 @@ function renderSummaryLine(
   process.stdout.write(", ");
   process.stdout.write(totalText.padStart(layout.totalWidth) + "\n");
 }
-function renderCoverageSummary(summary, showCoverage) {
+
+function renderCoverageSummary(
+  summary: {
+    files: {
+      file: string;
+      total: number;
+      covered: number;
+      uncovered: number;
+      percent: number;
+    }[];
+    total: number;
+    covered: number;
+    uncovered: number;
+    percent: number;
+  },
+  showCoverage: boolean,
+): void {
   console.log("");
   const shouldShowCoverageHint =
     !showCoverage && summary.total > 0 && summary.uncovered > 0;
@@ -952,12 +1193,14 @@ function renderCoverageSummary(summary, showCoverage) {
     ? "Coverage (run with --show-coverage to display uncovered points)"
     : "Coverage";
   console.log(chalk.bold(coverageHeading));
+
   if (!summary.files.length || summary.total <= 0) {
     console.log(
       `  ${chalk.dim("No eligible source files were tracked for coverage.")}`,
     );
     return;
   }
+
   const pct = summary.total
     ? ((summary.covered * 100) / summary.total).toFixed(2)
     : "100.00";
@@ -976,6 +1219,7 @@ function renderCoverageSummary(summary, showCoverage) {
   console.log(
     `  ${color(pct + "%")} ${renderCoverageBar(summary.percent)} ${chalk.dim(`(${summary.covered}/${summary.total} covered, ${missingLabel}, ${fileLabel})`)}`,
   );
+
   const ranked = [...summary.files].sort((a, b) => {
     if (a.percent != b.percent) return a.percent - b.percent;
     if (a.uncovered != b.uncovered) return b.uncovered - a.uncovered;
@@ -1007,7 +1251,25 @@ function renderCoverageSummary(summary, showCoverage) {
     console.log(chalk.dim(`  ... ${ranked.length - 8} more files`));
   }
 }
-function renderCoveragePoints(files, expandNested) {
+
+function renderCoveragePoints(
+  files: {
+    file: string;
+    points: {
+      hash: string;
+      file: string;
+      line: number;
+      column: number;
+      type: string;
+      executed: boolean;
+      parentHash?: string;
+      scopeKind?: string;
+      scopeName?: string;
+      depth?: number;
+    }[];
+  }[],
+  expandNested: boolean,
+): void {
   console.log("");
   console.log(chalk.bold("Coverage Gaps"));
   const sortedFiles = [...files].sort((a, b) => a.file.localeCompare(b.file));
@@ -1038,8 +1300,9 @@ function renderCoveragePoints(files, expandNested) {
       `  ${chalk.bold(toRelativeResultPath(file.file))} ${chalk.dim(`(${missing.length} uncovered)`)}`,
     );
     const pointsByHash = new Map(points.map((point) => [point.hash, point]));
-    const childrenByParent = new Map();
-    const roots = [];
+    const childrenByParent = new Map<string, typeof points>();
+    const roots: typeof points = [];
+
     for (const point of points) {
       const parentHash = point.parentHash ?? "";
       if (parentHash.length && pointsByHash.has(parentHash)) {
@@ -1050,12 +1313,13 @@ function renderCoveragePoints(files, expandNested) {
         roots.push(point);
       }
     }
+
     const visibleRoots = roots.filter((point) =>
       shouldRenderCoveragePoint(point, childrenByParent),
     );
     for (let i = 0; i < visibleRoots.length; i++) {
       collapsedNestedPoints += renderCoveragePointTree(
-        visibleRoots[i],
+        visibleRoots[i]!,
         childrenByParent,
         layout,
         [],
@@ -1074,14 +1338,43 @@ function renderCoveragePoints(files, expandNested) {
     );
   }
 }
+
 function renderCoveragePointTree(
-  point,
-  childrenByParent,
-  layout,
-  ancestorHasNext,
-  isLast,
-  expandNested,
-) {
+  point: {
+    hash: string;
+    file: string;
+    line: number;
+    column: number;
+    type: string;
+    executed: boolean;
+    parentHash?: string;
+    scopeKind?: string;
+    scopeName?: string;
+    depth?: number;
+  },
+  childrenByParent: Map<
+    string,
+    {
+      hash: string;
+      file: string;
+      line: number;
+      column: number;
+      type: string;
+      executed: boolean;
+      parentHash?: string;
+      scopeKind?: string;
+      scopeName?: string;
+      depth?: number;
+    }[]
+  >,
+  layout: {
+    typeWidth: number;
+    locationWidth: number;
+  },
+  ancestorHasNext: boolean[],
+  isLast: boolean,
+  expandNested: boolean,
+): number {
   const visibleChildren = [...(childrenByParent.get(point.hash) ?? [])]
     .filter((child) => shouldRenderCoveragePoint(child, childrenByParent))
     .sort(compareCoverageGapPoints);
@@ -1089,6 +1382,7 @@ function renderCoveragePointTree(
     visibleChildren,
     childrenByParent,
   );
+
   if (!point.executed) {
     renderCoverageGapLine(point, layout, ancestorHasNext, isLast);
     if (nestedUncoveredCount > 0) {
@@ -1096,7 +1390,7 @@ function renderCoveragePointTree(
         let rendered = 0;
         for (let i = 0; i < visibleChildren.length; i++) {
           rendered += renderCoveragePointTree(
-            visibleChildren[i],
+            visibleChildren[i]!,
             childrenByParent,
             layout,
             [...ancestorHasNext, !isLast],
@@ -1117,12 +1411,13 @@ function renderCoveragePointTree(
     }
     return 0;
   }
+
   if (nestedUncoveredCount <= 0) return 0;
   renderCoverageScopeHeader(point, layout, ancestorHasNext, isLast);
   let rendered = 0;
   for (let i = 0; i < visibleChildren.length; i++) {
     rendered += renderCoveragePointTree(
-      visibleChildren[i],
+      visibleChildren[i]!,
       childrenByParent,
       layout,
       [...ancestorHasNext, !isLast],
@@ -1132,7 +1427,20 @@ function renderCoveragePointTree(
   }
   return rendered;
 }
-function shouldRenderCoveragePoint(point, childrenByParent) {
+
+function shouldRenderCoveragePoint(
+  point: {
+    hash: string;
+    executed: boolean;
+  },
+  childrenByParent: Map<
+    string,
+    {
+      hash: string;
+      executed: boolean;
+    }[]
+  >,
+): boolean {
   if (!point.executed) return true;
   return (
     countNestedUncoveredPoints(
@@ -1141,7 +1449,20 @@ function shouldRenderCoveragePoint(point, childrenByParent) {
     ) > 0
   );
 }
-function countNestedUncoveredPoints(points, childrenByParent) {
+
+function countNestedUncoveredPoints(
+  points: {
+    hash: string;
+    executed: boolean;
+  }[],
+  childrenByParent: Map<
+    string,
+    {
+      hash: string;
+      executed: boolean;
+    }[]
+  >,
+): number {
   let count = 0;
   for (const point of points) {
     if (!point.executed) count++;
@@ -1152,7 +1473,21 @@ function countNestedUncoveredPoints(points, childrenByParent) {
   }
   return count;
 }
-function renderCoverageGapLine(point, layout, ancestorHasNext, isLast) {
+
+function renderCoverageGapLine(
+  point: {
+    file: string;
+    line: number;
+    column: number;
+    type: string;
+  },
+  layout: {
+    typeWidth: number;
+    locationWidth: number;
+  },
+  ancestorHasNext: boolean[],
+  isLast: boolean,
+): void {
   const location = `${toRelativeResultPath(point.file)}:${point.line}:${point.column}`;
   const snippet = formatCoverageSnippet(
     point.file,
@@ -1172,7 +1507,23 @@ function renderCoverageGapLine(point, layout, ancestorHasNext, isLast) {
   const meta = `${typeLabel}${locationLabel}`;
   console.log(`    ${treePrefix}${chalk.dim(meta)}  ${snippet}`);
 }
-function renderCoverageScopeHeader(point, layout, ancestorHasNext, isLast) {
+
+function renderCoverageScopeHeader(
+  point: {
+    file: string;
+    line: number;
+    column: number;
+    type: string;
+    scopeKind?: string;
+    scopeName?: string;
+  },
+  layout: {
+    typeWidth: number;
+    locationWidth: number;
+  },
+  ancestorHasNext: boolean[],
+  isLast: boolean,
+): void {
   const descriptor = describeCoveragePoint(
     point.file,
     point.line,
@@ -1194,7 +1545,11 @@ function renderCoverageScopeHeader(point, layout, ancestorHasNext, isLast) {
   const meta = `${typeLabel}${locationLabel}`;
   console.log(`    ${treePrefix}${chalk.dim(meta)}  ${chalk.dim(snippet)}`);
 }
-function buildCoverageTreePrefix(ancestorHasNext, isLast) {
+
+function buildCoverageTreePrefix(
+  ancestorHasNext: boolean[],
+  isLast: boolean,
+): string {
   let out = "";
   for (const hasNext of ancestorHasNext) {
     out += hasNext ? "│ " : "  ";
@@ -1202,14 +1557,31 @@ function buildCoverageTreePrefix(ancestorHasNext, isLast) {
   out += isLast ? "└─" : "├─";
   return chalk.dim(out);
 }
-function compareCoverageGapPoints(a, b) {
+
+function compareCoverageGapPoints(
+  a: {
+    hash: string;
+    line: number;
+    column: number;
+    type: string;
+    depth?: number;
+  },
+  b: {
+    hash: string;
+    line: number;
+    column: number;
+    type: string;
+    depth?: number;
+  },
+): number {
   if (a.line != b.line) return a.line - b.line;
   if (a.column != b.column) return a.column - b.column;
   if ((a.depth ?? 0) != (b.depth ?? 0)) return (a.depth ?? 0) - (b.depth ?? 0);
   if (a.type != b.type) return a.type.localeCompare(b.type);
   return a.hash.localeCompare(b.hash);
 }
-function renderCoverageBar(percent) {
+
+function renderCoverageBar(percent: number): string {
   const slots = 12;
   const filled = Math.max(
     0,
@@ -1220,7 +1592,19 @@ function renderCoverageBar(percent) {
   );
   return `[${"=".repeat(filled)}${"-".repeat(slots - filled)}]`;
 }
-function createCoverageGapLayout(points) {
+
+function createCoverageGapLayout(
+  points: {
+    file: string;
+    line: number;
+    column: number;
+    type: string;
+    displayType: string;
+  }[],
+): {
+  typeWidth: number;
+  locationWidth: number;
+} {
   return {
     typeWidth: Math.max(...points.map((point) => point.displayType.length), 5),
     locationWidth: Math.max(
@@ -1233,12 +1617,21 @@ function createCoverageGapLayout(points) {
     ),
   };
 }
-function formatCoverageSnippet(file, line, column, fallbackType, _depth) {
+
+function formatCoverageSnippet(
+  file: string,
+  line: number,
+  column: number,
+  fallbackType: string,
+  _depth: number,
+): string {
   const descriptor = describeCoveragePoint(file, line, column, fallbackType);
   const visible = descriptor.visible;
   if (!visible.length) return "";
+
   const maxWidth = 72;
   const focus = Math.max(0, Math.min(visible.length - 1, descriptor.focus));
+
   if (visible.length <= maxWidth) {
     return styleCoverageSnippetWindow(
       visible,
@@ -1249,6 +1642,7 @@ function formatCoverageSnippet(file, line, column, fallbackType, _depth) {
       descriptor.highlightEnd,
     );
   }
+
   const start = Math.max(
     0,
     Math.min(visible.length - maxWidth, focus - Math.floor(maxWidth / 2)),
@@ -1263,14 +1657,15 @@ function formatCoverageSnippet(file, line, column, fallbackType, _depth) {
     descriptor.highlightEnd,
   );
 }
+
 function styleCoverageSnippetWindow(
-  visible,
-  start,
-  end,
-  focus,
-  highlightStart,
-  highlightEnd,
-) {
+  visible: string,
+  start: number,
+  end: number,
+  focus: number,
+  highlightStart: number,
+  highlightEnd: number,
+): string {
   const prefix = start > 0 ? "..." : "";
   const suffix = end < visible.length ? "..." : "";
   const slice = visible.slice(start, end);
@@ -1283,10 +1678,12 @@ function styleCoverageSnippetWindow(
     localStart + 1,
     Math.min(slice.length, highlightEnd - start),
   );
+
   if (!slice.length) return "";
   if (localStart >= slice.length) {
     return chalk.dim(`${prefix}${slice}${suffix}`);
   }
+
   const head = slice.slice(0, localStart);
   const body = slice.slice(localStart, localEnd || localStart + 1);
   const tail = slice.slice(localEnd || localStart + 1);
@@ -1295,4 +1692,26 @@ function styleCoverageSnippetWindow(
     chalk.dim.underline(body.length ? body : slice.charAt(localFocus)) +
     chalk.dim(tail + suffix)
   );
+}
+
+// A no-op renderer for runs that must emit nothing live — the parallel matrix
+// path runs each (file, mode) silently and formats its own result lines. It
+// extends TestRenderer (so it is assignable wherever a renderer is expected)
+// and overrides every hook to do nothing.
+export class SilentRenderer extends TestRenderer {
+  constructor() {
+    super({ stdout: process.stdout, stderr: process.stderr });
+  }
+  override onRunStart(): void {}
+  override onFileStart(): void {}
+  override onFileEnd(): void {}
+  override onSuiteStart(): void {}
+  override onSuiteEnd(): void {}
+  override onAssertionFail(): void {}
+  override onSnapshotMissing(): void {}
+  override onWarning(): void {}
+  override onLog(): void {}
+  override onRunComplete(): void {}
+  override onFuzzComplete(): void {}
+  override onFuzzFileComplete(): void {}
 }

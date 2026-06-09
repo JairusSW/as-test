@@ -1,5 +1,15 @@
 # Change Log
 
+## 2026-06-09 - v1.7.0
+
+### Output is fully built-in — the pluggable reporter layer and TAP are gone
+
+- **breaking**: removed the pluggable reporter system entirely. There is no longer a `TestReporter` interface, custom-reporter loading, a `--reporter` flag, or a `runOptions.reporter` config field. Output is now produced by a single built-in renderer. Nobody was using custom reporters; the indirection (a per-spec reporter selection/loader plus the parallel paths' per-spec buffered reporter instances) only made the run pipeline harder to follow.
+- **breaking**: removed the TAP reporter and everything specific to it — the `--tap` flag, TAP v13 output, `.tap` artifact files, the `report.tap`/`outDir`/`outFile` config, and the GitHub Actions `::error` annotations. CI here never invoked `--tap` (`test:ci` runs across modes), so nothing in-repo changed; downstream users who relied on TAP output should pin `1.6.x`.
+- refactor: `cli/reporters/` became `cli/render/`. `DefaultReporter` is now the concrete, non-pluggable `TestRenderer` (`cli/render/renderer.ts`); its event-payload types stay in `cli/render/types.ts` (with `ReporterContext` renamed `RenderContext`). `cli/reporters/tap.ts` and the unused `cli/reporter.ts` re-export were deleted. The reporter loader in `run-core.ts` (`createRunReporter`/`loadReporter`/`resolveReporterSelection`/`parseReporterConfig`/`resolveReporterFactory`) collapsed to one synchronous `createRenderer()` that just constructs a `TestRenderer` and resolves the mode-aware runtime name.
+- refactor: the parallel matrix paths previously passed an empty `{}` "silent reporter"; that relied on every hook being optional. With the renderer's methods now concrete, a small `SilentRenderer` (no-op subclass) takes its place. The `reporterKind == "default"` gates that gated live/queue rendering for the default reporter are now unconditional (TTY-gated only), since the built-in renderer is the only one.
+- fix: removed the `tapMode` stdout→stderr redirection in `runProcess`/`runWebSessionProcess`. It existed so spec `console.log` wouldn't corrupt the machine-readable TAP stream on stdout; with TAP gone, spec passthrough output always goes to stdout.
+
 ## 2026-06-09 - v1.6.1
 
 ### Parallel results print as each spec finishes

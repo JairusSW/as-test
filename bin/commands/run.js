@@ -1,4 +1,4 @@
-export { createRunReporter, resetCollectedLogs, run } from "./run-core.js";
+export { createRenderer, resetCollectedLogs, run } from "./run-core.js";
 export async function executeRunCommand(
   rawArgs,
   flags,
@@ -23,7 +23,6 @@ export async function executeRunCommand(
     ...deps.resolveParallelJobs(rawArgs, "run"),
     coverage: featureToggles.coverage,
     browser: deps.resolveBrowserOverride(rawArgs, "run"),
-    reporterPath: deps.resolveReporterOverride(rawArgs, "run"),
   };
   const modeTargets = deps.resolveExecutionModes(configPath, selectedModes);
   if (listFlags.list || listFlags.listModes) {

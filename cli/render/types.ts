@@ -199,25 +199,7 @@ export type FuzzFileCompleteEvent = {
   results: FuzzResult[];
 };
 
-export type ReporterContext = {
+export type RenderContext = {
   stdout: NodeJS.WritableStream;
   stderr: NodeJS.WritableStream;
 };
-
-export interface TestReporter {
-  onRunStart?(event: RunStartEvent): void;
-  onFileStart?(event: ProgressEvent): void;
-  onFileEnd?(event: ProgressEvent): void;
-  onSuiteStart?(event: ProgressEvent): void;
-  onSuiteEnd?(event: ProgressEvent): void;
-  onAssertionFail?(event: RealtimeFailureEvent): void;
-  onSnapshotMissing?(event: SnapshotMissingEvent): void;
-  onWarning?(event: WarningEvent): void;
-  onLog?(event: LogEvent): void;
-  onRunComplete?(event: RunCompleteEvent): void;
-  onFuzzFileComplete?(event: FuzzFileCompleteEvent): void;
-  onFuzzComplete?(event: FuzzCompleteEvent): void;
-  flush?(): void;
-}
-
-export type ReporterFactory = (context: ReporterContext) => TestReporter;

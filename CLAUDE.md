@@ -26,7 +26,7 @@ npm run build:cli && npm run build:lib && npm run build:transform
 
 ```bash
 npm test                    # Run as-test's own AssemblyScript specs via --parallel
-npm run test:ci             # Same, but TAP output + CI config
+npm run test:ci             # Same, across the node:bindings/node:wasi/wasmtime modes
 npm run test:integration    # Node.js integration tests (requires built cli + lib first)
 npm run test:examples       # Run all example projects
 ```
@@ -89,7 +89,7 @@ The `assembly/` directory is AssemblyScript source; it is not compiled by TypeSc
    - Auto-injects `run()` if the entry file has test suites but no explicit `run()` call
 4. **Run phase** (`cli/commands/run-core.ts`): spawns the compiled `.wasm` via the runner (`default.wasi.js`, `default.bindings.js`, etc.). The runner uses `lib/build/index.js`'s `instantiate()`.
 5. **IPC** (`cli/wipc.ts` ↔ `assembly/util/wipc.ts`): the wasm process and the CLI communicate over stdin/stdout using a framed binary protocol (4-byte `WIPC` magic, 1-byte type, 4-byte length). Test results, coverage points, snapshots, and fuzz data all flow this way.
-6. **Reporting**: the runner collects all results and passes them to the active reporter (`default` or `tap`).
+6. **Reporting**: the runner collects all results and passes them to the single built-in renderer (`cli/render/renderer.ts`).
 
 ### Key files to know
 
@@ -118,6 +118,6 @@ The transform's own stdlib filter (`transform/src/util.ts:isStdlib`) uses a name
 
 `tests/*.test.mjs` use Node's built-in `node:test` runner. They import directly from `bin/` (compiled output). Some expose internal functions via named exports like `__coverageInternals` from `run-core.js`. Always rebuild `cli/` before running integration tests.
 
-### Reporters
+### Rendering
 
-`cli/reporters/default.ts` and `cli/reporters/tap.ts` both implement the `TestReporter` interface from `cli/reporters/types.ts`. Custom reporters are loaded at runtime by resolving a module path and calling `createReporter`.
+There is a single built-in renderer — no pluggable reporter layer. `cli/render/renderer.ts` exports `TestRenderer` (the human/console output: live TTY blocks, summaries, coverage, logs, fuzz) and `SilentRenderer` (a no-op used by the parallel matrix paths, which format their own result lines). `run-core.ts:createRenderer()` constructs one bound to the given streams; the parallel paths in `cli/index.ts` point a `TestRenderer` at a buffered stream (`createBufferedRenderer`) so each spec's output can be dumped as a block. Event payload types live in `cli/render/types.ts`.

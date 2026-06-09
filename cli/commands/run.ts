@@ -1,6 +1,6 @@
 import { CliFeatureToggles, CliListFlags, RunFlags } from "./types.js";
 
-export { createRunReporter, resetCollectedLogs, run } from "./run-core.js";
+export { createRenderer, resetCollectedLogs, run } from "./run-core.js";
 export type { RunResult, SpecOutcome, SpecOutcomeSink } from "./run-core.js";
 
 type RunCommandDeps = {
@@ -17,10 +17,6 @@ type RunCommandDeps = {
     runJobs: number;
   };
   resolveBrowserOverride(rawArgs: string[], command: "run"): string | undefined;
-  resolveReporterOverride(
-    rawArgs: string[],
-    command: "run",
-  ): string | undefined;
   resolveShowCoverageMode(
     rawArgs: string[],
     command: "run",
@@ -69,7 +65,6 @@ export async function executeRunCommand(
     ...deps.resolveParallelJobs(rawArgs, "run"),
     coverage: featureToggles.coverage,
     browser: deps.resolveBrowserOverride(rawArgs, "run"),
-    reporterPath: deps.resolveReporterOverride(rawArgs, "run"),
   };
   const modeTargets = deps.resolveExecutionModes(configPath, selectedModes);
   if (listFlags.list || listFlags.listModes) {
