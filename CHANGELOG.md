@@ -1,5 +1,11 @@
 # Change Log
 
+## 2026-06-09 - v1.6.1
+
+### Parallel results print as each spec finishes
+
+- fix: under `--parallel`, per-file result lines now print on a first-come-first-serve basis — each spec's output is emitted the moment it completes, in completion order, instead of being held back to match resolution order. v1.6.0 made `ParallelQueueDisplay` (`cli/index.ts`) buffer every completed spec keyed by a start sequence and flush only the contiguous prefix; that meant a slow first-resolved spec kept every faster spec stuck on its grey `....` line until the slow one finished, then dumped the whole backlog at once. Removed the ordering machinery (`seqByToken`/`nextSeq`/`nextFlushSeq`/`pending`/`flushOrdered`), so `complete()` clears the live block, writes the finished spec's output immediately, and re-renders the remaining in-flight lines. This reverses the resolved-order behavior introduced in v1.6.0.
+
 ## 2026-06-01 - v1.6.0
 
 ### Incremental test cache — only rebuild and rerun what changed

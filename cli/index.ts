@@ -1439,15 +1439,6 @@ class ParallelQueueDisplay {
   private readonly enabled: boolean;
   private readonly active = new Map<symbol, string>();
   private renderedLines = 0;
-  // Files complete out of order under --parallel (a cache replay finishes
-  // instantly while a fresh build is still running). To keep output in the
-  // order specs were resolved, each token gets a start sequence (start() is
-  // called in resolved/index order) and completed outputs are emitted only as
-  // the contiguous prefix of that sequence fills in.
-  private readonly seqByToken = new Map<symbol, number>();
-  private nextSeq = 0;
-  private nextFlushSeq = 0;
-  private readonly pending = new Map<number, string>();
 
   constructor(private readonly showStartLines: boolean) {
     this.enabled = showStartLines && canRewriteParallelQueue();
@@ -1455,7 +1446,6 @@ class ParallelQueueDisplay {
 
   start(file: string): symbol {
     const token = Symbol(file);
-    this.seqByToken.set(token, this.nextSeq++);
     if (!this.enabled) return token;
     const line = `${chalk.bgBlackBright.white(" .... ")} ${file}`;
     this.clear();
@@ -1464,37 +1454,18 @@ class ParallelQueueDisplay {
     return token;
   }
 
+  // Print each spec's output the moment it finishes — first come, first served.
+  // Files complete out of order under --parallel (a cache replay finishes
+  // instantly while a fresh build is still running); we emit results in
+  // completion order rather than holding them back to match resolution order.
   complete(token: symbol, output: string): void {
-    const seq = this.seqByToken.get(token) ?? this.nextFlushSeq;
-    this.seqByToken.delete(token);
     this.active.delete(token);
-    this.pending.set(seq, output);
-    this.flushOrdered();
-  }
-
-  // Emit the contiguous run of completed outputs starting at nextFlushSeq, so
-  // results print in resolved order regardless of completion order.
-  private flushOrdered(): void {
-    if (!this.pending.has(this.nextFlushSeq)) return;
     if (this.enabled) this.clear();
-    while (this.pending.has(this.nextFlushSeq)) {
-      process.stdout.write(this.pending.get(this.nextFlushSeq)!);
-      this.pending.delete(this.nextFlushSeq);
-      this.nextFlushSeq++;
-    }
+    process.stdout.write(output);
     if (this.enabled) this.render();
   }
 
   flush(): void {
-    // Drain anything still buffered (e.g. a gap left by an errored spec) in
-    // sequence order, then clear the live block.
-    if (this.pending.size) {
-      if (this.enabled) this.clear();
-      for (const seq of [...this.pending.keys()].sort((a, b) => a - b)) {
-        process.stdout.write(this.pending.get(seq)!);
-      }
-      this.pending.clear();
-    }
     if (this.enabled) this.clear();
   }
 
