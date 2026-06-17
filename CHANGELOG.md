@@ -1,5 +1,11 @@
 # Change Log
 
+## 2026-06-10 - v1.7.1
+
+### Fix Node 22 segfault when a WASI spec streams a large report
+
+- fix: the `node:wasi` runner (`lib/src/index.ts`) now wraps every `wasiImport` entry in a plain JS pass-through before handing them to the wasm instance, instead of passing the native bindings directly. On Node 22, V8 can take a fast wasm→native call path straight into the `node:wasi` native `fd_write` that **segfaults** under a large write burst — e.g. a spec whose report is a few MB streamed over stdout (fuzz/property suites). The crash surfaced as a runner exit 139 with the harness reporting `missing report:end marker for chunked report payload` (`dataFrames=0`), since the child died mid-report. Interposing a JS function forces the safe call path; the indirection is negligible and the fix is Node-version agnostic. Node 24 was unaffected. Wrapping `fd_write` alone is sufficient, but all imports are wrapped to defend against the same fast-call miscompilation elsewhere.
+
 ## 2026-06-09 - v1.7.0
 
 ### Output is fully built-in — the pluggable reporter layer and TAP are gone

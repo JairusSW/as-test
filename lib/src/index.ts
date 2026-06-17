@@ -291,6 +291,30 @@ async function instantiateNoBindingsInstance(
   return decorateInstance(instance, "bindings");
 }
 
+// Wrap each WASI import in a plain JS pass-through before handing it to the
+// wasm instance. On Node 22, V8 can take a fast wasm->native call path straight
+// into the `node:wasi` native bindings that segfaults under a large fd_write
+// burst (e.g. a multi-MB test report streamed over stdout). An interposed JS
+// function forces the safe call path. The indirection is negligible and the fix
+// is Node-version agnostic. (Repro: a >1 MB report crashes the runner on Node
+// 22 but not 24; wrapping fd_write alone is enough, but every import is wrapped
+// to defend against the same fast-call miscompilation elsewhere.)
+function wrapWasiImport(
+  wasiImport: WebAssembly.Imports[string],
+): WebAssembly.Imports[string] {
+  const wrapped: Record<string, unknown> = Object.create(null);
+  for (const key of Object.keys(wasiImport)) {
+    const fn = (wasiImport as Record<string, unknown>)[key];
+    if (typeof fn != "function") {
+      wrapped[key] = fn;
+      continue;
+    }
+    const bound = (fn as (...args: unknown[]) => unknown).bind(wasiImport);
+    wrapped[key] = (...args: unknown[]): unknown => bound(...args);
+  }
+  return wrapped as WebAssembly.Imports[string];
+}
+
 async function instantiateWasiInstance(
   wasmPath: string,
   imports: WebAssembly.Imports,
@@ -307,7 +331,7 @@ async function instantiateWasiInstance(
     preopens: {},
   });
   const mergedImports = createWasmImports(module, imports);
-  mergedImports.wasi_snapshot_preview1 = wasi.wasiImport;
+  mergedImports.wasi_snapshot_preview1 = wrapWasiImport(wasi.wasiImport);
   const instance = new WebAssembly.Instance(module, mergedImports);
   wasiInstances.set(instance, wasi);
   return decorateInstance(instance, "wasi");
