@@ -46,13 +46,39 @@ import { DependencyGraph } from "./dependency-graph.js";
 import { BuildCache, cacheStorage, resolveCacheDir } from "./build-cache.js";
 import { resolveCacheSettings } from "./util.js";
 import { resolveSpecFiles, emitSelectorWarnings } from "./selectors.js";
-const _args = process.argv.slice(2);
+// Expand short flag aliases to their long forms up front so every downstream
+// `--long` check (and resolveConfigPath/resolveModeNames below) works without
+// per-site handling. Supports `-m value`, `-m=value`. -v/-h/-w keep their own
+// existing handling. The map lives in the function to dodge top-level TDZ.
+function expandShorthands(argv) {
+  const SHORT_FLAGS = {
+    "-c": "--config",
+    "-m": "--mode",
+    "-p": "--parallel",
+    "-e": "--enable",
+  };
+  return argv.map((arg) => {
+    if (SHORT_FLAGS[arg]) return SHORT_FLAGS[arg];
+    const eq = arg.indexOf("=");
+    if (eq > 1 && !arg.startsWith("--")) {
+      const long = SHORT_FLAGS[arg.slice(0, eq)];
+      if (long) return long + arg.slice(eq);
+    }
+    return arg;
+  });
+}
+const _args = expandShorthands(process.argv.slice(2));
 const flags = [];
 const args = [];
 const COMMANDS = ["run", "build", "test", "fuzz", "init", "doctor", "clean"];
 const version = getCliVersion();
 const configPath = resolveConfigPath(_args);
 const selectedModes = resolveModeNames(_args);
+// When `--changed` is active this holds the set of absolute spec paths to keep
+// (their source or a recorded dependency changed in git). null = no filtering.
+// Declared before the command dispatch so it is initialized when the (hoisted)
+// resolveSelectedFiles/activateChangedFilter run.
+let changedSpecFilter = null;
 for (const arg of _args) {
   if (arg.startsWith("-")) flags.push(arg);
   else args.push(arg);
@@ -67,7 +93,9 @@ if (!args.length) {
   try {
     const command = args.shift();
     const normalizedCommand = command ?? "";
-    if (shouldShowCommandHelp(_args, normalizedCommand)) {
+    const showCommandHelp = shouldShowCommandHelp(_args, normalizedCommand);
+    if (!showCommandHelp) warnUnknownFlags(_args, normalizedCommand);
+    if (showCommandHelp) {
       printCommandHelp(normalizedCommand);
     } else if (command === "build") {
       executeBuildCommand(_args, configPath, selectedModes, {
@@ -94,6 +122,7 @@ if (!args.length) {
         resolveExecutionModes,
         listExecutionPlan,
         runRuntimeModes,
+        activateChangedFilter,
       }).catch((error) => {
         printCliError(error);
         process.exit(1);
@@ -112,6 +141,7 @@ if (!args.length) {
         resolveExecutionModes,
         listExecutionPlan,
         runTestModes,
+        activateChangedFilter,
       }).catch((error) => {
         printCliError(error);
         process.exit(1);
@@ -380,7 +410,13 @@ function printCommandHelp(command) {
     process.stdout.write(
       "  --list-modes             Preview configured and selected mode names\n",
     );
+    process.stdout.write(
+      "  --changed                Run only specs whose source or dependencies changed in git\n",
+    );
     process.stdout.write("  --help, -h               Show this help\n");
+    process.stdout.write(
+      "\n  Shorthands: -m --mode, -p --parallel, -c --config, -e --enable\n",
+    );
     return;
   }
   if (command == "test") {
@@ -405,15 +441,6 @@ function printCommandHelp(command) {
     );
     process.stdout.write(
       "  --browser <name|path>    Use chrome, chromium, firefox, webkit, or an executable path for web modes\n",
-    );
-    process.stdout.write(
-      "  --jobs <n>               Run files through an ordered worker pool\n",
-    );
-    process.stdout.write(
-      "  --build-jobs <n>         Limit concurrent build tasks (defaults to --jobs)\n",
-    );
-    process.stdout.write(
-      "  --run-jobs <n>           Limit concurrent run tasks (defaults to --jobs)\n",
     );
     process.stdout.write(
       "  --create-snapshots       Create missing snapshot entries\n",
@@ -473,7 +500,13 @@ function printCommandHelp(command) {
     process.stdout.write(
       "  --no-cache               Ignore the cache for this run (overrides config)\n",
     );
+    process.stdout.write(
+      "  --changed                Run only specs whose source or dependencies changed in git\n",
+    );
     process.stdout.write("  --help, -h               Show this help\n");
+    process.stdout.write(
+      "\n  Shorthands: -m --mode, -p --parallel, -c --config, -e --enable\n",
+    );
     return;
   }
   if (command == "fuzz") {
@@ -606,6 +639,78 @@ function resolveConfigPath(rawArgs) {
     }
   }
   return undefined;
+}
+// Surface obvious typos (e.g. `--vebose`, `--coverag`) instead of silently
+// ignoring them. Only the run/build/test/fuzz commands share this flag set;
+// init/doctor/clean have their own and are skipped. Lenient by design — the
+// union of every flag these commands accept — so a valid flag never warns.
+// The set is built inside the function because this runs at top-level dispatch,
+// before a module-scope const would be initialized.
+function warnUnknownFlags(rawArgs, command) {
+  if (!["run", "build", "test", "fuzz"].includes(command)) return;
+  const KNOWN_FLAGS = new Set([
+    // global
+    "--version",
+    "-v",
+    "--help",
+    "-h",
+    "--config",
+    "--mode",
+    "--show-warnings",
+    // features / selection
+    "--enable",
+    "--disable",
+    "--suite",
+    "--suites",
+    "--fuzzer",
+    "--fuzzers",
+    // execution
+    "--parallel",
+    "--jobs",
+    "--build-jobs",
+    "--run-jobs",
+    "--watch",
+    "-w",
+    "--browser",
+    "--headless",
+    "--dry-run",
+    // output / snapshots / coverage / cache
+    "--verbose",
+    "--clean",
+    "--list",
+    "--list-modes",
+    "--show-logs",
+    "--create-snapshots",
+    "--overwrite-snapshots",
+    "--no-snapshot",
+    "--show-coverage",
+    "--cache",
+    "--no-cache",
+    "--changed",
+    // fuzz
+    "--fuzz",
+    "--fuzz-runs",
+    "--fuzz-seed",
+    "--runs",
+    "--seed",
+  ]);
+  let seenCommand = false;
+  const warned = new Set();
+  for (const arg of rawArgs) {
+    if (!seenCommand) {
+      if (arg == command) seenCommand = true;
+      continue;
+    }
+    // Positionals and value tokens (e.g. the `node:wasi` after `--mode`) don't
+    // start with `-`, so they're never treated as flags.
+    if (!arg.startsWith("-") || arg == "-") continue;
+    const name = arg.split("=", 1)[0];
+    if (KNOWN_FLAGS.has(name) || warned.has(name)) continue;
+    warned.add(name);
+    process.stderr.write(
+      `${chalk.yellow.bold("WARN")} unknown flag "${name}" — run "ast ${command} --help" to see available flags\n`,
+    );
+  }
 }
 function resolveCommandArgs(rawArgs, command) {
   const values = [];
@@ -3897,13 +4002,75 @@ function resolveExecutionModes(configPath, selectedModes) {
   if (!hasDeclaredModes) return [undefined];
   return getDefaultModeNames(config);
 }
+// Collect files changed in the git working tree: tracked changes vs HEAD plus
+// untracked-but-not-ignored files, as absolute paths. Returns null when git is
+// unavailable or this isn't a repository.
+function gitChangedFiles() {
+  const root = spawnSync("git", ["rev-parse", "--show-toplevel"], {
+    encoding: "utf8",
+  });
+  if (root.status !== 0) return null;
+  const gitRoot = root.stdout.trim();
+  if (!gitRoot.length) return null;
+  const changed = new Set();
+  const collect = (args) => {
+    const result = spawnSync("git", args, { cwd: gitRoot, encoding: "utf8" });
+    if (result.status !== 0) return;
+    for (const line of result.stdout.split("\n")) {
+      const rel = line.trim();
+      if (rel.length) changed.add(path.resolve(gitRoot, rel));
+    }
+  };
+  collect(["diff", "--name-only", "HEAD"]);
+  collect(["ls-files", "--others", "--exclude-standard"]);
+  return changed;
+}
+// Compute the `--changed` spec set: specs whose own file changed, plus specs
+// whose recorded build dependencies changed (so editing a shared helper re-runs
+// its dependents). Falls back to spec-file-only matching when no cache exists.
+async function activateChangedFilter(configPath) {
+  const changed = gitChangedFiles();
+  if (!changed) {
+    process.stderr.write(
+      `${chalk.yellow.bold("WARN")} --changed: not a git repository (or git unavailable); running all specs\n`,
+    );
+    changedSpecFilter = null;
+    return;
+  }
+  const resolvedConfigPath =
+    configPath ?? path.join(process.cwd(), "./as-test.config.json");
+  const config = loadConfig(resolvedConfigPath);
+  const { files } = await resolveSpecFiles(config.input, []);
+  const keep = new Set();
+  for (const file of files) {
+    if (!file.endsWith(".spec.ts")) continue;
+    const abs = path.resolve(file);
+    if (changed.has(abs)) keep.add(abs);
+  }
+  try {
+    const cache = BuildCache.load(
+      resolveCacheDir(config.outDir),
+      getCliVersion(),
+    );
+    for (const spec of cache.specsAffectedBy(changed)) {
+      keep.add(path.resolve(spec));
+    }
+  } catch {
+    // No or unreadable cache — direct spec-change matching still applies.
+  }
+  changedSpecFilter = keep;
+}
 async function resolveSelectedFiles(configPath, selectors, warn = true) {
   const resolvedConfigPath =
     configPath ?? path.join(process.cwd(), "./as-test.config.json");
   const config = loadConfig(resolvedConfigPath, warn);
   const { files, warnings } = await resolveSpecFiles(config.input, selectors);
   if (warn) emitSelectorWarnings(warnings);
-  const specs = files.filter((file) => file.endsWith(".spec.ts"));
+  let specs = files.filter((file) => file.endsWith(".spec.ts"));
+  if (changedSpecFilter) {
+    const filter = changedSpecFilter;
+    specs = specs.filter((file) => filter.has(path.resolve(file)));
+  }
   return [...new Set(specs)].sort((a, b) => a.localeCompare(b));
 }
 async function resolveSelectedFuzzFiles(

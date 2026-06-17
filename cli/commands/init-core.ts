@@ -1166,9 +1166,20 @@ function applyInit(
   }
 
   const pkgPath = path.join(root, "package.json");
-  const pkg = existsSync(pkgPath)
-    ? (JSON.parse(readFileSync(pkgPath, "utf8")) as Record<string, unknown>)
-    : ({} as Record<string, unknown>);
+  let pkg: Record<string, unknown> = {};
+  if (existsSync(pkgPath)) {
+    try {
+      pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as Record<
+        string,
+        unknown
+      >;
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `package.json is not valid JSON: ${pkgPath}\n  ${reason}`,
+      );
+    }
+  }
 
   if (!pkg.scripts || typeof pkg.scripts != "object") {
     pkg.scripts = {};

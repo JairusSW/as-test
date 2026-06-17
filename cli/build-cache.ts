@@ -277,6 +277,26 @@ export class BuildCache {
     return specKey(mode, spec);
   }
 
+  // Absolute spec paths whose source — or any recorded dependency — is in
+  // `changed`. Used by `--changed` so editing a shared helper re-runs every
+  // spec that imports it, not just specs whose own file changed.
+  specsAffectedBy(changed: Set<string>): Set<string> {
+    const affected = new Set<string>();
+    for (const entry of Object.values(this.manifest.entries)) {
+      if (changed.has(entry.spec)) {
+        affected.add(entry.spec);
+        continue;
+      }
+      for (const dep of Object.keys(entry.deps)) {
+        if (changed.has(dep)) {
+          affected.add(entry.spec);
+          break;
+        }
+      }
+    }
+    return affected;
+  }
+
   save(): void {
     if (!this.dirty) return;
     mkdirSync(this.cacheDir, { recursive: true });

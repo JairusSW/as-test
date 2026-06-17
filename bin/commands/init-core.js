@@ -974,9 +974,17 @@ function applyInit(
     );
   }
   const pkgPath = path.join(root, "package.json");
-  const pkg = existsSync(pkgPath)
-    ? JSON.parse(readFileSync(pkgPath, "utf8"))
-    : {};
+  let pkg = {};
+  if (existsSync(pkgPath)) {
+    try {
+      pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `package.json is not valid JSON: ${pkgPath}\n  ${reason}`,
+      );
+    }
+  }
   if (!pkg.scripts || typeof pkg.scripts != "object") {
     pkg.scripts = {};
   }

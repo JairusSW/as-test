@@ -156,13 +156,21 @@ function checkRuntimeCommand(runtimeCommand, target, scope) {
       details: `${execToken} -> ${execPath}`,
     });
   }
-  if (!tokens.some((token) => token.includes("<file>"))) {
+  // The wasm path is always exported as AS_TEST_WASM_PATH, which the bundled
+  // script-host runners (default.wasi.js / default.bindings.js / default.web.js,
+  // launched via node/bun/deno) read directly — so they don't need a <file>
+  // token. Only external wasm runtimes (wasmtime/wasmer/wazero) take the
+  // artifact as a positional arg and therefore require the placeholder.
+  if (
+    !tokens.some((token) => token.includes("<file>")) &&
+    !isScriptHostRuntime(execToken)
+  ) {
     checks.push({
       status: "error",
       scope,
       label: "Runtime command missing <file> placeholder",
       details: `Runtime command for target "${target}" cannot receive the wasm artifact path.`,
-      fix: 'Add "<file>" to runOptions.runtime.cmd.',
+      fix: 'Add "<file>" to runOptions.runtime.cmd (external runtimes do not read AS_TEST_WASM_PATH).',
     });
   }
   if (isScriptHostRuntime(execToken)) {

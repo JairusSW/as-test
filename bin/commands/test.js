@@ -30,10 +30,12 @@ export async function executeTestCommand(
     watch: flags.includes("--watch") || flags.includes("-w"),
     cache: flags.includes("--cache"),
     noCache: flags.includes("--no-cache"),
+    changed: flags.includes("--changed"),
   };
   const fuzzEnabled = flags.includes("--fuzz");
   const fuzzOverrides = deps.resolveFuzzOverrides(rawArgs, "test");
   const modeTargets = deps.resolveExecutionModes(configPath, selectedModes);
+  if (runFlags.changed) await deps.activateChangedFilter(configPath);
   if (listFlags.list || listFlags.listModes) {
     await deps.listExecutionPlan(
       "test",

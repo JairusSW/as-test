@@ -25,4 +25,5 @@ export type RunFlags = {
   watch?: boolean;
   cache?: boolean;
   noCache?: boolean;
+  changed?: boolean;
 };

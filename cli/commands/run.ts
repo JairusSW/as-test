@@ -39,6 +39,7 @@ type RunCommandDeps = {
     suiteSelectors: string[],
     modes: (string | undefined)[],
   ): Promise<void>;
+  activateChangedFilter(configPath: string | undefined): Promise<void>;
 };
 
 export async function executeRunCommand(
@@ -65,8 +66,10 @@ export async function executeRunCommand(
     ...deps.resolveParallelJobs(rawArgs, "run"),
     coverage: featureToggles.coverage,
     browser: deps.resolveBrowserOverride(rawArgs, "run"),
+    changed: flags.includes("--changed"),
   };
   const modeTargets = deps.resolveExecutionModes(configPath, selectedModes);
+  if (runFlags.changed) await deps.activateChangedFilter(configPath);
   if (listFlags.list || listFlags.listModes) {
     await deps.listExecutionPlan(
       "run",
