@@ -212,35 +212,32 @@ function hookFiresFor(
   return false;
 }
 
+// Build into an array and join once: repeated `out += child` is O(n^2) in
+// AssemblyScript (each concat copies the whole growing string), which dominates
+// large suites (e.g. thousands of assertions in one test).
 function serializeSuites(values: Suite[]): string {
   if (!values.length) return "[]";
-  let out = "[";
+  const parts = new Array<string>(values.length);
   for (let i = 0; i < values.length; i++) {
-    if (i) out += ",";
-    out += unchecked(values[i]).toJSON();
+    parts[i] = unchecked(values[i]).toJSON();
   }
-  out += "]";
-  return out;
+  return "[" + parts.join(",") + "]";
 }
 
 function serializeTests(values: Tests[]): string {
   if (!values.length) return "[]";
-  let out = "[";
+  const parts = new Array<string>(values.length);
   for (let i = 0; i < values.length; i++) {
-    if (i) out += ",";
-    out += unchecked(values[i]).toJSON();
+    parts[i] = unchecked(values[i]).toJSON();
   }
-  out += "]";
-  return out;
+  return "[" + parts.join(",") + "]";
 }
 
 function serializeLogs(values: Log[]): string {
   if (!values.length) return "[]";
-  let out = "[";
+  const parts = new Array<string>(values.length);
   for (let i = 0; i < values.length; i++) {
-    if (i) out += ",";
-    out += unchecked(values[i]).toJSON();
+    parts[i] = unchecked(values[i]).toJSON();
   }
-  out += "]";
-  return out;
+  return "[" + parts.join(",") + "]";
 }

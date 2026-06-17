@@ -167,6 +167,45 @@ export function requestFuzzConfig(): FuzzConfigReply {
   return reply;
 }
 
+// Ask the host whether to include the heavy coverage gap-tree fields
+// (hash/parentHash/scopeKind/scopeName/depth). They are only needed for
+// --show-coverage; a default run drops them to keep the report small. Defaults
+// to true (full detail) if the host doesn't reply.
+export function requestCoverageDetail(): bool {
+  sendJson(MessageType.CALL, `{"kind":"coverage:detail"}`);
+  const response = readFrame();
+  if (response == null || response.type != MessageType.CALL) {
+    return true;
+  }
+  const body = String.UTF8.decode(response.payload);
+  if (!body.length) return true;
+  return body.charAt(0) == "1";
+}
+
+// Coverage is streamed as small frames rather than embedded in the final
+// report: one summary frame, then batches of points. This keeps wasm-side
+// serialization O(n) (each batch is bounded) and avoids a multi-MB single
+// payload. `pointsArray` is a pre-built JSON array string of compact points.
+export function sendCoverageSummary(
+  total: i32,
+  covered: i32,
+  uncovered: i32,
+  percent: f64,
+  detail: bool,
+): void {
+  sendJson(
+    MessageType.CALL,
+    `{"kind":"coverage:summary","total":${total.toString()},"covered":${covered.toString()},"uncovered":${uncovered.toString()},"percent":${percent.toString()},"detail":${detail ? "1" : "0"}}`,
+  );
+}
+
+export function sendCoverageBatch(file: string, pointsArray: string): void {
+  sendJson(
+    MessageType.CALL,
+    `{"kind":"coverage:batch","file":${q(file)},"points":${pointsArray}}`,
+  );
+}
+
 export function sendReport(report: string): void {
   const payload = String.UTF8.encode(report);
   if (payload.byteLength <= REPORT_CHUNK_BYTES) {

@@ -1,6 +1,10 @@
 {
   "$schema": "./as-test.config.schema.json",
-  "input": ["assembly/__tests__/**/*.spec.ts", "!**/__tmp_*"],
+  "input": [
+    "assembly/__tests__/**/*.spec.ts",
+    "!**/__tmp_*",
+    "!**/watermark/**"
+  ],
   "config": "none",
   "coverage": true,
   "features": ["try-as"],

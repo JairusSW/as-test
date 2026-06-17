@@ -9,15 +9,12 @@
 - [Installation](#installation)
 - [Docs](#docs)
 - [Writing Tests](#writing-tests)
-- [Assertions](#assertions)
-- [Lifecycle Hooks](#lifecycle-hooks)
 - [Mocking](#mocking)
 - [Snapshots](#snapshots)
 - [Runtimes](#runtimes)
 - [Modes](#modes)
 - [Coverage](#coverage)
 - [Fuzzing](#fuzzing)
-- [CLI Reference](#cli-reference)
 - [Examples](#examples)
 - [License](#license)
 
@@ -93,98 +90,6 @@ npx ast run math --suite math/adds-numbers
 ```
 
 You do not need to learn every CLI flag to get started. Most projects can begin with `npx ast test`, then add more configuration only when they need it.
-
-### Suites and skipping
-
-`describe`, `test`, and `it` register suites and cases (`test` and `it` are aliases of `describe`). Prefix any of them with `x` to skip — `xdescribe`, `xtest`, `xit` — or use `todo("...")` for an unimplemented placeholder. Focus a run on specific cases with `only(...)` (and `xonly(...)` to skip a focused case); when any `only` is present, only `only` cases run.
-
-## Assertions
-
-`expect(value)` returns an expectation you chain a matcher onto. Every matcher takes an optional trailing `message` string and returns the expectation, so calls can be chained. Prefix any matcher with `.not` to invert it.
-
-```ts
-expect(total).toBe(3);
-expect(total).not.toBe(4);
-expect(name).toContain("demo", "name should include the demo marker");
-```
-
-**Equality**
-
-| Matcher                   | Asserts                                                                             |
-| ------------------------- | ----------------------------------------------------------------------------------- |
-| `toBe(expected)`          | Structural equality — `===` for primitives/strings, deep equality for managed types |
-| `toEqual(expected)`       | Alias for `toBe`                                                                    |
-| `toStrictEqual(expected)` | Like `toBe`, but the runtime type id must also match                                |
-
-**Numbers**
-
-| Matcher                                          | Asserts                                            |
-| ------------------------------------------------ | -------------------------------------------------- |
-| `toBeGreaterThan(n)` / `toBeGreaterOrEqualTo(n)` | `value > n` / `value >= n`                         |
-| `toBeLessThan(n)` / `toBeLessThanOrEqualTo(n)`   | `value < n` / `value <= n`                         |
-| `toBeCloseTo(expected, precision = 2)`           | Float is within `0.5 / 10^precision` of `expected` |
-
-**Type and truthiness**
-
-| Matcher                                          | Asserts                                                                |
-| ------------------------------------------------ | ---------------------------------------------------------------------- |
-| `toBeString()` / `toBeBoolean()` / `toBeArray()` | Value is of that kind                                                  |
-| `toBeNumber()` / `toBeInteger()` / `toBeFloat()` | Value is numeric / an integer / a float                                |
-| `toBeFinite()`                                   | Float is not `Infinity`/`NaN`                                          |
-| `toBeNull()`                                     | Value is `null`                                                        |
-| `toBeTruthy()` / `toBeFalsy()`                   | Value is truthy / falsy (empty string, `0`, `null`, `false` are falsy) |
-
-**Strings and collections**
-
-| Matcher                                     | Asserts                                              |
-| ------------------------------------------- | ---------------------------------------------------- |
-| `toMatch(substr)`                           | String contains `substr`                             |
-| `toStartWith(prefix)` / `toEndWith(suffix)` | String prefix / suffix                               |
-| `toHaveLength(n)`                           | Array length is `n`                                  |
-| `toContain(value)` (alias `toContains`)     | Array contains `value`, or string contains substring |
-
-**Snapshots and errors**
-
-| Matcher                  | Asserts                                                                          |
-| ------------------------ | -------------------------------------------------------------------------------- |
-| `toMatchSnapshot(name?)` | Serialized value matches the stored snapshot (see [Snapshots](#snapshots))       |
-| `toThrow()`              | The wrapped `() => void` callback threw — requires `--enable try-as` (see below) |
-
-```ts
-// toThrow wraps a callback and needs the try-as feature enabled.
-expect((): void => {
-  throw new Error("boom");
-}).toThrow();
-```
-
-**Modifiers**
-
-- `.not` — negate the next matcher.
-- `.skip()` — skip this single expectation (also available as `xexpect(value)`).
-- `.where(predicate, message?)` — assert on a custom `bool` or `() => bool`, for hand-written comparators.
-
-> Not currently supported: `async`/Promise tests (AssemblyScript is synchronous), `toThrow` with an expected message/type, `toMatchObject`, user-registered custom matchers, per-test timeouts, and parameterized (`.each`) tables.
-
-## Lifecycle Hooks
-
-```ts
-import { afterAll, afterEach, beforeAll, beforeEach } from "as-test";
-
-beforeAll(() => {
-  /* once, before any suite in the file */
-});
-afterAll(() => {
-  /* once, after every suite in the file */
-});
-beforeEach(() => {
-  /* before each test case */
-});
-afterEach(() => {
-  /* after each test case */
-});
-```
-
-`beforeAll`/`afterAll` run once per file. `beforeEach`/`afterEach` run around each **test case** (`test`/`it`/`only` and their `x` variants) — not around grouping `describe` blocks. To run them around other block kinds, pass a `kinds` array, e.g. `beforeEach(() => {...}, ["describe", "test"])`.
 
 ## Mocking
 
@@ -544,41 +449,6 @@ npx ast test --fuzz
 Fuzzing is there when you want broader input coverage, but it does not get in the way of the normal test flow. You can start with ordinary specs and add fuzzers later.
 
 This is the general idea throughout the project: write tests once, then choose the runtime that matches how your code actually runs.
-
-## CLI Reference
-
-Invoke as `ast <command>` (alias of `as-test`). Run `ast <command> --help` for the full flag list.
-
-| Command                 | Purpose                                             |
-| ----------------------- | --------------------------------------------------- |
-| `ast test [selectors]`  | Build the selected specs, run them, print a summary |
-| `ast run [selectors]`   | Run already-built specs                             |
-| `ast build [selectors]` | Compile specs to wasm without running               |
-| `ast fuzz [selectors]`  | Build and run fuzz targets                          |
-| `ast init [dir]`        | Scaffold config, a sample spec, and runners         |
-| `ast doctor`            | Validate environment, config, and runtime setup     |
-| `ast clean`             | Remove build, crash, and log outputs                |
-
-Common flags for `test`/`run`:
-
-| Flag                                                             | Effect                                                     |
-| ---------------------------------------------------------------- | ---------------------------------------------------------- |
-| `--mode <name[,name...]>`                                        | Run one or more named config modes                         |
-| `--parallel`                                                     | Run files through an automatic worker pool                 |
-| `--jobs / --build-jobs / --run-jobs <n>`                         | Pin worker counts                                          |
-| `--enable / --disable <list>`                                    | Toggle features, e.g. `--enable coverage,try-as`           |
-| `--show-coverage[=all]`                                          | Print uncovered points (`=all` expands nested gaps)        |
-| `--suite <name[,name...]>`                                       | Filter to matching suite names or slug paths               |
-| `--create-snapshots` / `--overwrite-snapshots` / `--no-snapshot` | Snapshot control                                           |
-| `--watch`, `-w`                                                  | Re-run on source or spec changes                           |
-| `--changed`                                                      | Run only specs whose source or dependencies changed in git |
-| `--cache` / `--no-cache`                                         | Toggle the incremental build/run cache                     |
-| `--verbose`                                                      | Keep expanded suite/test lines and live updates            |
-| `--config <path>`                                                | Use a specific config file                                 |
-
-A selector can be a bare name (`ast test math`), a path or glob, or a folder. Suite slug paths use lowercased, hyphenated segments — `ast run math --suite math/adds-numbers`.
-
-Short aliases: `-m` (`--mode`), `-p` (`--parallel`), `-c` (`--config`), `-e` (`--enable`), plus the built-in `-w` (`--watch`), `-v` (`--version`), and `-h` (`--help`).
 
 ## Examples
 

@@ -21,7 +21,7 @@ import { AsyncLocalStorage } from "async_hooks";
 // orchestrator), mirroring how `buildRecorderStorage` threads the watch
 // recorder down without plumbing a param through every call site.
 
-const CACHE_FORMAT_VERSION = 1;
+const CACHE_FORMAT_VERSION = 2;
 const MODE_KEY_DEFAULT = "__default__";
 // Manifest and reports are gzipped (repetitive JSON, large coverage payloads).
 const MANIFEST_FILE = "manifest.json.gz";

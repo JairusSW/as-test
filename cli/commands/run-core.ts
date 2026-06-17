@@ -820,7 +820,12 @@ export async function run(
           const cached = cacheCtx.cache.getReport(options.modeName, file) as
             | Record<string, any>
             | undefined;
-          if (cached && !reportHasFailure(cached)) {
+          // A report cached without --show-coverage carries no gap-tree detail,
+          // so don't replay it when the user now asks for --show-coverage — fall
+          // through and re-run to capture the full points.
+          const detailMissing =
+            showCoverage && cachedReportLacksCoverageDetail(cached);
+          if (cached && !reportHasFailure(cached) && !detailMissing) {
             const cachedSuites = Array.isArray(cached.suites)
               ? cached.suites
               : [];
@@ -945,6 +950,7 @@ export async function run(
               createSnapshots,
               overwriteSnapshots,
               renderer,
+              showCoverage,
               runtimeEnv,
             )
           : await runProcess(
@@ -958,6 +964,7 @@ export async function run(
               createSnapshots,
               overwriteSnapshots,
               renderer,
+              showCoverage,
               runtimeEnv,
             );
       } catch (error) {
@@ -1557,10 +1564,140 @@ function normalizeCoverage(value: unknown): FileCoverage {
       : total
         ? (covered * 100) / total
         : 100;
-  const pointsRaw = Array.isArray(raw?.points)
-    ? (raw?.points as unknown[])
-    : [];
-  const points = pointsRaw
+  const points = Array.isArray(raw?.files)
+    ? expandCompactCoveragePoints(
+        raw!.files as unknown[],
+        Number(raw?.detail ?? 1) === 1,
+      )
+    : expandLegacyCoveragePoints(raw?.points);
+  return {
+    total,
+    covered,
+    uncovered,
+    percent,
+    points,
+  };
+}
+
+// Compact grouped wire format: { detail, files: [{ file, points: [[...]] }] }.
+// detail=0 points are [line, col, type, executed]; detail=1 points add
+// [hash, parentHash, scopeKind, scopeName, depth] for the gap tree. When detail
+// is off we synthesize a stable identity from line:col:type so cross-mode
+// dedup (keyed on file::hash) still merges the same point across runtimes.
+function expandCompactCoveragePoints(
+  files: unknown[],
+  detail: boolean,
+): FileCoverage["points"] {
+  const points: FileCoverage["points"] = [];
+  for (const group of files) {
+    const g = group as Record<string, unknown>;
+    const file = String(g.file ?? "");
+    if (!file.length) continue;
+    const arr = Array.isArray(g.points) ? (g.points as unknown[]) : [];
+    for (const entry of arr) {
+      if (!Array.isArray(entry) || entry.length < 4) continue;
+      const line = Number(entry[0] ?? 0);
+      const column = Number(entry[1] ?? 0);
+      const type = String(entry[2] ?? "");
+      points.push({
+        file,
+        line,
+        column,
+        type,
+        executed: Number(entry[3] ?? 0) === 1,
+        hash: detail ? String(entry[4] ?? "") : `${line}:${column}:${type}`,
+        parentHash: detail ? String(entry[5] ?? "") : "",
+        scopeKind: detail ? String(entry[6] ?? "") : "",
+        scopeName: detail ? String(entry[7] ?? "") : "",
+        depth: detail ? Number(entry[8] ?? 0) : 0,
+      });
+    }
+  }
+  return points;
+}
+
+// True when a cached report's coverage was captured without gap-tree detail, so
+// it can't satisfy a later --show-coverage request. A detail=0 capture carries
+// no scope/parent fields on any point; a detailed (or legacy) capture does. A
+// report with no points never blocks replay.
+function cachedReportLacksCoverageDetail(
+  cached: Record<string, any> | undefined,
+): boolean {
+  const points = (cached?.coverage as Record<string, unknown> | undefined)
+    ?.points;
+  if (!Array.isArray(points) || !points.length) return false;
+  return !points.some((p) => {
+    const point = p as Record<string, unknown>;
+    return (
+      point?.scopeKind || point?.scopeName || point?.parentHash || point?.depth
+    );
+  });
+}
+
+// Per-spec accumulator for streamed coverage frames (coverage:summary then
+// coverage:batch). Built up in the channel and attached to the report once the
+// run finishes — coverage frames always arrive before the report payload.
+type CoverageAccumulator = {
+  total: number;
+  covered: number;
+  uncovered: number;
+  percent: number;
+  detail: boolean;
+  points: FileCoverage["points"];
+};
+
+function createCoverageAccumulator(): CoverageAccumulator {
+  return {
+    total: 0,
+    covered: 0,
+    uncovered: 0,
+    percent: 100,
+    detail: true,
+    points: [],
+  };
+}
+
+function applyCoverageFrame(
+  accum: CoverageAccumulator,
+  kind: string,
+  event: Record<string, unknown>,
+): void {
+  if (kind === "coverage:summary") {
+    accum.total = Number(event.total ?? 0);
+    accum.covered = Number(event.covered ?? 0);
+    accum.uncovered = Number(event.uncovered ?? 0);
+    accum.percent = Number(event.percent ?? 100);
+    accum.detail = Number(event.detail ?? 1) === 1;
+    return;
+  }
+  const file = String(event.file ?? "");
+  if (!file.length) return;
+  const pts = Array.isArray(event.points) ? (event.points as unknown[]) : [];
+  for (const point of expandCompactCoveragePoints(
+    [{ file, points: pts }],
+    accum.detail,
+  )) {
+    accum.points.push(point);
+  }
+}
+
+function finalizeCoverageAccumulator(
+  accum: CoverageAccumulator,
+): FileCoverage & { detail: number } {
+  return {
+    total: accum.total,
+    covered: accum.covered,
+    uncovered: accum.uncovered,
+    percent: accum.percent,
+    detail: accum.detail ? 1 : 0,
+    points: accum.points,
+  };
+}
+
+// Older cached reports used a flat array of {hash,file,line,...} objects.
+function expandLegacyCoveragePoints(raw: unknown): FileCoverage["points"] {
+  const pointsRaw = Array.isArray(raw) ? (raw as unknown[]) : [];
+  return pointsRaw
     .map((point) => {
       const p = point as Record<string, unknown>;
       return {
@@ -1577,13 +1714,6 @@ function normalizeCoverage(value: unknown): FileCoverage {
       };
     })
     .filter((point) => point.file.length > 0);
-  return {
-    total,
-    covered,
-    uncovered,
-    percent,
-    points,
-  };
 }
 
 function collectCoverageSummary(
@@ -2094,6 +2224,7 @@ async function runProcess(
   createSnapshots: boolean,
   overwriteSnapshots: boolean,
   renderer: TestRenderer,
+  coverageDetail: boolean,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<any> {
   const child = spawn(invocation.command, invocation.args, {
@@ -2132,6 +2263,7 @@ async function runProcess(
     chunkBytesReceived: 0,
     chunks: [] as Buffer[],
   };
+  const coverageAccum = createCoverageAccumulator();
 
   child.on("error", (error) => {
     spawnError = error;
@@ -2231,6 +2363,17 @@ async function runProcess(
           depth: Number(event.depth ?? 0),
           text: String(event.text ?? ""),
         });
+        return;
+      }
+      if (kind === "coverage:detail") {
+        this.send(
+          MessageType.CALL,
+          Buffer.from(coverageDetail ? "1" : "0", "utf8"),
+        );
+        return;
+      }
+      if (kind === "coverage:summary" || kind === "coverage:batch") {
+        applyCoverageFrame(coverageAccum, kind, event);
         return;
       }
       if (kind === "snapshot:assert") {
@@ -2358,6 +2501,12 @@ async function runProcess(
     }
   }
 
+  // Coverage was streamed out-of-band (frames arrive before the report), so
+  // attach the accumulated points onto the parsed report.
+  if (report && typeof report === "object" && !Array.isArray(report)) {
+    (report as Record<string, unknown>).coverage =
+      finalizeCoverageAccumulator(coverageAccum);
+  }
   if (parseError) {
     const errorText = `could not parse report payload: ${parseError}`;
     const diagnostics = buildRuntimeReportDiagnostics(
@@ -2533,6 +2682,7 @@ async function runWebSessionProcess(
   createSnapshots: boolean,
   overwriteSnapshots: boolean,
   renderer: TestRenderer,
+  coverageDetail: boolean,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<any> {
   const input = new PassThrough();
@@ -2566,6 +2716,7 @@ async function runWebSessionProcess(
     chunkBytesReceived: 0,
     chunks: [] as Buffer[],
   };
+  const coverageAccum = createCoverageAccumulator();
 
   class TestChannel extends Channel {
     protected onPassthrough(data: Buffer): void {
@@ -2648,6 +2799,17 @@ async function runWebSessionProcess(
           depth: Number(event.depth ?? 0),
           text: String(event.text ?? ""),
         });
+        return;
+      }
+      if (kind === "coverage:detail") {
+        this.send(
+          MessageType.CALL,
+          Buffer.from(coverageDetail ? "1" : "0", "utf8"),
+        );
+        return;
+      }
+      if (kind === "coverage:summary" || kind === "coverage:batch") {
+        applyCoverageFrame(coverageAccum, kind, event);
         return;
       }
       if (kind === "snapshot:assert") {
@@ -2774,6 +2936,12 @@ async function runWebSessionProcess(
     }
   }
 
+  // Coverage was streamed out-of-band (frames arrive before the report), so
+  // attach the accumulated points onto the parsed report.
+  if (report && typeof report === "object" && !Array.isArray(report)) {
+    (report as Record<string, unknown>).coverage =
+      finalizeCoverageAccumulator(coverageAccum);
+  }
   if (parseError) {
     const errorText = `could not parse report payload: ${parseError}`;
     const diagnostics = buildRuntimeReportDiagnostics(

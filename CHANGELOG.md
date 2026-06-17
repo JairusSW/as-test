@@ -1,5 +1,27 @@
 # Change Log
 
+## 2026-06-17 - v1.8.0
+
+### Coverage streams over WIPC instead of dumping one giant report
+
+- perf: coverage is no longer embedded in the final report payload. The runtime now streams it as small framed messages — one `coverage:summary` then batches of ≤256 compact points (`coverage:batch`) — built with array-join so wasm-side serialization is O(n) instead of one O(n²) string. This removes the multi-MB single payload that drove slow post-run "analysis" (and the Node 22 large-write segfault) at its source. The CLI accumulates the frames and attaches them to the report, so `collectCoverageSummary`, the gap renderer, and the cache are unchanged.
+- perf: points are sent in a compact positional form, and the heavy gap-tree fields (hash/parentHash/scope/depth) are only sent for `--show-coverage` (negotiated via a `coverage:detail` request/reply). A default `--enable coverage` run drops a per-point ~145 B object to ~22 B; the CLI synthesizes a stable identity so cross-mode dedup still merges the same point. The build cache bumps its format version and won't replay a detail-less capture when `--show-coverage` is requested.
+- perf: report serialization is O(n) — `serializeSuites`/`serializeTests`/`serializeLogs` build an array and `join` once instead of `out += child` (which copies the whole growing string each time, O(n²) in AssemblyScript). A spec with 50k assertions in one suite went from ~51s to ~1.3s; 100k from un-runnable to ~1.7s.
+- test: added `assembly/__tests__/watermark/*.spec.ts` — runtime-loop benchmark specs (1k/50k/100k/500k assertions) plus `as-test.watermark.config.json`, excluded from the default suite. A loop keeps the build flat and avoids wasm's 100k data-segment limit that unrolled literals hit.
+
+### CLI improvements (also new since 1.7.1)
+
+- feat: `ast test`/`ast run --changed` runs only specs whose source — or recorded build dependencies — changed in git (so editing a shared helper re-runs its dependents). Falls back to spec-file matching with no cache; warns and runs all outside a git repo.
+- feat: short flag aliases — `-m` (`--mode`), `-p` (`--parallel`), `-c` (`--config`), `-e` (`--enable`) — expanded up front, so every existing long-flag check works unchanged.
+- feat: unknown flags now warn (e.g. `--vebose`) instead of being silently ignored.
+- fix: `doctor` no longer false-errors on a missing `<file>` placeholder for the bundled script-host runners (they receive the wasm via `AS_TEST_WASM_PATH`); only external runtimes need it.
+- fix: removed duplicated `--jobs`/`--build-jobs`/`--run-jobs` lines in `test`/`run --help`.
+- fix: guarded `JSON.parse` on snapshot `.json` and the project `package.json` (`ast init`) with clear, actionable errors instead of raw `SyntaxError`s.
+- perf: memoized per-file coverage classification and cached glob regexes in `collectCoverageSummary` (the post-run pass scales with point count).
+- refactor: extracted the snapshot subsystem into `cli/commands/snapshot-store.ts` (run-core.ts ~3,650 → ~3,350 lines).
+- docs: documented the full matcher API, lifecycle hooks, CLI flags, and modes in the README; added the `engines` field (`node >= 20`).
+- test: added config-validation and suite-selection integration tests.
+
 ## 2026-06-10 - v1.7.1
 
 ### Fix Node 22 segfault when a WASI spec streams a large report

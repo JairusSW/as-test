@@ -9,7 +9,10 @@ import {
 } from "as-test/assembly/coverage";
 import { Log } from "./src/log";
 import {
+  requestCoverageDetail,
   requestFuzzConfig as requestHostFuzzConfig,
+  sendCoverageBatch,
+  sendCoverageSummary,
   sendFileEnd,
   sendFileStart,
   sendReport,
@@ -419,9 +422,9 @@ export function run(options: RunOptions = new RunOptions()): void {
   }
   time.end = performance.now();
   sendFileEnd(FILE, fileVerdict, time.format());
+  streamCoverage();
   const report = new FileReport();
   report.suites = entrySuites;
-  report.coverage = collectCoverage();
   sendReport(report.toJSON());
 }
 
@@ -531,138 +534,95 @@ function ensureGlobalExpectationSuite(): Suite {
   return suite;
 }
 
-class CoverageReport {
-  total: i32 = 0;
-  covered: i32 = 0;
-  uncovered: i32 = 0;
-  percent: f64 = 100.0;
-  points: CoveragePointReport[] = [];
-
-  toJSON(): string {
-    return (
-      '{"total":' +
-      this.total.toString() +
-      ',"covered":' +
-      this.covered.toString() +
-      ',"uncovered":' +
-      this.uncovered.toString() +
-      ',"percent":' +
-      this.percent.toString() +
-      ',"points":' +
-      serializeCoveragePoints(this.points) +
-      "}"
-    );
-  }
-}
-
-class CoveragePointReport {
-  hash: string = "";
-  file: string = "";
-  line: i32 = 0;
-  column: i32 = 0;
-  type: string = "";
-  executed: bool = false;
-  parentHash: string = "";
-  scopeKind: string = "";
-  scopeName: string = "";
-  depth: i32 = 0;
-
-  toJSON(): string {
-    return (
-      '{"hash":' +
-      escape(this.hash) +
-      ',"file":' +
-      escape(this.file) +
-      ',"line":' +
-      this.line.toString() +
-      ',"column":' +
-      this.column.toString() +
-      ',"type":' +
-      escape(this.type) +
-      ',"executed":' +
-      (this.executed ? "true" : "false") +
-      ',"parentHash":' +
-      escape(this.parentHash) +
-      ',"scopeKind":' +
-      escape(this.scopeKind) +
-      ',"scopeName":' +
-      escape(this.scopeName) +
-      ',"depth":' +
-      this.depth.toString() +
-      "}"
-    );
-  }
-}
-
 class FileReport {
   suites: Suite[] = [];
-  coverage: CoverageReport = new CoverageReport();
 
   toJSON(): string {
-    return (
-      '{"suites":' +
-      serializeSuites(this.suites) +
-      ',"coverage":' +
-      this.coverage.toJSON() +
-      "}"
-    );
+    return '{"suites":' + serializeSuites(this.suites) + "}";
   }
+}
+
+// Number of points per coverage:batch frame. Bounded so each frame's string is
+// built in O(batch); across all batches the total work is O(points).
+const COVERAGE_BATCH: i32 = 256;
+
+// Stream coverage out-of-band as frames instead of embedding a giant string in
+// the report. Sends one summary frame, then per-file batches of compact points.
+function streamCoverage(): void {
+  const total = __POINTS();
+  const uncovered = __UNCOVERED();
+  const covered = total - uncovered;
+  const percent = total <= 0 ? 100.0 : (<f64>covered * 100.0) / <f64>total;
+  if (total <= 0) {
+    sendCoverageSummary(0, 0, 0, 100.0, true);
+    return;
+  }
+  // Only round-trip to the host (detail?) when there are points to send.
+  const detail = requestCoverageDetail();
+  sendCoverageSummary(total, covered, uncovered, percent, detail);
+
+  const points = __ALL_POINTS();
+  const order = new Array<string>();
+  const groups = new Map<string, CoverPoint[]>();
+  for (let i = 0; i < points.length; i++) {
+    const p = unchecked(points[i]);
+    if (!groups.has(p.file)) {
+      groups.set(p.file, new Array<CoverPoint>());
+      order.push(p.file);
+    }
+    groups.get(p.file).push(p);
+  }
+
+  for (let f = 0; f < order.length; f++) {
+    const file = unchecked(order[f]);
+    const pts = groups.get(file);
+    for (let start = 0; start < pts.length; start += COVERAGE_BATCH) {
+      const end = min<i32>(start + COVERAGE_BATCH, pts.length);
+      // Array + join keeps each batch O(batch) rather than O(batch^2) concat.
+      const parts = new Array<string>();
+      for (let j = start; j < end; j++) {
+        parts.push(serializeCoveragePoint(unchecked(pts[j]), detail));
+      }
+      sendCoverageBatch(file, "[" + parts.join(",") + "]");
+    }
+  }
+}
+
+function serializeCoveragePoint(p: CoverPoint, detail: bool): string {
+  const head =
+    "[" +
+    p.line.toString() +
+    "," +
+    p.column.toString() +
+    "," +
+    escape(p.type) +
+    "," +
+    (p.executed ? "1" : "0");
+  if (!detail) return head + "]";
+  return (
+    head +
+    "," +
+    escape(p.hash) +
+    "," +
+    escape(p.parentHash) +
+    "," +
+    escape(p.scopeKind) +
+    "," +
+    escape(p.scopeName) +
+    "," +
+    p.depth.toString() +
+    "]"
+  );
 }
 
 function serializeSuites(values: Suite[]): string {
   if (!values.length) return "[]";
-  let out = "[";
+  // Array + join: repeated `out += child` is O(n^2) in AssemblyScript.
+  const parts = new Array<string>(values.length);
   for (let i = 0; i < values.length; i++) {
-    if (i) out += ",";
-    out += unchecked(values[i]).toJSON();
+    parts[i] = unchecked(values[i]).toJSON();
   }
-  out += "]";
-  return out;
-}
-
-function serializeCoveragePoints(values: CoveragePointReport[]): string {
-  if (!values.length) return "[]";
-  let out = "[";
-  for (let i = 0; i < values.length; i++) {
-    if (i) out += ",";
-    out += unchecked(values[i]).toJSON();
-  }
-  out += "]";
-  return out;
-}
-
-function collectCoverage(): CoverageReport {
-  const out = new CoverageReport();
-  out.total = __POINTS();
-  out.uncovered = __UNCOVERED();
-  out.covered = out.total - out.uncovered;
-  if (out.total <= 0) {
-    out.percent = 100.0;
-  } else {
-    out.percent = (<f64>out.covered * 100.0) / <f64>out.total;
-  }
-
-  const points = __ALL_POINTS();
-  for (let i = 0; i < points.length; i++) {
-    const point = unchecked(points[i]);
-    out.points.push(toCoveragePointReport(point));
-  }
-  return out;
-}
-
-function toCoveragePointReport(point: CoverPoint): CoveragePointReport {
-  const out = new CoveragePointReport();
-  out.hash = point.hash;
-  out.file = point.file;
-  out.line = point.line;
-  out.column = point.column;
-  out.type = point.type;
-  out.executed = point.executed;
-  out.parentHash = point.parentHash;
-  out.scopeKind = point.scopeKind;
-  out.scopeName = point.scopeName;
-  out.depth = point.depth;
-  return out;
+  return "[" + parts.join(",") + "]";
 }
 
 function snapshotKey(): string {

@@ -1,0 +1,13 @@
+{
+  "$schema": "./as-test.config.schema.json",
+  "input": ["assembly/__tests__/watermark/*.spec.ts"],
+  "config": "none",
+  "buildOptions": {
+    "target": "wasi"
+  },
+  "runOptions": {
+    "runtime": {
+      "cmd": "node .as-test/runners/default.wasi.js"
+    }
+  }
+}
