@@ -4967,6 +4967,42 @@ function aggregateRunResults(results) {
       logSummary = result.logSummary;
     }
   }
+  // Per-mode breakdown: group results by modeName and deduplicate coverage points per mode.
+  {
+    const modePoints = new Map();
+    for (const result of results) {
+      const modeName = result.reports[0]?.modeName ?? "default";
+      if (!modePoints.has(modeName)) modePoints.set(modeName, new Map());
+      const modeMap = modePoints.get(modeName);
+      for (const fileCoverage of result.coverageSummary.files) {
+        for (const point of fileCoverage.points) {
+          const key = `${point.file}::${point.hash}`;
+          if (point.executed) {
+            modeMap.set(key, true);
+          } else if (!modeMap.has(key)) {
+            modeMap.set(key, false);
+          }
+        }
+      }
+    }
+    if (modePoints.size > 1) {
+      const modeEntries = [...modePoints.entries()]
+        .map(([name, modeMap]) => {
+          let total = 0;
+          let covered = 0;
+          for (const executed of modeMap.values()) {
+            total++;
+            if (executed) covered++;
+          }
+          return total > 0
+            ? { name, total, covered, percent: (covered * 100) / total }
+            : null;
+        })
+        .filter((m) => m !== null)
+        .sort((a, b) => a.name.localeCompare(b.name));
+      if (modeEntries.length > 0) coverageSummary.byMode = modeEntries;
+    }
+  }
   if (uniqueCoveragePoints.size > 0) {
     const byFile = new Map();
     for (const point of uniqueCoveragePoints.values()) {

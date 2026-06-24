@@ -26,6 +26,7 @@ export async function executeTestCommand(
     showLogs: flags.includes("--show-logs"),
     ...deps.resolveParallelJobs(rawArgs, "test"),
     coverage: featureToggles.coverage,
+    tryAs: featureToggles.featureOverrides["try-as"] === true,
     browser: deps.resolveBrowserOverride(rawArgs, "test"),
     watch: flags.includes("--watch") || flags.includes("-w"),
     cache: flags.includes("--cache"),

@@ -21,6 +21,7 @@ export type RunFlags = {
   buildJobs: number;
   runJobs: number;
   coverage?: boolean;
+  tryAs?: boolean;
   browser?: string;
   watch?: boolean;
   cache?: boolean;

@@ -306,7 +306,11 @@ export class TestRenderer {
       renderSnapshotSummary(event.snapshotSummary, true);
     }
     if (event.coverageSummary.enabled) {
-      renderCoverageSummary(event.coverageSummary, event.showCoverage);
+      renderCoverageSummary(
+        event.coverageSummary,
+        event.showCoverage,
+        Boolean(event.verbose),
+      );
       if (event.showCoverage && event.coverageSummary.uncovered) {
         renderCoveragePoints(
           event.coverageSummary.files,
@@ -945,7 +949,7 @@ function renderSummaryLine(
   process.stdout.write(", ");
   process.stdout.write(totalText.padStart(layout.totalWidth) + "\n");
 }
-function renderCoverageSummary(summary, showCoverage) {
+function renderCoverageSummary(summary, showCoverage, verbose) {
   console.log("");
   const shouldShowCoverageHint =
     !showCoverage && summary.total > 0 && summary.uncovered > 0;
@@ -968,12 +972,7 @@ function renderCoverageSummary(summary, showCoverage) {
       : `${summary.uncovered} points missing`;
   const fileLabel =
     summary.files.length == 1 ? "1 file" : `${summary.files.length} files`;
-  const color =
-    Number(pct) >= 90
-      ? chalk.greenBright
-      : Number(pct) >= 75
-        ? chalk.yellowBright
-        : chalk.redBright;
+  const color = coverageColor(Number(pct));
   console.log(
     `  ${color(pct + "%")} ${renderCoverageBar(summary.percent)} ${chalk.dim(`(${summary.covered}/${summary.total} covered, ${missingLabel}, ${fileLabel})`)}`,
   );
@@ -992,20 +991,38 @@ function renderCoverageSummary(summary, showCoverage) {
     const filePct = file.total
       ? ((file.covered * 100) / file.total).toFixed(2)
       : "100.00";
-    const fileColor =
-      Number(filePct) >= 90
-        ? chalk.greenBright
-        : Number(filePct) >= 75
-          ? chalk.yellowBright
-          : chalk.redBright;
+    const fileColor = coverageColor(Number(filePct));
     const suffix =
       file.uncovered > 0 ? `${file.uncovered} missing` : "fully covered";
     console.log(
-      `  ${fileColor(filePct.padStart(6) + "%")}  ${toRelativeResultPath(file.file).padEnd(fileNameWidth)} ${chalk.dim(`${file.covered}/${file.total} covered, ${suffix}`)}`,
+      `    ${fileColor(filePct.padStart(6) + "%")}  ${toRelativeResultPath(file.file).padEnd(fileNameWidth)} ${chalk.dim(`${file.covered}/${file.total} covered, ${suffix}`)}`,
     );
   }
   if (ranked.length > 8) {
-    console.log(chalk.dim(`  ... ${ranked.length - 8} more files`));
+    console.log(chalk.dim(`    ... ${ranked.length - 8} more files`));
+  }
+  if (verbose && summary.byMode && summary.byMode.length > 0) {
+    console.log(chalk.bold("  Mode Breakdown"));
+    const modeNameWidth = summary.byMode.reduce(
+      (max, m) => Math.max(max, m.name.length),
+      0,
+    );
+    for (const mode of summary.byMode) {
+      const modePct = mode.total
+        ? ((mode.covered * 100) / mode.total).toFixed(2)
+        : "100.00";
+      const modeColor = coverageColor(Number(modePct));
+      console.log(
+        `    ${mode.name.padEnd(modeNameWidth)}  ${modeColor(modePct.padStart(6) + "%")} ${renderCoverageBar(mode.percent)} ${chalk.dim(`(${mode.covered}/${mode.total})`)}`,
+      );
+    }
+  }
+  if (verbose) {
+    const allPoints = summary.files.flatMap((f) => f.points ?? []);
+    if (allPoints.length > 0) {
+      renderCoverageTypeBreakdown(allPoints);
+      renderUncoveredFunctions(allPoints);
+    }
   }
 }
 function renderCoveragePoints(files, expandNested) {
@@ -1091,6 +1108,18 @@ function renderCoveragePointTree(
     childrenByParent,
   );
   if (!point.executed) {
+    // Uncovered Function/Method: collapse all children — every point inside is
+    // trivially dead since the function was never called. Show the count inline.
+    if (point.type === "Function" || point.type === "Method") {
+      renderCoverageGapLine(
+        point,
+        layout,
+        ancestorHasNext,
+        isLast,
+        nestedUncoveredCount,
+      );
+      return 0;
+    }
     renderCoverageGapLine(point, layout, ancestorHasNext, isLast);
     if (nestedUncoveredCount > 0) {
       if (expandNested) {
@@ -1153,7 +1182,13 @@ function countNestedUncoveredPoints(points, childrenByParent) {
   }
   return count;
 }
-function renderCoverageGapLine(point, layout, ancestorHasNext, isLast) {
+function renderCoverageGapLine(
+  point,
+  layout,
+  ancestorHasNext,
+  isLast,
+  nestedCount = 0,
+) {
   const location = `${toRelativeResultPath(point.file)}:${point.line}:${point.column}`;
   const snippet = formatCoverageSnippet(
     point.file,
@@ -1171,7 +1206,13 @@ function renderCoverageGapLine(point, layout, ancestorHasNext, isLast) {
   const locationLabel = location.padEnd(layout.locationWidth + 6);
   const treePrefix = buildCoverageTreePrefix(ancestorHasNext, isLast);
   const meta = `${typeLabel}${locationLabel}`;
-  console.log(`    ${treePrefix}${chalk.dim(meta)}  ${snippet}`);
+  const nestedSuffix =
+    nestedCount > 0
+      ? chalk.dim(
+          ` — never called, ${nestedCount} point${nestedCount == 1 ? "" : "s"} inside`,
+        )
+      : "";
+  console.log(`    ${treePrefix}${chalk.dim(meta)}  ${snippet}${nestedSuffix}`);
 }
 function renderCoverageScopeHeader(point, layout, ancestorHasNext, isLast) {
   const descriptor = describeCoveragePoint(
@@ -1209,6 +1250,68 @@ function compareCoverageGapPoints(a, b) {
   if ((a.depth ?? 0) != (b.depth ?? 0)) return (a.depth ?? 0) - (b.depth ?? 0);
   if (a.type != b.type) return a.type.localeCompare(b.type);
   return a.hash.localeCompare(b.hash);
+}
+function renderCoverageTypeBreakdown(points) {
+  const byType = new Map();
+  for (const point of points) {
+    const entry = byType.get(point.type) ?? { total: 0, covered: 0 };
+    entry.total++;
+    if (point.executed) entry.covered++;
+    byType.set(point.type, entry);
+  }
+  const rows = [...byType.entries()]
+    .map(([type, { total, covered }]) => ({
+      type,
+      total,
+      covered,
+      percent: total ? (covered * 100) / total : 100,
+    }))
+    .filter((r) => r.total > 0)
+    .sort((a, b) => {
+      if (a.percent != b.percent) return a.percent - b.percent;
+      return a.type.localeCompare(b.type);
+    });
+  if (!rows.length) return;
+  console.log(chalk.bold("  Node Type Breakdown"));
+  const typeWidth = rows.reduce((max, r) => Math.max(max, r.type.length), 0);
+  for (const row of rows) {
+    const pct = row.percent.toFixed(2);
+    const color = coverageColor(Number(pct));
+    console.log(
+      `    ${row.type.padEnd(typeWidth)}  ${color(pct.padStart(6) + "%")} ${renderCoverageBar(row.percent)} ${chalk.dim(`(${row.covered}/${row.total})`)}`,
+    );
+  }
+}
+function renderUncoveredFunctions(points) {
+  const uncovered = points.filter(
+    (p) => !p.executed && (p.type === "Function" || p.type === "Method"),
+  );
+  if (!uncovered.length) return;
+  console.log(chalk.bold("  Uncovered Functions"));
+  const limit = Math.min(uncovered.length, 10);
+  for (let i = 0; i < limit; i++) {
+    const point = uncovered[i];
+    const info = describeCoveragePoint(
+      point.file,
+      point.line,
+      point.column,
+      point.type,
+    );
+    const name =
+      info.subjectName ??
+      (info.visible.length ? info.visible.slice(0, 38) : point.type);
+    const location = `${toRelativeResultPath(point.file)}:${point.line}`;
+    console.log(`    ${chalk.dim(name.padEnd(40))}  ${chalk.dim(location)}`);
+  }
+  if (uncovered.length > limit) {
+    console.log(chalk.dim(`    ... ${uncovered.length - limit} more`));
+  }
+}
+function coverageColor(pct) {
+  if (pct >= 90) return chalk.ansi256(46);
+  if (pct >= 75) return chalk.ansi256(82);
+  if (pct >= 50) return chalk.ansi256(214);
+  return chalk.ansi256(196);
 }
 function renderCoverageBar(percent) {
   const slots = 12;

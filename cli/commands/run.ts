@@ -65,6 +65,7 @@ export async function executeRunCommand(
     showLogs: flags.includes("--show-logs"),
     ...deps.resolveParallelJobs(rawArgs, "run"),
     coverage: featureToggles.coverage,
+    tryAs: featureToggles.featureOverrides["try-as"] === true,
     browser: deps.resolveBrowserOverride(rawArgs, "run"),
     changed: flags.includes("--changed"),
   };

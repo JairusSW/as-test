@@ -53,6 +53,7 @@ type RunFlags = {
   verbose?: boolean;
   showLogs?: boolean;
   coverage?: boolean;
+  tryAs?: boolean;
 };
 
 type RunExecutionOptions = {
@@ -1063,11 +1064,14 @@ export async function run(
   if (options.fileSummaryTotal != undefined) {
     applyConfiguredFileTotalToStats(stats, options.fileSummaryTotal);
   }
+  const tryAsEnabled =
+    (config.features ?? []).includes("try-as") || flags.tryAs === true;
   const coverageSummary = collectCoverageSummary(
     reports,
     coverageEnabled,
     showCoverage,
     coverage,
+    tryAsEnabled,
   );
   if (
     coverageEnabled &&
@@ -1719,12 +1723,14 @@ function expandLegacyCoveragePoints(raw: unknown): FileCoverage["points"] {
 function collectCoverageSummary(
   reports: {
     file: string;
+    modeName?: string;
     suites: any[];
     coverage: FileCoverage;
   }[],
   enabled: boolean,
   showPoints: boolean,
   coverage: CoverageOptions,
+  tryAsEnabled: boolean = false,
 ): CoverageSummary {
   const summary: CoverageSummary = {
     enabled,
@@ -1767,10 +1773,29 @@ function collectCoverageSummary(
     return ignored;
   };
 
+  // Per-mode aggregation: same union-per-hash logic as above, but partitioned
+  // by mode so the renderer can show a per-mode breakdown under --verbose.
+  const byModePoints = new Map<string, Map<string, boolean>>();
+  for (const report of reports) {
+    const modeName = report.modeName ?? "default";
+    for (const point of report.coverage.points) {
+      if (isIgnoredFile(point.file)) continue;
+      if (isIgnoredCoveragePoint(point, coverage, tryAsEnabled)) continue;
+      const key = `${point.file}::${point.hash}`;
+      if (!byModePoints.has(modeName)) byModePoints.set(modeName, new Map());
+      const modeMap = byModePoints.get(modeName)!;
+      if (point.executed) {
+        modeMap.set(key, true);
+      } else if (!modeMap.has(key)) {
+        modeMap.set(key, false);
+      }
+    }
+  }
+
   for (const report of reports) {
     for (const point of report.coverage.points) {
       if (isIgnoredFile(point.file)) continue;
-      if (isIgnoredCoveragePoint(point, coverage)) continue;
+      if (isIgnoredCoveragePoint(point, coverage, tryAsEnabled)) continue;
       const key = `${point.file}::${point.hash}`;
       const existing = uniquePoints.get(key);
       if (!existing) {
@@ -1779,6 +1804,25 @@ function collectCoverageSummary(
         existing.executed = true;
       }
     }
+  }
+
+  if (byModePoints.size > 1) {
+    summary.byMode = [...byModePoints.entries()]
+      .map(([name, modeMap]) => {
+        let total = 0;
+        let covered = 0;
+        for (const executed of modeMap.values()) {
+          total++;
+          if (executed) covered++;
+        }
+        return {
+          name,
+          total,
+          covered,
+          percent: total ? (covered * 100) / total : 100,
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
   }
 
   if (uniquePoints.size > 0) {
@@ -2122,7 +2166,13 @@ function isIgnoredCoveragePoint(
     type: string;
   },
   coverage: CoverageOptions,
+  tryAsEnabled: boolean = false,
 ): boolean {
+  // When try-as is active, throw statements inside generic functions compile
+  // to abort() and can never be intercepted, making them permanently uncovered.
+  // They're also redundant with the IfBranch that guards them, so exclude them.
+  if (tryAsEnabled && point.type === "Throw") return true;
+
   const ignore = coverage.ignore;
   if (
     !ignore.labels.length &&

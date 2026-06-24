@@ -214,7 +214,7 @@ function detectCoverageDeclaration(visible: string): {
   if (!trimmed.length) return null;
 
   let match = trimmed.match(
-    /^(?:export\s+)?function\s+([A-Za-z_]\w*)(?:<[^>]+>)?\s*\(/,
+    /^(?:export\s+)?function\s+([A-Za-z_]\w*)(?:<[^(]+>)?\s*\(/,
   );
   if (match) return { type: "Function", name: match[1] ?? null };
 
@@ -419,7 +419,11 @@ function detectCoverageIfBranch(
 } | null {
   if (fallbackType != "IfBranch") return null;
   const match = visible.match(/^if\s*\(([^)]*)\)/);
-  if (!match) return null;
+  if (!match) {
+    // The visible line does not start with `if (`, so this is the else/false
+    // branch — the condition was always true and this path was never skipped to.
+    return { type: "IfBranch (false)", start: 0, end: 0 };
+  }
   const full = match[0];
   const condition = match[1] ?? "";
   const openParen = full.indexOf("(");
@@ -429,10 +433,11 @@ function detectCoverageIfBranch(
   const conditionStart =
     openParen == -1 ? -1 : openParen + 1 + conditionPadding;
   if (conditionStart == -1 || !condition.length) {
-    return { type: "IfBranch", start: 0, end: full.length };
+    return { type: "IfBranch (true)", start: 0, end: full.length };
   }
+  // The true branch (condition → body) was never taken.
   return {
-    type: "IfBranch",
+    type: "IfBranch (true)",
     start: conditionStart,
     end: conditionStart + condition.length,
   };

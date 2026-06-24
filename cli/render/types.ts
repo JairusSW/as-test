@@ -77,6 +77,7 @@ export type CoverageSummary = {
   covered: number;
   uncovered: number;
   percent: number;
+  byMode?: { name: string; total: number; covered: number; percent: number }[];
   files: {
     file: string;
     total: number;
